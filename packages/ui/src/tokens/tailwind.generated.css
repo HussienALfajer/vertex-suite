@@ -1,0 +1,123 @@
+/*
+ * GENERATED FILE — DO NOT EDIT.
+ *
+ * Produced by `pnpm --filter @vertex/ui tokens`.
+ */
+
+@theme inline {
+  /* Families */
+  --font-sans: var(--vx-font-sans);
+  --font-latin: var(--vx-font-latin);
+  --font-mono: var(--vx-font-mono);
+
+  /* Colours — the semantic layer, which is the only layer a screen may name */
+  --color-surface-0: var(--vx-surface-0);
+  --color-surface-1: var(--vx-surface-1);
+  --color-surface-2: var(--vx-surface-2);
+  --color-surface-3: var(--vx-surface-3);
+  --color-text-primary: var(--vx-text-primary);
+  --color-text-secondary: var(--vx-text-secondary);
+  --color-text-muted: var(--vx-text-muted);
+  --color-text-disabled: var(--vx-text-disabled);
+  --color-border: var(--vx-border);
+  --color-border-strong: var(--vx-border-strong);
+  --color-fill-primary: var(--vx-fill-primary);
+  --color-fill-secondary: var(--vx-fill-secondary);
+  --color-fill-ghost-hover: var(--vx-fill-ghost-hover);
+  --color-fill-field: var(--vx-fill-field);
+  --color-on-primary: var(--vx-on-primary);
+  --color-fill-accent: var(--vx-fill-accent);
+  --color-fill-accent-hover: var(--vx-fill-accent-hover);
+  --color-text-accent: var(--vx-text-accent);
+  --color-bg-accent: var(--vx-bg-accent);
+  --color-on-bg-accent: var(--vx-on-bg-accent);
+  --color-border-accent: var(--vx-border-accent);
+  --color-on-accent: var(--vx-on-accent);
+  --color-fill-success: var(--vx-fill-success);
+  --color-fill-success-hover: var(--vx-fill-success-hover);
+  --color-text-success: var(--vx-text-success);
+  --color-bg-success: var(--vx-bg-success);
+  --color-on-bg-success: var(--vx-on-bg-success);
+  --color-border-success: var(--vx-border-success);
+  --color-on-success: var(--vx-on-success);
+  --color-fill-danger: var(--vx-fill-danger);
+  --color-fill-danger-hover: var(--vx-fill-danger-hover);
+  --color-text-danger: var(--vx-text-danger);
+  --color-bg-danger: var(--vx-bg-danger);
+  --color-on-bg-danger: var(--vx-on-bg-danger);
+  --color-border-danger: var(--vx-border-danger);
+  --color-on-danger: var(--vx-on-danger);
+  --color-fill-warning: var(--vx-fill-warning);
+  --color-fill-warning-hover: var(--vx-fill-warning-hover);
+  --color-text-warning: var(--vx-text-warning);
+  --color-bg-warning: var(--vx-bg-warning);
+  --color-on-bg-warning: var(--vx-on-bg-warning);
+  --color-border-warning: var(--vx-border-warning);
+  --color-on-warning: var(--vx-on-warning);
+  --color-fill-info: var(--vx-fill-info);
+  --color-fill-info-hover: var(--vx-fill-info-hover);
+  --color-text-info: var(--vx-text-info);
+  --color-bg-info: var(--vx-bg-info);
+  --color-on-bg-info: var(--vx-on-bg-info);
+  --color-border-info: var(--vx-border-info);
+  --color-on-info: var(--vx-on-info);
+  --color-fill-brand: var(--vx-fill-brand);
+  --color-on-brand: var(--vx-on-brand);
+  --color-chart-1: var(--vx-chart-1);
+  --color-chart-2: var(--vx-chart-2);
+  --color-chart-3: var(--vx-chart-3);
+  --color-chart-4: var(--vx-chart-4);
+  --color-chart-5: var(--vx-chart-5);
+  --color-chart-6: var(--vx-chart-6);
+  --color-chart-7: var(--vx-chart-7);
+  --color-chart-8: var(--vx-chart-8);
+
+  /* Type. Both move with the density axis. */
+  --text-caption: var(--vx-font-size-caption);
+  --leading-caption: var(--vx-line-height-caption);
+  --text-footnote: var(--vx-font-size-footnote);
+  --leading-footnote: var(--vx-line-height-footnote);
+  --text-code: var(--vx-font-size-code);
+  --leading-code: var(--vx-line-height-code);
+  --text-body: var(--vx-font-size-body);
+  --leading-body: var(--vx-line-height-body);
+  --text-heading: var(--vx-font-size-heading);
+  --leading-heading: var(--vx-line-height-heading);
+  --text-title: var(--vx-font-size-title);
+  --leading-title: var(--vx-line-height-title);
+  --text-page: var(--vx-font-size-page);
+  --leading-page: var(--vx-line-height-page);
+
+  /* Weights. `body-*` is compensated on a dark ground (§5.4). */
+  --font-weight-regular: var(--vx-weight-regular);
+  --font-weight-medium: var(--vx-weight-medium);
+  --font-weight-semibold: var(--vx-weight-semibold);
+  --font-weight-bold: var(--vx-weight-bold);
+  --font-weight-body-regular: var(--vx-weight-body-regular);
+  --font-weight-body-medium: var(--vx-weight-body-medium);
+  --font-weight-body-semibold: var(--vx-weight-body-semibold);
+  --font-weight-body-bold: var(--vx-weight-body-bold);
+
+  /* Radius and elevation */
+  --radius: var(--vx-radius);
+  --radius-card: var(--vx-radius-card);
+  --radius-pill: var(--vx-radius-pill);
+  --shadow-sm: var(--vx-shadow-sm);
+  --shadow-md: var(--vx-shadow-md);
+  --shadow-lg: var(--vx-shadow-lg);
+  --shadow-dialog: var(--vx-shadow-dialog);
+
+  /* Easing */
+  --ease-out: var(--vx-ease-out);
+  --ease-in: var(--vx-ease-in);
+}
+
+/*
+ * Spacing is deliberately absent.
+ *
+ * §6.2 gives two scales with different values — `pad-*` and `gap-*` — and
+ * Tailwind has one `--spacing-*` namespace serving both padding and gap
+ * utilities. Mapping either one into it silently makes the other wrong.
+ * Components use `var(--vx-pad-md)` and `var(--vx-gap-md)` directly until the
+ * first screens show which shape actually earns a utility.
+ */

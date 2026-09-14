@@ -1,0 +1,371 @@
+/*
+ * GENERATED FILE — DO NOT EDIT.
+ *
+ * Produced by `pnpm --filter @vertex/ui tokens`. Every value is published in
+ * design-system.md and asserted against it by theme.test.ts, so a size, weight
+ * or duration cannot be changed here without the document changing first.
+ *
+ * Layers 2–3 of 4 (§3.1): alias and semantic. This is the only layer a screen
+ * is allowed to name.
+ */
+
+:root {
+  /* Families — bundled with the application, never fetched (§5.1) */
+  --vx-font-sans: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
+  --vx-font-latin: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --vx-font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+
+  /* Surfaces */
+  --vx-surface-0: var(--vx-neutral-20);
+  --vx-surface-1: var(--vx-neutral-10);
+  --vx-surface-2: var(--vx-neutral-0);
+  --vx-surface-3: var(--vx-neutral-0);
+
+  /* Text */
+  --vx-text-primary: var(--vx-neutral-900);
+  --vx-text-secondary: var(--vx-neutral-600);
+  --vx-text-muted: var(--vx-neutral-500);
+  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-900) 38%, transparent);
+
+  /* Separation */
+  --vx-border: color-mix(in srgb, var(--vx-neutral-900) 10%, transparent);
+  --vx-border-strong: color-mix(in srgb, var(--vx-neutral-900) 20%, transparent);
+
+  /* Neutral fills, each with the one foreground it requires */
+  --vx-fill-primary: var(--vx-neutral-900);
+  --vx-fill-secondary: var(--vx-surface-2);
+  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-900) 6%, transparent);
+  --vx-fill-field: var(--vx-surface-2);
+  --vx-on-primary: var(--vx-neutral-10);
+
+  /* Elevation */
+  --vx-shadow-sm: 0 1px 2px rgb(12 11 9 / 0.05), 0 2px 8px rgb(12 11 9 / 0.06);
+  --vx-shadow-md: 0 2px 4px rgb(12 11 9 / 0.06), 0 8px 20px rgb(12 11 9 / 0.07);
+  --vx-shadow-lg: 0 4px 8px rgb(12 11 9 / 0.07), 0 16px 32px rgb(12 11 9 / 0.08);
+  --vx-shadow-dialog: 0 8px 24px rgb(12 11 9 / 0.12), 0 2px 6px rgb(12 11 9 / 0.08);
+
+  /* Accent roles. A screen names a role, never a hue. */
+  /* accent */
+  --vx-fill-accent: var(--vx-blue-fill);
+  --vx-fill-accent-hover: var(--vx-blue-fill-hover);
+  --vx-text-accent: var(--vx-blue-text);
+  --vx-bg-accent: var(--vx-blue-bg);
+  --vx-on-bg-accent: var(--vx-blue-on-bg);
+  --vx-border-accent: var(--vx-blue-border);
+  --vx-on-accent: #ffffff;
+  /* success */
+  --vx-fill-success: var(--vx-green-fill);
+  --vx-fill-success-hover: var(--vx-green-fill-hover);
+  --vx-text-success: var(--vx-green-text);
+  --vx-bg-success: var(--vx-green-bg);
+  --vx-on-bg-success: var(--vx-green-on-bg);
+  --vx-border-success: var(--vx-green-border);
+  --vx-on-success: #ffffff;
+  /* danger */
+  --vx-fill-danger: var(--vx-red-fill);
+  --vx-fill-danger-hover: var(--vx-red-fill-hover);
+  --vx-text-danger: var(--vx-red-text);
+  --vx-bg-danger: var(--vx-red-bg);
+  --vx-on-bg-danger: var(--vx-red-on-bg);
+  --vx-border-danger: var(--vx-red-border);
+  --vx-on-danger: #ffffff;
+  /* warning */
+  --vx-fill-warning: var(--vx-amber-fill);
+  --vx-fill-warning-hover: var(--vx-amber-fill-hover);
+  --vx-text-warning: var(--vx-amber-text);
+  --vx-bg-warning: var(--vx-amber-bg);
+  --vx-on-bg-warning: var(--vx-amber-on-bg);
+  --vx-border-warning: var(--vx-amber-border);
+  --vx-on-warning: #ffffff;
+  /* info */
+  --vx-fill-info: var(--vx-teal-fill);
+  --vx-fill-info-hover: var(--vx-teal-fill-hover);
+  --vx-text-info: var(--vx-teal-text);
+  --vx-bg-info: var(--vx-teal-bg);
+  --vx-on-bg-info: var(--vx-teal-on-bg);
+  --vx-border-info: var(--vx-teal-border);
+  --vx-on-info: #ffffff;
+
+  /* Tenant brand (§4.5). Replaced at load when the tenant supplies one. */
+  --vx-fill-brand: var(--vx-fill-primary);
+  --vx-on-brand: var(--vx-on-primary);
+
+  /* Weights (§5.3). `weight-body-*` is used at body size and above (§5.4). */
+  --vx-weight-regular: 400;
+  --vx-weight-medium: 500;
+  --vx-weight-semibold: 600;
+  --vx-weight-bold: 700;
+  --vx-weight-body-regular: 400;
+  --vx-weight-body-medium: 500;
+  --vx-weight-body-semibold: 600;
+  --vx-weight-body-bold: 700;
+
+  /* Focus (§7.3) */
+  --vx-focus-ring: 0 0 0 2px var(--vx-surface-1), 0 0 0 4px var(--vx-fill-accent);
+  --vx-focus-ring-danger: 0 0 0 2px var(--vx-surface-1), 0 0 0 4px var(--vx-fill-danger);
+  --vx-radius-pill: 9999px;
+
+  /* Motion (§8) */
+  --vx-dur-snap: 120ms;
+  --vx-dur-base: 160ms;
+  --vx-dur-slow: 200ms;
+  --vx-ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --vx-ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Density: the default. A subtree may raise it, never lower it below touch. */
+  /* Sizes */
+  --vx-h-control: 32px;
+  --vx-h-control-nested: 22px;
+  --vx-h-row: 36px;
+  --vx-icon: 20px;
+  --vx-radius: 8px;
+  --vx-radius-card: 12px;
+  --vx-checkbox: 20px;
+  --vx-switch-h: 20px;
+  --vx-pad-xs: 6px;
+  --vx-pad-sm: 8px;
+  --vx-pad-md: 12px;
+  --vx-pad-lg: 16px;
+  --vx-pad-xl: 24px;
+  --vx-gap-xs: 8px;
+  --vx-gap-sm: 12px;
+  --vx-gap-md: 16px;
+  --vx-gap-lg: 28px;
+  --vx-gap-xl: 40px;
+
+  /* Type */
+  --vx-font-size-caption: 12px;
+  --vx-line-height-caption: 18px;
+  --vx-font-size-footnote: 13px;
+  --vx-line-height-footnote: 19px;
+  --vx-font-size-code: 13px;
+  --vx-line-height-code: 19px;
+  --vx-font-size-body: 14px;
+  --vx-line-height-body: 22px;
+  --vx-font-size-heading: 16px;
+  --vx-line-height-heading: 22px;
+  --vx-font-size-title: 22px;
+  --vx-line-height-title: 30px;
+  --vx-font-size-page: 26px;
+  --vx-line-height-page: 34px;
+}
+
+/* No explicit choice: follow the system. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+  /* Surfaces */
+  --vx-surface-0: var(--vx-neutral-900);
+  --vx-surface-1: var(--vx-neutral-850);
+  --vx-surface-2: var(--vx-neutral-830);
+  --vx-surface-3: var(--vx-neutral-810);
+
+  /* Text */
+  --vx-text-primary: var(--vx-neutral-50);
+  --vx-text-secondary: var(--vx-neutral-200);
+  --vx-text-muted: var(--vx-neutral-400);
+  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-50) 38%, transparent);
+
+  /* Separation */
+  --vx-border: color-mix(in srgb, var(--vx-neutral-50) 12%, transparent);
+  --vx-border-strong: color-mix(in srgb, var(--vx-neutral-50) 22%, transparent);
+
+  /* Neutral fills, each with the one foreground it requires */
+  --vx-fill-primary: var(--vx-neutral-50);
+  --vx-fill-secondary: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
+  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
+  --vx-fill-field: color-mix(in srgb, var(--vx-neutral-50) 5%, transparent);
+  --vx-on-primary: var(--vx-neutral-900);
+
+  /* Elevation */
+  --vx-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.24);
+  --vx-shadow-md: 0 2px 4px rgb(0 0 0 / 0.32), 0 8px 20px rgb(0 0 0 / 0.28);
+  --vx-shadow-lg: 0 4px 8px rgb(0 0 0 / 0.34), 0 16px 32px rgb(0 0 0 / 0.32);
+  --vx-shadow-dialog: 0 8px 24px rgb(0 0 0 / 0.44), 0 2px 6px rgb(0 0 0 / 0.32);
+
+  /* §5.4: one named weight down at body size and above, on a dark ground */
+  --vx-weight-regular: 400;
+  --vx-weight-medium: 500;
+  --vx-weight-semibold: 600;
+  --vx-weight-bold: 700;
+  --vx-weight-body-regular: 400;
+  --vx-weight-body-medium: 400;
+  --vx-weight-body-semibold: 500;
+  --vx-weight-body-bold: 600;
+  }
+}
+
+/* An explicit choice always wins, in both directions. */
+:root[data-theme='dark'] {
+  /* Surfaces */
+  --vx-surface-0: var(--vx-neutral-900);
+  --vx-surface-1: var(--vx-neutral-850);
+  --vx-surface-2: var(--vx-neutral-830);
+  --vx-surface-3: var(--vx-neutral-810);
+
+  /* Text */
+  --vx-text-primary: var(--vx-neutral-50);
+  --vx-text-secondary: var(--vx-neutral-200);
+  --vx-text-muted: var(--vx-neutral-400);
+  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-50) 38%, transparent);
+
+  /* Separation */
+  --vx-border: color-mix(in srgb, var(--vx-neutral-50) 12%, transparent);
+  --vx-border-strong: color-mix(in srgb, var(--vx-neutral-50) 22%, transparent);
+
+  /* Neutral fills, each with the one foreground it requires */
+  --vx-fill-primary: var(--vx-neutral-50);
+  --vx-fill-secondary: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
+  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
+  --vx-fill-field: color-mix(in srgb, var(--vx-neutral-50) 5%, transparent);
+  --vx-on-primary: var(--vx-neutral-900);
+
+  /* Elevation */
+  --vx-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.24);
+  --vx-shadow-md: 0 2px 4px rgb(0 0 0 / 0.32), 0 8px 20px rgb(0 0 0 / 0.28);
+  --vx-shadow-lg: 0 4px 8px rgb(0 0 0 / 0.34), 0 16px 32px rgb(0 0 0 / 0.32);
+  --vx-shadow-dialog: 0 8px 24px rgb(0 0 0 / 0.44), 0 2px 6px rgb(0 0 0 / 0.32);
+
+  /* §5.4: one named weight down at body size and above, on a dark ground */
+  --vx-weight-regular: 400;
+  --vx-weight-medium: 500;
+  --vx-weight-semibold: 600;
+  --vx-weight-bold: 700;
+  --vx-weight-body-regular: 400;
+  --vx-weight-body-medium: 400;
+  --vx-weight-body-semibold: 500;
+  --vx-weight-body-bold: 600;
+}
+
+/* Density is inherited from the root and may be raised on a subtree (§6.1). */
+[data-density='compact'] {
+  /* Sizes */
+  --vx-h-control: 24px;
+  --vx-h-control-nested: 18px;
+  --vx-h-row: 28px;
+  --vx-icon: 16px;
+  --vx-radius: 6px;
+  --vx-radius-card: 10px;
+  --vx-checkbox: 16px;
+  --vx-switch-h: 16px;
+  --vx-pad-xs: 4px;
+  --vx-pad-sm: 6px;
+  --vx-pad-md: 8px;
+  --vx-pad-lg: 12px;
+  --vx-pad-xl: 20px;
+  --vx-gap-xs: 6px;
+  --vx-gap-sm: 8px;
+  --vx-gap-md: 12px;
+  --vx-gap-lg: 20px;
+  --vx-gap-xl: 32px;
+
+  /* Type */
+  --vx-font-size-caption: 12px;
+  --vx-line-height-caption: 17px;
+  --vx-font-size-footnote: 12px;
+  --vx-line-height-footnote: 18px;
+  --vx-font-size-code: 12px;
+  --vx-line-height-code: 18px;
+  --vx-font-size-body: 13px;
+  --vx-line-height-body: 20px;
+  --vx-font-size-heading: 15px;
+  --vx-line-height-heading: 21px;
+  --vx-font-size-title: 20px;
+  --vx-line-height-title: 28px;
+  --vx-font-size-page: 24px;
+  --vx-line-height-page: 32px;
+}
+
+[data-density='comfortable'] {
+  /* Sizes */
+  --vx-h-control: 32px;
+  --vx-h-control-nested: 22px;
+  --vx-h-row: 36px;
+  --vx-icon: 20px;
+  --vx-radius: 8px;
+  --vx-radius-card: 12px;
+  --vx-checkbox: 20px;
+  --vx-switch-h: 20px;
+  --vx-pad-xs: 6px;
+  --vx-pad-sm: 8px;
+  --vx-pad-md: 12px;
+  --vx-pad-lg: 16px;
+  --vx-pad-xl: 24px;
+  --vx-gap-xs: 8px;
+  --vx-gap-sm: 12px;
+  --vx-gap-md: 16px;
+  --vx-gap-lg: 28px;
+  --vx-gap-xl: 40px;
+
+  /* Type */
+  --vx-font-size-caption: 12px;
+  --vx-line-height-caption: 18px;
+  --vx-font-size-footnote: 13px;
+  --vx-line-height-footnote: 19px;
+  --vx-font-size-code: 13px;
+  --vx-line-height-code: 19px;
+  --vx-font-size-body: 14px;
+  --vx-line-height-body: 22px;
+  --vx-font-size-heading: 16px;
+  --vx-line-height-heading: 22px;
+  --vx-font-size-title: 22px;
+  --vx-line-height-title: 30px;
+  --vx-font-size-page: 26px;
+  --vx-line-height-page: 34px;
+}
+
+[data-density='touch'] {
+  /* Sizes */
+  --vx-h-control: 48px;
+  --vx-h-control-nested: 32px;
+  --vx-h-row: 52px;
+  --vx-icon: 24px;
+  --vx-radius: 10px;
+  --vx-radius-card: 14px;
+  --vx-checkbox: 28px;
+  --vx-switch-h: 28px;
+  --vx-pad-xs: 8px;
+  --vx-pad-sm: 12px;
+  --vx-pad-md: 16px;
+  --vx-pad-lg: 22px;
+  --vx-pad-xl: 32px;
+  --vx-gap-xs: 10px;
+  --vx-gap-sm: 16px;
+  --vx-gap-md: 22px;
+  --vx-gap-lg: 32px;
+  --vx-gap-xl: 48px;
+
+  /* Type */
+  --vx-font-size-caption: 14px;
+  --vx-line-height-caption: 20px;
+  --vx-font-size-footnote: 15px;
+  --vx-line-height-footnote: 22px;
+  --vx-font-size-code: 15px;
+  --vx-line-height-code: 22px;
+  --vx-font-size-body: 17px;
+  --vx-line-height-body: 26px;
+  --vx-font-size-heading: 18px;
+  --vx-line-height-heading: 26px;
+  --vx-font-size-title: 24px;
+  --vx-line-height-title: 32px;
+  --vx-font-size-page: 28px;
+  --vx-line-height-page: 36px;
+}
+
+/*
+ * A component whose meaning depends on motion is a component that fails for
+ * these users, and is not built. Both the system preference and the tenant
+ * setting disable every transition (§8).
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+  --vx-dur-snap: 0ms;
+  --vx-dur-base: 0ms;
+  --vx-dur-slow: 0ms;
+  }
+}
+
+[data-reduce-motion='true'] {
+  --vx-dur-snap: 0ms;
+  --vx-dur-base: 0ms;
+  --vx-dur-slow: 0ms;
+}

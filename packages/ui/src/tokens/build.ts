@@ -10,6 +10,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { emitJson, emitPrimitives } from './emit.js';
+import { emitFonts, emitTailwind } from './emit-integration.js';
+import { emitTheme } from './emit-theme.js';
 import { generatePalette } from './generate.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -21,6 +23,9 @@ const palette = generatePalette();
 await mkdir(target, { recursive: true });
 await writeFile(resolve(target, 'palette.generated.css'), emitPrimitives(palette), 'utf8');
 await writeFile(resolve(target, 'palette.generated.json'), emitJson(palette), 'utf8');
+await writeFile(resolve(target, 'theme.generated.css'), emitTheme(), 'utf8');
+await writeFile(resolve(target, 'fonts.generated.css'), emitFonts(), 'utf8');
+await writeFile(resolve(target, 'tailwind.generated.css'), emitTailwind(), 'utf8');
 
 console.log(
   `tokens: ${String(palette.neutral.size)} neutrals, ${String(palette.accents.size)} accents, ${String(palette.chart.length)} chart series`,

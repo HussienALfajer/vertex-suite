@@ -1,6 +1,6 @@
 # Design System
 
-**Status** v1.1 · **Scope** the interface layer of the whole product
+**Status** v1.2 · **Scope** the interface layer of the whole product
 
 This document is the specification of the interface layer. It is complete **before** the first module screen exists — otherwise six modules' interfaces get rebuilt when it settles.
 
@@ -285,10 +285,14 @@ Bold is never used for emphasis inside a sentence; colour and weight-500 carry i
 
 Light text on a dark ground blooms optically and reads heavier than the same weight on a light ground. Dark mode compensates:
 
-- **If the bundled build exposes a `wght` variable axis**: dark mode lowers it by **40 units** via `font-variation-settings` at every role.
-- **If only static weights ship**: dark mode steps text at `body` size and larger down one named weight, and leaves `caption` and `footnote` unchanged — they are already at the legibility floor.
+**IBM Plex Sans Arabic ships static weights only** — there is no variable build of the Arabic
+family, although one exists for the Latin. So the second strategy applies: **dark mode steps text
+at `body` size and larger down one named weight**, and leaves `caption` and `footnote` unchanged,
+because those are already at the legibility floor of §5.2.
 
-The `packages/ui` build confirms which font build ships and records the answer here.
+The Latin companion is bundled as **static weights too, despite a variable build existing**. A
+variable Latin beside a static Arabic would compensate in two different ways inside one sentence,
+and Arabic and Latin runs sit inside one sentence constantly here — an item name beside its SKU.
 
 ### 5.5 Numerals
 
@@ -402,22 +406,32 @@ direction, a number field that parses and renders Arabic-Indic digits without af
 value (§5.5), and keyboard models that are the library's reason for existing rather than an addition
 to it (§11).
 
-The **Stage 0** column marks what `packages/ui` delivers first. A module code in that column marks a component deferred to the unit that builds that module — built to this document's tokens, and joining the inventory in the same pull request.
+The **Stage 0** column marks what `packages/ui` delivers before the first screen exists. It is
+deliberately **not** the whole inventory. §15 has every component arrive with the unit that needs
+it, and designing the API of a component no screen has used is how a component library acquires
+the wrong API — discovered at the twentieth screen, at many times the cost of the work it saved.
 
-| Group          | Components                                                                                                                                                                | Stage 0     |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| **Actions**    | Button · ButtonGroup · DropdownButton · IconButton · TextLink · Kbd                                                                                                       | ✅          |
-| **Inputs**     | Field · TextInput · TextArea · NumberInput · MoneyInput · QuantityInput · DateInput · Select · Combobox · Checkbox · RadioGroup · Switch · SegmentedControl · SearchInput | ✅          |
-| **Scanning**   | ScanInput — the shared scan-capture control                                                                                                                               | `POS`       |
-| **Overlays**   | Dialog · ConfirmationDialog · Popover · Tooltip · Toast · Drawer                                                                                                          | ✅          |
-| **Layout**     | Page · PageHeader · Panel · Card · Tabs · Accordion · Splitter · Toolbar                                                                                                  | ✅          |
-| **Data**       | DataTable (virtualised) · TableRowActions · Badge · StatusChip · Counter · KeyValueList · EmptyState · Pagination                                                         | ✅          |
-| **Display**    | Money · Quantity · DateTime · CurrencyRate · UnitLabel — §12                                                                                                              | ✅          |
-| **State**      | Banner · Spinner · Skeleton · ProgressBar · OfflineIndicator · SyncStatus                                                                                                 | ✅          |
-| **Navigation** | SideNav · Breadcrumb · CommandPalette                                                                                                                                     | ✅          |
-| **Charts**     | ChartContainer · ChartLegend · BarChart · LineChart — Recharts, palette from §4.7                                                                                         | `RPT`       |
-| **Register**   | RegisterKeypad · TenderPanel · LinePad · CustomerDisplayFrame                                                                                                             | `POS`       |
-| **Print**      | ReceiptPreview · DocumentHeader · LabelPreview                                                                                                                            | `POS`, `HW` |
+Stage 0 is therefore two things: the five **display contracts**, which must precede every screen
+because no figure is rendered anywhere without them (§12), and the set `U04` actually needs to
+put an organisation, its users and its numbering on screen. Everything else joins the inventory
+in the same pull request as the unit that first needs it, built to these tokens.
+
+| Group          | Components                                                                                                                                                                | Stage 0                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Actions**    | Button · ButtonGroup · DropdownButton · IconButton · TextLink · Kbd                                                                                                       | Button · IconButton                              |
+| **Inputs**     | Field · TextInput · TextArea · NumberInput · MoneyInput · QuantityInput · DateInput · Select · Combobox · Checkbox · RadioGroup · Switch · SegmentedControl · SearchInput | Field · TextInput · Select · Checkbox · Switch   |
+| **Scanning**   | ScanInput — the shared scan-capture control                                                                                                                               | `POS`                                            |
+| **Overlays**   | Dialog · ConfirmationDialog · Popover · Tooltip · Toast · Drawer                                                                                                          | Dialog · ConfirmationDialog · Toast              |
+| **Layout**     | Page · PageHeader · Panel · Card · Tabs · Accordion · Splitter · Toolbar                                                                                                  | Page · PageHeader · Panel                        |
+| **Data**       | DataTable (virtualised) · TableRowActions · Badge · StatusChip · Counter · KeyValueList · EmptyState · Pagination                                                         | DataTable · TableRowActions · Badge · EmptyState |
+| **Display**    | Money · Quantity · DateTime · CurrencyRate · UnitLabel — §12                                                                                                              | **all five**                                     |
+| **State**      | Banner · Spinner · Skeleton · ProgressBar · OfflineIndicator · SyncStatus                                                                                                 | Banner                                           |
+| **Navigation** | SideNav · Breadcrumb · CommandPalette                                                                                                                                     | SideNav · Breadcrumb                             |
+| **Charts**     | ChartContainer · ChartLegend · BarChart · LineChart — Recharts, palette from §4.7                                                                                         | `RPT`                                            |
+| **Register**   | RegisterKeypad · TenderPanel · LinePad · CustomerDisplayFrame                                                                                                             | `POS`                                            |
+| **Print**      | ReceiptPreview · DocumentHeader · LabelPreview                                                                                                                            | `POS`, `HW`                                      |
+
+That is **25 components**, not 56.
 
 **Not built:** any chat, messaging, rich-text-editor, avatar-stack, media or marketing component. This is a retail system.
 
@@ -533,10 +547,9 @@ Stop `0` is forced to `#ffffff`.
 
 | #   | Question                                                                                                                                                                                                                                                                                      | Needed by                |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| 1   | Whether the bundled IBM Plex Sans Arabic exposes a `wght` variable axis, which selects between the two compensation strategies of §5.4                                                                                                                                                        | `packages/ui`            |
-| 2   | The register shortcut map, owned by the `POS` module within the two constraints of §11.2                                                                                                                                                                                                      | `POS`                    |
-| 3   | Whether `compact` needs a fourth, denser step for the stock ledger at pilot scale — to be answered from the real data, not in advance                                                                                                                                                         | pilot data               |
-| 4   | What an accent `border` is measured against. §4.6 sets 3:1 for chart marks, meaningful icons and control boundaries; an accent border is the edge of a tinted container and reaches 1.69:1 against the page, which no stated rule forbids. To be pinned by the first component that draws one | first component using it |
+| 1   | The register shortcut map, owned by the `POS` module within the two constraints of §11.2                                                                                                                                                                                                      | `POS`                    |
+| 2   | Whether `compact` needs a fourth, denser step for the stock ledger at pilot scale — to be answered from the real data, not in advance                                                                                                                                                         | pilot data               |
+| 3   | What an accent `border` is measured against. §4.6 sets 3:1 for chart marks, meaningful icons and control boundaries; an accent border is the edge of a tinted container and reaches 1.69:1 against the page, which no stated rule forbids. To be pinned by the first component that draws one | first component using it |
 
 ---
 
@@ -553,6 +566,7 @@ This document is an **architecture-level specification**. It changes by recorded
 
 | Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Reason                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-14 | **v1.2** — §10's Stage 0 narrows from all eight groups (56 components) to 25: the five display contracts plus what `U04` needs. §5.4 is resolved and §14's first open decision is closed                                                                                                                                                                                                                                                                                                                                                                                                                                | `@fontsource-variable/ibm-plex-sans-arabic` does not exist in the npm registry while `@fontsource-variable/ibm-plex-sans` does, so the Arabic family ships static weights only and the second compensation strategy applies. The Stage 0 reduction follows §15's own rule that a component arrives with the unit that needs it: building an API for a component no screen has used is how the API turns out wrong                                             |
 | 2026-09-14 | **v1.1** — Appendix A now states that interpolation is linear and gives the chroma caps for `bg` and `border`, both of which were unstated and left the palette unreproducible; the accent solver's direction column is reworded from "darkest passing" to the boundary it actually means. §4.4 gains `fill-accent`, `fill-success`, `fill-danger`, `fill-warning` and `fill-info` with the hue→role mapping. §9, §10 and §11 move from Base UI to React Aria Components. Six generated values are corrected: `neutral-80`, `-550`, `-810`, `-820`, `-880` and chart series 8 (light). §14 gains a fourth open decision | The generator was implemented in `packages/ui` and reproduced 95 of the 101 published values exactly, the remaining six differing by one unit in one channel. Since this document makes the generator the only permitted source of §4 and forbids editing a value by hand, the generator is authoritative and the table follows it. The unstated interpolation and caps are recorded because a palette that cannot be re-derived is a palette that will drift |
 | 2026-09-13 | **v1.0 approved unchanged**, after a second direction — a ruled account-book language with monospaced figures, structural currency distinction and an indigo-on-cream palette — was built and compared on the product's own screens in both themes. Nothing in this document changed.                                                                                                                                                                                                                                                                                                                                   | The owner reviewed both directions side by side and chose this one. Recorded because "why is it not a ledger?" is a question that will be asked again, and because the alternative solved two real problems this system leaves to convention                                                                                                                                                                                                                  |
 | 2026-09-13 | **v1.0 issued** — token architecture, generated palette with verified contrast, Arabic-derived type scale, three densities including a touch density for the register, elevation, focus, motion, direction rules, retail component inventory, keyboard conventions, display contracts, and the generator of Appendix A                                                                                                                                                                                                                                                                                                  | The palette is generated rather than chosen so that it can be re-derived and re-verified; the touch density exists because no two-density system can serve both a 30,000-row grid and a finger on glass; every contrast pair is measured because three pairs in the studied reference (§4.1) would have failed AA had their values been adopted directly                                                                                                      |
