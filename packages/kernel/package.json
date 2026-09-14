@@ -1,0 +1,32 @@
+{
+  "name": "@vertex/kernel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Exact money, quantities and rounding. No module may compute a business figure any other way.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "decimal.js": "10.6.0"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.0",
+    "typescript": "6.0.2",
+    "vitest": "4.1.11"
+  }
+}

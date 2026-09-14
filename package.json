@@ -1,0 +1,32 @@
+{
+  "name": "vertex-suite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Retail management system — source for a product line of per-customer editions.",
+  "packageManager": "pnpm@12.4.1",
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.10.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.6",
+    "turbo": "2.10.12",
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.70.0",
+    "vitest": "4.1.11"
+  }
+}
