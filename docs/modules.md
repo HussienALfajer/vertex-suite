@@ -138,7 +138,7 @@ The ordering rule: **no unit exists to be finished later.** Each stage ends with
 | Unit  | Delivers                                                                                        | Features                                                       |
 | ----- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `U01` | Workspace, build, lint, test harness, the enforcement checks of `design-system.md` §13          | —                                                              |
-| `U02` | `packages/ui` — design system Stage 0                                                           | `SYS-01`                                                       |
+| `U02` | `packages/ui` — design system Stage 0 — and the `packages/i18n` skeleton it depends on          | `SYS-01`                                                       |
 | `U03` | `kernel` and `platform` — money, quantity, ids, clock, module registry, event bus, unit of work | —                                                              |
 | `U04` | Organisation, users, roles, numbering                                                           | `SYS-02` `SYS-05` `SYS-09` `SEC-01` `SEC-02` `SEC-04` `SEC-09` |
 | `U05` | Currencies, daily rates, stamping, rounding                                                     | `FX-01`–`FX-07`                                                |
@@ -146,6 +146,14 @@ The ordering rule: **no unit exists to be finished later.** Each stage ends with
 | `U07` | Store node, terminal store, outbox, delta sync, durability                                      | `SYN-01` `SYN-02` `SYN-03` `SYN-05` `SYN-06` `POS-18`          |
 
 `U07` sits here deliberately. A register built online-first and made offline later is rewritten, not extended.
+
+`U02` carries `packages/i18n` with it because it has to: `design-system.md` §12 requires every
+user-facing string to resolve through the terminology layer, and `<UnitLabel>` is a Stage 0
+component. A design system whose display components cannot meet their own contract is not finished.
+
+`U02` lands in slices, each one green on its own: **`U02.1`** the generated palette and the checks
+that guard it, **`U02.2`** fonts, providers and the semantic layer, **`U02.3`** the Stage 0
+components and their keyboard journeys.
 
 ### Stage B — The first sale
 

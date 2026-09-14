@@ -1,0 +1,32 @@
+{
+  "name": "@vertex/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The interface layer of design-system.md: generated palette, semantic tokens, and the components every screen is built from.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tokens.css": "./src/tokens/palette.generated.css"
+  },
+  "files": [
+    "dist",
+    "src/tokens/palette.generated.css"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "tokens": "tsc -p tsconfig.build.json && node dist/tokens/build.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.4",
+    "typescript": "6.0.2",
+    "vitest": "4.1.11"
+  }
+}

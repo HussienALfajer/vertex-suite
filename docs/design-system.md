@@ -1,6 +1,6 @@
 # Design System
 
-**Status** v1.0 · **Scope** the interface layer of the whole product
+**Status** v1.1 · **Scope** the interface layer of the whole product
 
 This document is the specification of the interface layer. It is complete **before** the first module screen exists — otherwise six modules' interfaces get rebuilt when it settles.
 
@@ -99,12 +99,12 @@ Hue 95°, 35 steps. The ramp begins at white and ends at a warm near-black. The 
 |                 |                 |                 |                 |                 |
 | --------------- | --------------- | --------------- | --------------- | --------------- |
 | `0` `#ffffff`   | `10` `#fcfcfa`  | `20` `#f9f9f7`  | `30` `#f6f5f3`  | `40` `#f3f2ef`  |
-| `50` `#f0efec`  | `60` `#edece8`  | `70` `#eae9e5`  | `80` `#e7e6e1`  | `90` `#e4e3de`  |
+| `50` `#f0efec`  | `60` `#edece8`  | `70` `#eae9e5`  | `80` `#e7e6e2`  | `90` `#e4e3de`  |
 | `100` `#e1e0db` | `150` `#d2d0ca` | `200` `#c3c1b9` | `250` `#b4b2aa` | `300` `#a6a49b` |
-| `350` `#97958d` | `400` `#89877f` | `450` `#7b7972` | `500` `#6d6b65` | `550` `#5f5e58` |
+| `350` `#97958d` | `400` `#89877f` | `450` `#7b7972` | `500` `#6d6b65` | `550` `#605e58` |
 | `600` `#52514c` | `650` `#45443f` | `700` `#383733` | `750` `#2c2b28` | `800` `#21201d` |
-| `810` `#1f1e1b` | `820` `#1c1b19` | `830` `#1a1917` | `840` `#181715` | `850` `#161513` |
-| `860` `#141311` | `870` `#12110f` | `880` `#0f0f0d` | `890` `#0e0d0b` | `900` `#0c0b09` |
+| `810` `#1e1e1b` | `820` `#1c1c19` | `830` `#1a1917` | `840` `#181715` | `850` `#161513` |
+| `860` `#141311` | `870` `#12110f` | `880` `#100f0d` | `890` `#0e0d0b` | `900` `#0c0b09` |
 
 ### 4.3 Accent hues
 
@@ -144,26 +144,36 @@ Each hue provides six generated tokens. Chroma is fixed per hue (blue/green/ambe
 
 ### 4.4 Semantic tokens
 
-| Token                                                               | Light                         | Dark                    | Role                                 |
-| ------------------------------------------------------------------- | ----------------------------- | ----------------------- | ------------------------------------ |
-| `surface-0`                                                         | `neutral-20` `#f9f9f7`        | `neutral-900` `#0c0b09` | Behind everything; the window ground |
-| `surface-1`                                                         | `neutral-10` `#fcfcfa`        | `neutral-850` `#161513` | **The page**                         |
-| `surface-2`                                                         | `neutral-0` `#ffffff`         | `neutral-830` `#1a1917` | Panels, cards, table headers         |
-| `surface-3`                                                         | `neutral-0` `#ffffff`         | `neutral-810` `#1f1e1b` | Popovers, menus, dialogs             |
-| `text-primary`                                                      | `neutral-900`                 | `neutral-50`            | Body and headings                    |
-| `text-secondary`                                                    | `neutral-600`                 | `neutral-200`           | Labels, supporting text              |
-| `text-muted`                                                        | `neutral-500`                 | `neutral-400`           | Placeholders, metadata, units        |
-| `text-disabled`                                                     | `neutral-900` @ 38%           | `neutral-50` @ 38%      | Disabled controls only               |
-| `border`                                                            | `neutral-900` @ 10%           | `neutral-50` @ 12%      | Default separation                   |
-| `border-strong`                                                     | `neutral-900` @ 20%           | `neutral-50` @ 22%      | Input rings, focused edges           |
-| `fill-primary`                                                      | `neutral-900`                 | `neutral-50`            | The neutral primary button           |
-| `fill-secondary`                                                    | `surface-2` + `border-strong` | `neutral-50` @ 8%       | The default button                   |
-| `fill-ghost-hover`                                                  | `neutral-900` @ 6%            | `neutral-50` @ 8%       | Hover on a transparent control       |
-| `fill-field`                                                        | `surface-2`                   | `neutral-50` @ 5%       | Input backgrounds                    |
-| `on-primary`                                                        | `neutral-10`                  | `neutral-900`           | Label on `fill-primary`              |
-| `on-accent` · `on-danger` · `on-success` · `on-warning` · `on-info` | `#ffffff`                     | `#ffffff`               | Label on a filled accent             |
+| Token                                                               | Light                         | Dark                    | Role                                          |
+| ------------------------------------------------------------------- | ----------------------------- | ----------------------- | --------------------------------------------- |
+| `surface-0`                                                         | `neutral-20` `#f9f9f7`        | `neutral-900` `#0c0b09` | Behind everything; the window ground          |
+| `surface-1`                                                         | `neutral-10` `#fcfcfa`        | `neutral-850` `#161513` | **The page**                                  |
+| `surface-2`                                                         | `neutral-0` `#ffffff`         | `neutral-830` `#1a1917` | Panels, cards, table headers                  |
+| `surface-3`                                                         | `neutral-0` `#ffffff`         | `neutral-810` `#1f1e1b` | Popovers, menus, dialogs                      |
+| `text-primary`                                                      | `neutral-900`                 | `neutral-50`            | Body and headings                             |
+| `text-secondary`                                                    | `neutral-600`                 | `neutral-200`           | Labels, supporting text                       |
+| `text-muted`                                                        | `neutral-500`                 | `neutral-400`           | Placeholders, metadata, units                 |
+| `text-disabled`                                                     | `neutral-900` @ 38%           | `neutral-50` @ 38%      | Disabled controls only                        |
+| `border`                                                            | `neutral-900` @ 10%           | `neutral-50` @ 12%      | Default separation                            |
+| `border-strong`                                                     | `neutral-900` @ 20%           | `neutral-50` @ 22%      | Input rings, focused edges                    |
+| `fill-primary`                                                      | `neutral-900`                 | `neutral-50`            | The neutral primary button                    |
+| `fill-secondary`                                                    | `surface-2` + `border-strong` | `neutral-50` @ 8%       | The default button                            |
+| `fill-ghost-hover`                                                  | `neutral-900` @ 6%            | `neutral-50` @ 8%       | Hover on a transparent control                |
+| `fill-field`                                                        | `surface-2`                   | `neutral-50` @ 5%       | Input backgrounds                             |
+| `on-primary`                                                        | `neutral-10`                  | `neutral-900`           | Label on `fill-primary`                       |
+| `fill-accent`                                                       | `blue-fill`                   | `blue-fill`             | The accent action, and the focus ring of §7.3 |
+| `fill-success`                                                      | `green-fill`                  | `green-fill`            | A filled success control                      |
+| `fill-danger`                                                       | `red-fill`                    | `red-fill`              | A filled destructive control                  |
+| `fill-warning`                                                      | `amber-fill`                  | `amber-fill`            | A filled warning control                      |
+| `fill-info`                                                         | `teal-fill`                   | `teal-fill`             | A filled informational control                |
+| `on-accent` · `on-danger` · `on-success` · `on-warning` · `on-info` | `#ffffff`                     | `#ffffff`               | Label on a filled accent                      |
 
 Borders are **alpha overlays, never solid colours**. A solid border is one more value to maintain per surface and drifts the moment a surface changes; an overlay composites correctly on all four surfaces by construction.
+
+**Which hue carries which role.** `fill-accent` is blue, `fill-success` green, `fill-danger` red,
+`fill-warning` amber and `fill-info` teal — the meanings of §4.3, bound to token names. The mapping
+is fixed: a screen never names a hue, only a role, which is what lets the palette change hue without
+a screen changing.
 
 **Every `fill-*` has exactly one `on-*`.** A fill without its paired foreground is not a token, and adding one without the other is a review finding — this is the convention that makes an unreadable button structurally impossible rather than merely unlikely.
 
@@ -216,7 +226,7 @@ Eight categorical series. All pinned to **one lightness per theme** (`L = 58` li
 | 5   | green   | `#239149` | `#5ec478` |
 | 6   | violet  | `#8863c2` | `#b994f8` |
 | 7   | magenta | `#b4528e` | `#ea83c0` |
-| 8   | olive   | `#808000` | `#b1b231` |
+| 8   | olive   | `#7f8000` | `#b1b231` |
 
 Worst contrast against the page: **3.92** light, **7.39** dark — both above the 3:1 floor for non-text graphics.
 
@@ -375,7 +385,7 @@ Dark mode carries **stronger** shadows, not weaker: a dark surface separates fro
 
 - `<html dir="rtl" lang="ar">`. **RTL is the default, not a mode** (`SYS-01`).
 - **Logical CSS properties only.** The banned list, enforced by lint: `ml-* mr-* pl-* pr-* left-* right-* text-left text-right border-l-* border-r-* rounded-l-* rounded-r-*`. The replacements: `ms-* me-* ps-* pe-* start-* end-* text-start text-end border-s-* border-e-* rounded-s-* rounded-e-*`.
-- Base UI's `DirectionProvider` wraps the application so that primitive **behaviour** — keyboard navigation, popover placement, slider direction — follows the document direction, including portalled content.
+- React Aria's `I18nProvider` wraps the application, so direction is **derived from the locale** rather than carried as a separate flag, and primitive **behaviour** — keyboard navigation, popover placement, slider direction — follows it, including portalled content.
 - Spacing between siblings comes from the parent's `gap`, never from per-element margins.
 - Wide content — tables, receipts, diagrams — scrolls inside its own container. **The page body never scrolls horizontally.**
 - Icons that indicate direction (back, next, collapse) mirror with the document. Icons that depict an object (printer, box, barcode) do **not** mirror.
@@ -384,7 +394,13 @@ Dark mode carries **stronger** shadows, not weaker: a dark surface separates fro
 
 ## 10. Component inventory
 
-`packages/ui`, built on Base UI 1.x primitives (`@base-ui/react`) under our own component layer. **No third-party component collection is vendored.**
+`packages/ui`, built on **React Aria Components** (`react-aria-components`) under our own component layer. **No third-party component collection is vendored.**
+
+React Aria rather than Base UI: Base UI is still at a release candidate, and React Aria's interaction
+and internationalisation machinery is deeper in exactly the places this product lives — locale-derived
+direction, a number field that parses and renders Arabic-Indic digits without affecting the stored
+value (§5.5), and keyboard models that are the library's reason for existing rather than an addition
+to it (§11).
 
 The **Stage 0** column marks what `packages/ui` delivers first. A module code in that column marks a component deferred to the unit that builds that module — built to this document's tokens, and joining the inventory in the same pull request.
 
@@ -413,16 +429,16 @@ Every screen is keyboard-operable, and **the register is fully operable with no 
 
 ### 11.1 Everywhere
 
-| Key                 | Behaviour                                                                              |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| `Tab` / `Shift+Tab` | Move through interactive elements in logical (not visual) order                        |
-| `Enter`             | Submit the form, or activate the focused control                                       |
-| `Space`             | Toggle a checkbox, switch or button                                                    |
-| `Esc`               | Close the top overlay; in a field with a pending edit, revert it                       |
-| `↑ ↓`               | Move within a list, menu, grid rows or a combobox                                      |
-| `← →`               | Move within a row or a segmented control — **mirrored for RTL by `DirectionProvider`** |
-| `Home` / `End`      | First / last row or option                                                             |
-| `Ctrl+K`            | Command palette                                                                        |
+| Key                 | Behaviour                                                                         |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `Tab` / `Shift+Tab` | Move through interactive elements in logical (not visual) order                   |
+| `Enter`             | Submit the form, or activate the focused control                                  |
+| `Space`             | Toggle a checkbox, switch or button                                               |
+| `Esc`               | Close the top overlay; in a field with a pending edit, revert it                  |
+| `↑ ↓`               | Move within a list, menu, grid rows or a combobox                                 |
+| `← →`               | Move within a row or a segmented control — **mirrored for RTL by `I18nProvider`** |
+| `Home` / `End`      | First / last row or option                                                        |
+| `Ctrl+K`            | Command palette                                                                   |
 
 - Every dialog **traps** focus, moves focus to its first meaningful control on open, and **restores** focus to the trigger on close.
 - Grids use a roving `tabindex`: one tab stop for the grid, arrows inside it. A 30,000-row table with 30,000 tab stops is not keyboard-operable.
@@ -479,7 +495,7 @@ A design system that is only described is a design system that decays. These run
 
 Implemented in TypeScript in `packages/ui`, with the snapshot test of §13. Reproducible, and the only permitted source of the values in §4.
 
-**1. Neutral ramp.** For each of the 35 stops, lightness is interpolated through these anchors, and chroma through these, both in OKLCH at hue `95°`:
+**1. Neutral ramp.** For each of the 35 stops, lightness is interpolated through these anchors, and chroma through these, both in OKLCH at hue `95°`. **Interpolation is linear**, clamped at both ends — on the stop axis for lightness, then on the resulting lightness for chroma:
 
 ```
 L anchors (stop → L%):   0→100.0  50→95.2  100→90.6  200→81.0  300→71.7
@@ -493,17 +509,17 @@ C anchors (L% → C):    100→0.0000  99→0.0022  95→0.0048  90→0.0072  81
 
 Stop `0` is forced to `#ffffff`.
 
-**2. Accents.** For each hue, chroma is fixed (§4.3) and lightness is found by **bisection over `L ∈ [12, 95]`** for the lowest lightness whose contrast against the stated background is ≥ `4.60` (a 0.1 margin over the 4.5 target, so rounding can never drop a pair below it):
+**2. Accents.** For each hue, chroma is fixed (§4.3) and lightness is found by **bisection over `L ∈ [12, 95]`** for the **boundary** lightness at which contrast against the stated background reaches `4.60` — a 0.1 margin over the 4.5 target, so quantising to 8 bits per channel can never drop a pair below it. The colour departs from its background only as far as the requirement forces, which is what keeps the accents vivid rather than uniformly muddy:
 
-| Token           | Solved against    | Direction        |
-| --------------- | ----------------- | ---------------- |
-| `fill`          | `#ffffff`         | darkest passing  |
-| `text` (light)  | `surface-1` light | darkest passing  |
-| `text` (dark)   | `surface-1` dark  | lightest passing |
-| `on-bg` (light) | `bg` light        | darkest passing  |
-| `on-bg` (dark)  | `bg` dark         | lightest passing |
+| Token           | Solved against    | Direction            |
+| --------------- | ----------------- | -------------------- |
+| `fill`          | `#ffffff`         | lightest that passes |
+| `text` (light)  | `surface-1` light | lightest that passes |
+| `text` (dark)   | `surface-1` dark  | darkest that passes  |
+| `on-bg` (light) | `bg` light        | lightest that passes |
+| `on-bg` (dark)  | `bg` dark         | darkest that passes  |
 
-`fill-hover` is `fill` at `L − 5`. `bg` is `L = 93` light / `L = 26` dark, `border` is `L = 82` light / `L = 38` dark, both with chroma capped so a tint never competes with a fill.
+`fill-hover` is `fill` at `L − 5`. `bg` is `L = 93` light / `L = 26` dark and `border` is `L = 82` light / `L = 38` dark, both with chroma capped so a tint never competes with a fill: `bg` at **0.055** light and **0.060** dark, `border` at **0.085** light and **0.080** dark.
 
 **3. Chart series.** Fixed `L = 58` light, `L = 74` dark, chroma `0.145`, at hues `250 · 75 · 195 · 27 · 150 · 300 · 345 · 110`.
 
@@ -515,11 +531,12 @@ Stop `0` is forced to `#ffffff`.
 
 ## 14. Open decisions
 
-| #   | Question                                                                                                                               | Needed by     |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| 1   | Whether the bundled IBM Plex Sans Arabic exposes a `wght` variable axis, which selects between the two compensation strategies of §5.4 | `packages/ui` |
-| 2   | The register shortcut map, owned by the `POS` module within the two constraints of §11.2                                               | `POS`         |
-| 3   | Whether `compact` needs a fourth, denser step for the stock ledger at pilot scale — to be answered from the real data, not in advance  | pilot data    |
+| #   | Question                                                                                                                                                                                                                                                                                      | Needed by                |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| 1   | Whether the bundled IBM Plex Sans Arabic exposes a `wght` variable axis, which selects between the two compensation strategies of §5.4                                                                                                                                                        | `packages/ui`            |
+| 2   | The register shortcut map, owned by the `POS` module within the two constraints of §11.2                                                                                                                                                                                                      | `POS`                    |
+| 3   | Whether `compact` needs a fourth, denser step for the stock ledger at pilot scale — to be answered from the real data, not in advance                                                                                                                                                         | pilot data               |
+| 4   | What an accent `border` is measured against. §4.6 sets 3:1 for chart marks, meaningful icons and control boundaries; an accent border is the edge of a tinted container and reaches 1.69:1 against the page, which no stated rule forbids. To be pinned by the first component that draws one | first component using it |
 
 ---
 
@@ -534,7 +551,8 @@ This document is an **architecture-level specification**. It changes by recorded
 
 ### 15.1 Change log
 
-| Date       | Change                                                                                                                                                                                                                                                                                                                 | Reason                                                                                                                                                                                                                                                                                                                                                   |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-13 | **v1.0 approved unchanged**, after a second direction — a ruled account-book language with monospaced figures, structural currency distinction and an indigo-on-cream palette — was built and compared on the product's own screens in both themes. Nothing in this document changed.                                  | The owner reviewed both directions side by side and chose this one. Recorded because "why is it not a ledger?" is a question that will be asked again, and because the alternative solved two real problems this system leaves to convention                                                                                                             |
-| 2026-09-13 | **v1.0 issued** — token architecture, generated palette with verified contrast, Arabic-derived type scale, three densities including a touch density for the register, elevation, focus, motion, direction rules, retail component inventory, keyboard conventions, display contracts, and the generator of Appendix A | The palette is generated rather than chosen so that it can be re-derived and re-verified; the touch density exists because no two-density system can serve both a 30,000-row grid and a finger on glass; every contrast pair is measured because three pairs in the studied reference (§4.1) would have failed AA had their values been adopted directly |
+| Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Reason                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-14 | **v1.1** — Appendix A now states that interpolation is linear and gives the chroma caps for `bg` and `border`, both of which were unstated and left the palette unreproducible; the accent solver's direction column is reworded from "darkest passing" to the boundary it actually means. §4.4 gains `fill-accent`, `fill-success`, `fill-danger`, `fill-warning` and `fill-info` with the hue→role mapping. §9, §10 and §11 move from Base UI to React Aria Components. Six generated values are corrected: `neutral-80`, `-550`, `-810`, `-820`, `-880` and chart series 8 (light). §14 gains a fourth open decision | The generator was implemented in `packages/ui` and reproduced 95 of the 101 published values exactly, the remaining six differing by one unit in one channel. Since this document makes the generator the only permitted source of §4 and forbids editing a value by hand, the generator is authoritative and the table follows it. The unstated interpolation and caps are recorded because a palette that cannot be re-derived is a palette that will drift |
+| 2026-09-13 | **v1.0 approved unchanged**, after a second direction — a ruled account-book language with monospaced figures, structural currency distinction and an indigo-on-cream palette — was built and compared on the product's own screens in both themes. Nothing in this document changed.                                                                                                                                                                                                                                                                                                                                   | The owner reviewed both directions side by side and chose this one. Recorded because "why is it not a ledger?" is a question that will be asked again, and because the alternative solved two real problems this system leaves to convention                                                                                                                                                                                                                  |
+| 2026-09-13 | **v1.0 issued** — token architecture, generated palette with verified contrast, Arabic-derived type scale, three densities including a touch density for the register, elevation, focus, motion, direction rules, retail component inventory, keyboard conventions, display contracts, and the generator of Appendix A                                                                                                                                                                                                                                                                                                  | The palette is generated rather than chosen so that it can be re-derived and re-verified; the touch density exists because no two-density system can serve both a 30,000-row grid and a finger on glass; every contrast pair is measured because three pairs in the studied reference (§4.1) would have failed AA had their values been adopted directly                                                                                                      |

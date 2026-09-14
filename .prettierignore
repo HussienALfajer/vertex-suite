@@ -3,3 +3,7 @@ dist/
 .turbo/
 coverage/
 pnpm-lock.yaml
+
+# Generated artefacts are the output of a generator, not hand-maintained source.
+# Formatting them would put the formatter and the generator in a loop.
+**/*.generated.*

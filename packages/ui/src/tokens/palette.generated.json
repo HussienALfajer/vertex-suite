@@ -1,0 +1,232 @@
+{
+  "neutral": {
+    "0": "#ffffff",
+    "10": "#fcfcfa",
+    "20": "#f9f9f7",
+    "30": "#f6f5f3",
+    "40": "#f3f2ef",
+    "50": "#f0efec",
+    "60": "#edece8",
+    "70": "#eae9e5",
+    "80": "#e7e6e2",
+    "90": "#e4e3de",
+    "100": "#e1e0db",
+    "150": "#d2d0ca",
+    "200": "#c3c1b9",
+    "250": "#b4b2aa",
+    "300": "#a6a49b",
+    "350": "#97958d",
+    "400": "#89877f",
+    "450": "#7b7972",
+    "500": "#6d6b65",
+    "550": "#605e58",
+    "600": "#52514c",
+    "650": "#45443f",
+    "700": "#383733",
+    "750": "#2c2b28",
+    "800": "#21201d",
+    "810": "#1e1e1b",
+    "820": "#1c1c19",
+    "830": "#1a1917",
+    "840": "#181715",
+    "850": "#161513",
+    "860": "#141311",
+    "870": "#12110f",
+    "880": "#100f0d",
+    "890": "#0e0d0b",
+    "900": "#0c0b09"
+  },
+  "accents": {
+    "blue": {
+      "fill": "#1678c9",
+      "fillHover": "#0069b5",
+      "text": {
+        "light": "#1376c7",
+        "dark": "#2784d5"
+      },
+      "bg": {
+        "light": "#d7eaff",
+        "dark": "#092540"
+      },
+      "onBg": {
+        "light": "#0069b7",
+        "dark": "#3690e2"
+      },
+      "border": {
+        "light": "#9ac9fa",
+        "dark": "#1d456b"
+      }
+    },
+    "green": {
+      "fill": "#02873d",
+      "fillHover": "#007734",
+      "text": {
+        "light": "#00853c",
+        "dark": "#1d9347"
+      },
+      "bg": {
+        "light": "#cff3d5",
+        "dark": "#092c13"
+      },
+      "onBg": {
+        "light": "#007936",
+        "dark": "#31a154"
+      },
+      "border": {
+        "light": "#9dd4a7",
+        "dark": "#1d4e2b"
+      }
+    },
+    "red": {
+      "fill": "#ca4941",
+      "fillHover": "#b93933",
+      "text": {
+        "light": "#c84740",
+        "dark": "#d7564c"
+      },
+      "bg": {
+        "light": "#ffe0db",
+        "dark": "#3c1714"
+      },
+      "onBg": {
+        "light": "#b83933",
+        "dark": "#e36156"
+      },
+      "border": {
+        "light": "#f7afa6",
+        "dark": "#66302a"
+      }
+    },
+    "amber": {
+      "fill": "#9f6a00",
+      "fillHover": "#8c5d00",
+      "text": {
+        "light": "#9c6900",
+        "dark": "#ad7500"
+      },
+      "bg": {
+        "light": "#fee3c0",
+        "dark": "#331f00"
+      },
+      "onBg": {
+        "light": "#8c5d00",
+        "dark": "#bc7f00"
+      },
+      "border": {
+        "light": "#e5bd86",
+        "dark": "#5b3b00"
+      }
+    },
+    "teal": {
+      "fill": "#008283",
+      "fillHover": "#007273",
+      "text": {
+        "light": "#008081",
+        "dark": "#008f8f"
+      },
+      "bg": {
+        "light": "#bef4f3",
+        "dark": "#002b2b"
+      },
+      "onBg": {
+        "light": "#007475",
+        "dark": "#009e9e"
+      },
+      "border": {
+        "light": "#7ed6d5",
+        "dark": "#004d4d"
+      }
+    }
+  },
+  "chart": [
+    {
+      "name": "blue",
+      "light": "#257ecc",
+      "dark": "#60b0ff"
+    },
+    {
+      "name": "amber",
+      "light": "#a46e00",
+      "dark": "#df9c27"
+    },
+    {
+      "name": "teal",
+      "light": "#008c8c",
+      "dark": "#00c3c3"
+    },
+    {
+      "name": "red",
+      "light": "#c15249",
+      "dark": "#f98478"
+    },
+    {
+      "name": "green",
+      "light": "#239149",
+      "dark": "#5ec478"
+    },
+    {
+      "name": "violet",
+      "light": "#8863c2",
+      "dark": "#b994f8"
+    },
+    {
+      "name": "magenta",
+      "light": "#b4528e",
+      "dark": "#ea83c0"
+    },
+    {
+      "name": "olive",
+      "light": "#7f8000",
+      "dark": "#b1b231"
+    }
+  ],
+  "roles": {
+    "accents": {
+      "accent": "blue",
+      "success": "green",
+      "danger": "red",
+      "warning": "amber",
+      "info": "teal"
+    },
+    "neutrals": {
+      "surface0": {
+        "light": 20,
+        "dark": 900
+      },
+      "surface1": {
+        "light": 10,
+        "dark": 850
+      },
+      "surface2": {
+        "light": 0,
+        "dark": 830
+      },
+      "surface3": {
+        "light": 0,
+        "dark": 810
+      },
+      "textPrimary": {
+        "light": 900,
+        "dark": 50
+      },
+      "textSecondary": {
+        "light": 600,
+        "dark": 200
+      },
+      "textMuted": {
+        "light": 500,
+        "dark": 400
+      }
+    }
+  },
+  "series": [
+    "blue",
+    "amber",
+    "teal",
+    "red",
+    "green",
+    "violet",
+    "magenta",
+    "olive"
+  ]
+}

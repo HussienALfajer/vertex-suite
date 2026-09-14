@@ -1,0 +1,176 @@
+/*
+ * GENERATED FILE — DO NOT EDIT.
+ *
+ * Produced by `pnpm --filter @vertex/ui tokens` from the generator in
+ * src/tokens. A colour is never changed here; an input in spec.ts is changed
+ * and this file is regenerated, at which point the contrast suite either
+ * accepts the result or refuses it.
+ *
+ * Layer 1 of 4 (§3.1): primitives. No component may reference these names.
+ */
+
+:root {
+  --vx-neutral-0: #ffffff;
+  --vx-neutral-10: #fcfcfa;
+  --vx-neutral-20: #f9f9f7;
+  --vx-neutral-30: #f6f5f3;
+  --vx-neutral-40: #f3f2ef;
+  --vx-neutral-50: #f0efec;
+  --vx-neutral-60: #edece8;
+  --vx-neutral-70: #eae9e5;
+  --vx-neutral-80: #e7e6e2;
+  --vx-neutral-90: #e4e3de;
+  --vx-neutral-100: #e1e0db;
+  --vx-neutral-150: #d2d0ca;
+  --vx-neutral-200: #c3c1b9;
+  --vx-neutral-250: #b4b2aa;
+  --vx-neutral-300: #a6a49b;
+  --vx-neutral-350: #97958d;
+  --vx-neutral-400: #89877f;
+  --vx-neutral-450: #7b7972;
+  --vx-neutral-500: #6d6b65;
+  --vx-neutral-550: #605e58;
+  --vx-neutral-600: #52514c;
+  --vx-neutral-650: #45443f;
+  --vx-neutral-700: #383733;
+  --vx-neutral-750: #2c2b28;
+  --vx-neutral-800: #21201d;
+  --vx-neutral-810: #1e1e1b;
+  --vx-neutral-820: #1c1c19;
+  --vx-neutral-830: #1a1917;
+  --vx-neutral-840: #181715;
+  --vx-neutral-850: #161513;
+  --vx-neutral-860: #141311;
+  --vx-neutral-870: #12110f;
+  --vx-neutral-880: #100f0d;
+  --vx-neutral-890: #0e0d0b;
+  --vx-neutral-900: #0c0b09;
+
+  --vx-blue-fill: #1678c9;
+  --vx-blue-fill-hover: #0069b5;
+  --vx-blue-text: #1376c7;
+  --vx-blue-bg: #d7eaff;
+  --vx-blue-on-bg: #0069b7;
+  --vx-blue-border: #9ac9fa;
+  --vx-green-fill: #02873d;
+  --vx-green-fill-hover: #007734;
+  --vx-green-text: #00853c;
+  --vx-green-bg: #cff3d5;
+  --vx-green-on-bg: #007936;
+  --vx-green-border: #9dd4a7;
+  --vx-red-fill: #ca4941;
+  --vx-red-fill-hover: #b93933;
+  --vx-red-text: #c84740;
+  --vx-red-bg: #ffe0db;
+  --vx-red-on-bg: #b83933;
+  --vx-red-border: #f7afa6;
+  --vx-amber-fill: #9f6a00;
+  --vx-amber-fill-hover: #8c5d00;
+  --vx-amber-text: #9c6900;
+  --vx-amber-bg: #fee3c0;
+  --vx-amber-on-bg: #8c5d00;
+  --vx-amber-border: #e5bd86;
+  --vx-teal-fill: #008283;
+  --vx-teal-fill-hover: #007273;
+  --vx-teal-text: #008081;
+  --vx-teal-bg: #bef4f3;
+  --vx-teal-on-bg: #007475;
+  --vx-teal-border: #7ed6d5;
+
+  --vx-chart-1: #257ecc;
+  --vx-chart-2: #a46e00;
+  --vx-chart-3: #008c8c;
+  --vx-chart-4: #c15249;
+  --vx-chart-5: #239149;
+  --vx-chart-6: #8863c2;
+  --vx-chart-7: #b4528e;
+  --vx-chart-8: #7f8000;
+}
+
+/* No explicit choice: follow the system. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+  --vx-blue-fill: #1678c9;
+  --vx-blue-fill-hover: #0069b5;
+  --vx-blue-text: #2784d5;
+  --vx-blue-bg: #092540;
+  --vx-blue-on-bg: #3690e2;
+  --vx-blue-border: #1d456b;
+  --vx-green-fill: #02873d;
+  --vx-green-fill-hover: #007734;
+  --vx-green-text: #1d9347;
+  --vx-green-bg: #092c13;
+  --vx-green-on-bg: #31a154;
+  --vx-green-border: #1d4e2b;
+  --vx-red-fill: #ca4941;
+  --vx-red-fill-hover: #b93933;
+  --vx-red-text: #d7564c;
+  --vx-red-bg: #3c1714;
+  --vx-red-on-bg: #e36156;
+  --vx-red-border: #66302a;
+  --vx-amber-fill: #9f6a00;
+  --vx-amber-fill-hover: #8c5d00;
+  --vx-amber-text: #ad7500;
+  --vx-amber-bg: #331f00;
+  --vx-amber-on-bg: #bc7f00;
+  --vx-amber-border: #5b3b00;
+  --vx-teal-fill: #008283;
+  --vx-teal-fill-hover: #007273;
+  --vx-teal-text: #008f8f;
+  --vx-teal-bg: #002b2b;
+  --vx-teal-on-bg: #009e9e;
+  --vx-teal-border: #004d4d;
+
+  --vx-chart-1: #60b0ff;
+  --vx-chart-2: #df9c27;
+  --vx-chart-3: #00c3c3;
+  --vx-chart-4: #f98478;
+  --vx-chart-5: #5ec478;
+  --vx-chart-6: #b994f8;
+  --vx-chart-7: #ea83c0;
+  --vx-chart-8: #b1b231;
+  }
+}
+
+/* An explicit choice always wins, in both directions. */
+:root[data-theme='dark'] {
+  --vx-blue-fill: #1678c9;
+  --vx-blue-fill-hover: #0069b5;
+  --vx-blue-text: #2784d5;
+  --vx-blue-bg: #092540;
+  --vx-blue-on-bg: #3690e2;
+  --vx-blue-border: #1d456b;
+  --vx-green-fill: #02873d;
+  --vx-green-fill-hover: #007734;
+  --vx-green-text: #1d9347;
+  --vx-green-bg: #092c13;
+  --vx-green-on-bg: #31a154;
+  --vx-green-border: #1d4e2b;
+  --vx-red-fill: #ca4941;
+  --vx-red-fill-hover: #b93933;
+  --vx-red-text: #d7564c;
+  --vx-red-bg: #3c1714;
+  --vx-red-on-bg: #e36156;
+  --vx-red-border: #66302a;
+  --vx-amber-fill: #9f6a00;
+  --vx-amber-fill-hover: #8c5d00;
+  --vx-amber-text: #ad7500;
+  --vx-amber-bg: #331f00;
+  --vx-amber-on-bg: #bc7f00;
+  --vx-amber-border: #5b3b00;
+  --vx-teal-fill: #008283;
+  --vx-teal-fill-hover: #007273;
+  --vx-teal-text: #008f8f;
+  --vx-teal-bg: #002b2b;
+  --vx-teal-on-bg: #009e9e;
+  --vx-teal-border: #004d4d;
+
+  --vx-chart-1: #60b0ff;
+  --vx-chart-2: #df9c27;
+  --vx-chart-3: #00c3c3;
+  --vx-chart-4: #f98478;
+  --vx-chart-5: #5ec478;
+  --vx-chart-6: #b994f8;
+  --vx-chart-7: #ea83c0;
+  --vx-chart-8: #b1b231;
+}

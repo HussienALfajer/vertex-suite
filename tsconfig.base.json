@@ -27,6 +27,11 @@
     "removeComments": false,
 
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+
+    // Ambient types are opted into, never inherited. Without this an unrelated
+    // @types/* package anywhere in the tree silently widens the global scope,
+    // and code compiles against APIs the runtime it ships to does not have.
+    "types": []
   }
 }
