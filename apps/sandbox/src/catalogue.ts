@@ -62,6 +62,49 @@ export const catalogue = {
   'figure.count': 'العدد',
   'figure.rate': 'سعر الصرف',
   'figure.openedAt': 'فُتحت في',
+
+  'panel.grid': 'الشبكة',
+  'panel.overlays': 'الطبقات',
+  'panel.notices': 'الإشعارات',
+
+  'column.name': 'الصنف',
+  'column.stock': 'الرصيد',
+  'column.price': 'السعر',
+  'column.actions': 'إجراءات',
+  'grid.empty': 'لا أصناف بعد',
+
+  'action.close': 'إغلاق',
+  'action.dismiss': 'إخفاء',
+  'action.edit': 'تعديل',
+  'action.openDialog': 'افتح نافذة',
+  'action.confirmDelete': 'احذف الصنف',
+  'action.notify': 'أظهر إشعارًا',
+
+  'dialog.title': 'تعديل الصنف',
+  'dialog.body':
+    'كل ما يظهر هنا مبني على نفس الرموز. التركيز محبوس داخل النافذة ويعود إلى الزر عند الإغلاق.',
+  'confirm.title': 'حذف الصنف؟',
+  'confirm.message': 'لا يمكن التراجع عن هذا. سيبقى سجلّ الحركات كما هو.',
+  'toast.saved': 'حُفظ الصنف',
+
+  'banner.info': 'هذه معاينة، وليست شاشة من شاشات المنتج.',
+  'banner.warning': 'ثلاثة أصناف تحت الحد الأدنى.',
+  'banner.danger': 'فشلت مزامنة وردية واحدة.',
+
+  'nav.label': 'التنقّل',
+  'nav.items': 'الأصناف',
+  'nav.stock': 'المخزون',
+  'nav.reports': 'التقارير',
+  'crumbs.label': 'المسار',
+  'crumbs.home': 'الرئيسية',
+
+  'sample.sugar': 'سكر ١ كغ',
+  'sample.rice': 'أرز ٥ كغ',
+  'sample.oil': 'زيت ١ ل',
+
+  'select.unit': 'وحدة القياس',
+  'toggle.active': 'صنف فعّال',
+  'toggle.track': 'تتبّع الصلاحية',
 } as const;
 
 export const terms = {

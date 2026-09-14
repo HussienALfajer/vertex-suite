@@ -12,6 +12,22 @@ export interface DensityScopeProps {
 const rank = (density: DensityValue): number => DENSITIES.indexOf(density);
 
 /**
+ * Whether this is a development build.
+ *
+ * `process` does not exist in a browser, and a bundler only replaces the dotted
+ * `process.env.NODE_ENV` — a bracketed lookup survives to run time and throws a
+ * `ReferenceError`. This library runs in a browser, in Electron's main process
+ * and under a test runner, so the global is probed rather than assumed.
+ *
+ * This was a real crash: on a touch surface — the register — a nested compact
+ * table took this branch and brought the whole tree down.
+ */
+function isDevelopment(): boolean {
+  const scope = globalThis as { process?: { env?: Record<string, string | undefined> } };
+  return scope.process?.env?.['NODE_ENV'] !== 'production';
+}
+
+/**
  * Raises the density of a subtree — a dense table inside a comfortable form.
  *
  * Named `DensityScope` rather than `Density` because `Density` is the value it
@@ -28,7 +44,7 @@ export function DensityScope({ value, children, className }: DensityScopeProps):
   const lowersBelowTouch = ambient === 'touch' && value !== 'touch';
   const effective = lowersBelowTouch ? ambient : value;
 
-  if (lowersBelowTouch && process.env['NODE_ENV'] !== 'production') {
+  if (lowersBelowTouch && isDevelopment()) {
     globalThis.console.warn(
       `[@vertex/ui] Density "${value}" was requested inside a touch surface and ignored. ` +
         'On a touch surface nothing interactive may fall below 48px (§6.1, §6.3).',

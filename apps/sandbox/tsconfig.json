@@ -3,9 +3,16 @@
   "compilerOptions": {
     "noEmit": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
     "jsx": "react-jsx",
     "module": "Preserve",
     "moduleResolution": "bundler"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "e2e/**/*.ts",
+    "vite.config.ts",
+    "playwright.config.ts"
+  ]
 }

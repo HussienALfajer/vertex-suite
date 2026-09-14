@@ -37,3 +37,42 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm verify
+
+  journeys:
+    name: journeys (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The library is consumed from source by the sandbox, but the workspace
+      # still builds first so a type error surfaces here rather than as a
+      # confusing browser failure.
+      - run: pnpm build
+
+      - name: Install the browser the journeys run in
+        run: pnpm --filter @vertex/sandbox exec playwright install --with-deps chromium
+
+      # §13: keyboard-only, light and dark. A focus ring that is invisible in
+      # one theme is a focus ring that does not exist for half the day.
+      - run: pnpm e2e
+
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: apps/sandbox/test-results/
+          retention-days: 7

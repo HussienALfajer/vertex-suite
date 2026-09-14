@@ -23,6 +23,10 @@ desktop.ini
 npm-debug.log*
 pnpm-debug.log*
 
+# Playwright output: traces and screenshots from a failed journey.
+test-results/
+playwright-report/
+
 # Release artefacts and signing material never enter the repository.
 release/
 *.p12
