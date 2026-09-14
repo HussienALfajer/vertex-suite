@@ -33,6 +33,26 @@ export {
 } from './money.js';
 
 export {
+  addQuantity,
+  atStoredPrecision,
+  compareQuantity,
+  defineUnit,
+  InvalidUnitError,
+  isZeroQuantity,
+  negateQuantity,
+  quantity,
+  quantityEquals,
+  quantityToDecimalString,
+  subtractQuantity,
+  UnitMismatchError,
+  zeroQuantity,
+  type Quantity,
+  type Unit,
+  type UnitCode,
+  type UnitKind,
+} from './quantity.js';
+
+export {
   AllocationError,
   CurrencyMismatchError,
   InvalidAmountError,

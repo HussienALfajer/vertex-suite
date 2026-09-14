@@ -58,6 +58,39 @@ ${imports.join('\n').trimEnd()}
 }
 
 /**
+ * The Tailwind alias for a semantic colour token.
+ *
+ * Tailwind builds a colour utility by prefixing the colour's name — `text-`,
+ * `bg-`, `border-`. A token already called `text-primary` would therefore have
+ * to be written `text-text-primary`, and a token called `border` would be
+ * `border-line`. Worse, `text-primary` as written matches nothing at all,
+ * which fails **silently**: the class is simply absent from the stylesheet and
+ * the element inherits whatever its parent had. That is exactly how a negative
+ * amount shipped in the ordinary text colour instead of the danger colour.
+ *
+ * So the `--vx-` names stay as §4.4 publishes them, and Tailwind gets an alias
+ * that reads naturally under its own prefixes:
+ *
+ * | token            | utility              |
+ * |------------------|----------------------|
+ * | `text-primary`   | `text-fg`            |
+ * | `text-danger`    | `text-fg-danger`     |
+ * | `border`         | `border-line`        |
+ * | `border-strong`  | `border-line-strong` |
+ * | `bg-success`     | `bg-tint-success`    |
+ * | `on-bg-success`  | `text-on-tint-success` |
+ */
+export function tailwindColourAlias(token: string): string {
+  if (token === 'border') return 'line';
+  if (token.startsWith('border-')) return `line-${token.slice('border-'.length)}`;
+  if (token === 'text-primary') return 'fg';
+  if (token.startsWith('text-')) return `fg-${token.slice('text-'.length)}`;
+  if (token.startsWith('on-bg-')) return `on-tint-${token.slice('on-bg-'.length)}`;
+  if (token.startsWith('bg-')) return `tint-${token.slice('bg-'.length)}`;
+  return token;
+}
+
+/**
  * Tailwind's view of the semantic layer.
  *
  * Every entry is `var(--vx-…)` rather than a value, so a screen writing
@@ -67,21 +100,21 @@ ${imports.join('\n').trimEnd()}
  */
 export function emitTailwind(): string {
   const colours: string[] = [];
-  const push = (name: string): void => {
-    colours.push(`  --color-${name}: var(--vx-${name});`);
+  const push = (alias: string, token: string): void => {
+    colours.push(`  --color-${alias}: var(--vx-${token});`);
   };
 
-  for (const name of Object.keys(SURFACES)) push(name);
-  for (const name of Object.keys(TEXT)) push(name);
-  for (const name of Object.keys(BORDERS)) push(name);
-  for (const name of Object.keys(NEUTRAL_FILLS)) push(name);
+  for (const name of Object.keys(SURFACES)) push(name, name);
+  for (const name of Object.keys(TEXT)) push(tailwindColourAlias(name), name);
+  for (const name of Object.keys(BORDERS)) push(tailwindColourAlias(name), name);
+  for (const name of Object.keys(NEUTRAL_FILLS)) push(name, name);
   for (const { tokens } of ACCENT_TOKENS) {
-    for (const name of Object.keys(tokens)) push(name);
+    for (const name of Object.keys(tokens)) push(tailwindColourAlias(name), name);
   }
-  push('fill-brand');
-  push('on-brand');
+  push('fill-brand', 'fill-brand');
+  push('on-brand', 'on-brand');
   CHART_SERIES.forEach((_, index) => {
-    push(`chart-${String(index + 1)}`);
+    push(`chart-${String(index + 1)}`, `chart-${String(index + 1)}`);
   });
 
   const type = Object.keys(TYPE_SCALE).flatMap((role) => [

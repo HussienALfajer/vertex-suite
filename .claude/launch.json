@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sandbox",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@vertex/sandbox", "dev"],
+      "port": 5180
+    }
+  ]
+}

@@ -36,7 +36,7 @@ export default tseslint.config(
   js.configs.recommended,
 
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     extends: [tseslint.configs.strictTypeChecked, tseslint.configs.stylisticTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -55,7 +55,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/src/**/*.ts'],
+    files: ['**/src/**/*.ts', '**/src/**/*.tsx'],
     rules: {
       'no-restricted-globals': [
         'error',
@@ -78,7 +78,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.test.ts'],
+    files: ['**/*.test.ts', '**/*.test.tsx'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
