@@ -38,8 +38,13 @@ pnpm install
 pnpm verify
 ```
 
-`pnpm verify` runs formatting, linting, type-checking, tests and the build — the same command CI
-runs on Windows and Linux. Nothing merges that does not pass it.
+`pnpm verify` runs the build, then formatting, linting, type-checking and tests — the same command
+CI runs on Windows and Linux. Nothing merges that does not pass it.
+
+The build comes **first** on purpose. A package consumes its neighbours through their built
+`dist/`, so linting or type-checking before the build makes every cross-package import an
+unresolved type — which passes on a machine that happens to have built earlier and fails on a
+clean checkout.
 
 | Command          |                                          |
 | ---------------- | ---------------------------------------- |
