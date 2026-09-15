@@ -118,6 +118,7 @@ export {
   type DialogProps,
 } from './components/Dialog.js';
 export {
+  actionsColumnWidth,
   DataTable,
   TableRowAction,
   TableRowActions,
@@ -135,6 +136,7 @@ export {
   type ToastTone,
 } from './components/Toast.js';
 export { ThemeSwitch, nextTheme, type ThemeSwitchProps } from './components/ThemeSwitch.js';
+export { WithTooltip, type WithTooltipProps } from './components/Tooltip.js';
 export {
   BreadcrumbTrail,
   SideNav,

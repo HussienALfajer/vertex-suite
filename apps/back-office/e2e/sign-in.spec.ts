@@ -36,7 +36,10 @@ test('shows the refusal, and keeps the keyboard where it can be corrected', asyn
 
   // The form is still there and still usable: a refusal is an ordinary answer,
   // not a dead end somebody has to reload out of.
-  await expect(page.getByLabel('كلمة المرور')).toBeVisible();
+  // `exact`, because the field is no longer the only control named after it:
+  // the reveal control inside it is named for what it does to the password,
+  // and a substring match now finds both.
+  await expect(page.getByLabel('كلمة المرور', { exact: true })).toBeVisible();
 });
 
 test('every control on the screen is reachable by Tab, and shows focus when it is', async ({

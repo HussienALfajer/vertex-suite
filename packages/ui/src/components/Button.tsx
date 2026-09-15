@@ -10,6 +10,7 @@ import {
   tones,
   type Tone,
 } from './styles.js';
+import { WithTooltip } from './Tooltip.js';
 
 export interface ButtonProps extends Omit<AriaButtonProps, 'className' | 'children'> {
   readonly tone?: Tone;
@@ -60,6 +61,11 @@ export interface IconButtonProps extends Omit<AriaButtonProps, 'className' | 'ch
  *
  * It is square at the control height, which means it clears the 48px floor on a
  * touch surface for free (§6.3) rather than needing a special case there.
+ *
+ * It names itself on hover and on focus, from the `aria-label` every instance
+ * already has to carry for a screen reader — one label serving both audiences
+ * rather than a tooltip string each call site would otherwise have to repeat
+ * and could let drift from the accessible name.
  */
 export function IconButton({
   tone = 'ghost',
@@ -68,17 +74,24 @@ export function IconButton({
   ...props
 }: IconButtonProps): ReactNode {
   return (
-    <AriaButton
-      {...props}
-      className={clsx(
-        controlBase,
-        'w-[var(--vx-h-control)] p-0 [&_svg]:size-[var(--vx-icon)]',
-        tones[tone],
-        tone === 'danger' ? focusRingDanger : focusRing,
-        className,
-      )}
-    >
-      {children}
-    </AriaButton>
+    <WithTooltip content={props['aria-label']}>
+      <AriaButton
+        {...props}
+        className={clsx(
+          controlBase,
+          // `shrink-0` because this control is square by definition. In a flex
+          // row that is narrower than its contents — a table's actions column,
+          // sized to fit — the default `shrink` quietly turns the square into a
+          // rectangle, and the hover fill with it, so the same button is a
+          // different shape depending on what is beside it.
+          'w-[var(--vx-h-control)] shrink-0 p-0 [&_svg]:size-[var(--vx-icon)]',
+          tones[tone],
+          tone === 'danger' ? focusRingDanger : focusRing,
+          className,
+        )}
+      >
+        {children}
+      </AriaButton>
+    </WithTooltip>
   );
 }

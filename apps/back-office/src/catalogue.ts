@@ -108,6 +108,10 @@ export const catalogue = {
   'action.rename': 'تغيير الاسم',
   'action.retry': 'إعادة المحاولة',
 
+  /** Named by `TextInput` itself for any field of type `password`. */
+  'password.show': 'إظهار كلمة المرور',
+  'password.hide': 'إخفاء كلمة المرور',
+
   'status.inUse': 'قيد الاستخدام',
   'status.withdrawn': 'مسحوب من الخدمة',
 
@@ -152,6 +156,9 @@ export const catalogue = {
   'companies.withdraw.message':
     'ستبقى «{name}» على كل مستند صدر بها ولن تختفي من أي تقرير، لكنها لن تُتاح لإصدار جديد. يمكنك إعادتها متى شئت.',
   'companies.restore': 'إعادة إلى الخدمة',
+  'companies.restore.title': 'إعادة الشركة إلى الخدمة',
+  'companies.restore.message':
+    'ستعود «{name}» متاحة لإصدار مستندات جديدة باسمها، وستظهر من جديد في كل قائمة اختيار.',
   'companies.registered': 'سُجّلت «{name}».',
   'companies.renamed': 'صارت تُعرف باسم «{name}».',
   'companies.withdrawn': 'سُحبت «{name}» من الخدمة.',
@@ -185,6 +192,9 @@ export const catalogue = {
   'branches.withdraw.message':
     'ستبقى حركة «{name}» كاملة وقابلة للتقارير، ولن يُصدر منه جديد. يمكنك إعادته متى شئت.',
   'branches.restore': 'إعادة إلى الخدمة',
+  'branches.restore.title': 'إعادة الفرع إلى الخدمة',
+  'branches.restore.message':
+    'سيعود «{name}» متاحًا للبيع وحركة المخزون، وستُستأنف سلاسل ترقيمه من حيث توقّفت.',
   'branches.opened': 'فُتح «{name}».',
   'branches.renamed': 'صار يُعرف باسم «{name}».',
   'branches.withdrawn': 'سُحب «{name}» من الخدمة.',
@@ -221,6 +231,8 @@ export const catalogue = {
   'locations.withdraw.message':
     'ستبقى حركة «{name}» كاملة وقابلة للتقارير، ولن يُسجَّل فيه جديد. يمكنك إعادته متى شئت.',
   'locations.restore': 'إعادة إلى الخدمة',
+  'locations.restore.title': 'إعادة الموقع إلى الخدمة',
+  'locations.restore.message': 'سيعود «{name}» متاحًا لاستقبال البضاعة وتسجيل حركات المخزون فيه.',
   'locations.opened': 'فُتح «{name}».',
   'locations.renamed': 'صار يُعرف باسم «{name}».',
   'locations.withdrawn': 'سُحب «{name}» من الخدمة.',

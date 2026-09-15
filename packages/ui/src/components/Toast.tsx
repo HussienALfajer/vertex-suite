@@ -104,8 +104,12 @@ export function ToastRegion({ children, className }: ToastRegionProps): ReactNod
         aria-live="polite"
         aria-relevant="additions"
         className={clsx(
-          'pointer-events-none fixed bottom-0 z-50 flex flex-col items-start',
-          'inset-inline-start-0 gap-[var(--vx-gap-sm)] p-[var(--vx-pad-lg)]',
+          // Top and centred: the one place on the screen nothing else is ever
+          // laid out against, in either direction — a corner competes with
+          // whatever a right-to-left or left-to-right document already keeps
+          // there (a nav, a brand mark, this app's own theme switch).
+          'pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center',
+          'gap-[var(--vx-gap-sm)] p-[var(--vx-pad-lg)]',
           className,
         )}
       >
@@ -146,8 +150,13 @@ function ToastItem({
   return (
     <div
       className={clsx(
-        'rounded-card pointer-events-auto flex max-w-[28rem] items-start border shadow-lg',
-        'gap-[var(--vx-gap-sm)] px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]',
+        'rounded-card pointer-events-auto flex items-start border shadow-lg',
+        // A floor as well as a ceiling. Sized to its text alone, a
+        // confirmation naming a one-character branch is a 7rem chip that reads
+        // as a stray badge; the floor keeps every message the same deliberate
+        // object regardless of how short the name inside it happens to be.
+        'min-w-[22rem] max-w-[38rem]',
+        'gap-[var(--vx-gap-md)] px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]',
         toneClasses[toast.tone],
       )}
       // A message that vanishes while it is being read is a message that was

@@ -17,7 +17,7 @@ import {
 
 import { DensityScope } from '../providers/DensityScope.js';
 import { useDensity } from '../providers/context.js';
-import { SIZE_TOKENS } from '../tokens/scale.js';
+import { SIZE_TOKENS, type Density } from '../tokens/scale.js';
 import { IconButton } from './Button.js';
 import { EmptyState } from './EmptyState.js';
 import { focusRing } from './styles.js';
@@ -91,7 +91,14 @@ export function DataTable<T extends { id: Key }>({
             {...(column.isRowHeader === true ? { isRowHeader: true } : {})}
             {...(column.width === undefined ? {} : { width: column.width })}
             className={clsx(
-              'bg-surface-2 border-line sticky top-0 z-10 border-b',
+              // `surface-1`, not the `surface-2` the panel is already on: a
+              // header that shares its container's fill is a row of grey words
+              // with a rule under it, and the rule ends up doing the whole job
+              // of separating the labels from the data. One surface step does
+              // it without a heavier border, and the step runs the right way in
+              // both themes — §3.2 has `surface-1` recede on a dark ground and
+              // sit just under white on a light one.
+              'bg-surface-1 border-line sticky top-0 z-10 border-b',
               'px-[var(--vx-pad-md)] py-[var(--vx-pad-sm)]',
               'text-footnote font-body-medium text-fg-secondary',
               column.align === 'end' ? 'text-end' : 'text-start',
@@ -150,6 +157,27 @@ export function DataTable<T extends { id: Key }>({
   );
 }
 
+/**
+ * The width an actions column needs in order to hold `count` row actions.
+ *
+ * Every number in it belongs to the design system rather than to a screen:
+ * `TableRowActions` renders its controls at `comfortable` — a square of
+ * `h-control` — spaces them by `gap-md`, and sits in a cell carrying `pad-md`
+ * at the table's own `compact`. A screen that wrote the total itself would be
+ * holding a copy of three tokens, and would silently start clipping the last
+ * action the day any of them moved.
+ *
+ * React Aria will not size a column below 75px, so the `1%` that used to stand
+ * for "shrink to fit" under an automatic table layout is, under the fixed one
+ * it actually uses, a column too narrow to hold what is in it.
+ */
+export function actionsColumnWidth(count: number, density: Density = 'comfortable'): number {
+  const control = SIZE_TOKENS['h-control']?.[density] ?? 32;
+  const gap = SIZE_TOKENS['gap-md']?.[density] ?? 16;
+  const padding = SIZE_TOKENS['pad-md']?.compact ?? 8;
+  return count * control + Math.max(count - 1, 0) * gap + padding * 2;
+}
+
 export interface TableRowActionsProps {
   readonly children: ReactNode;
   readonly className?: string;
@@ -164,9 +192,21 @@ export interface TableRowActionsProps {
  */
 export function TableRowActions({ children, className }: TableRowActionsProps): ReactNode {
   return (
-    <div className={clsx('flex items-center justify-end gap-[var(--vx-gap-xs)]', className)}>
+    // **The one part of a row that is not data, and the only part that is not
+    // `compact`.** The table raises density for rows-per-screen, which is a
+    // reading decision — but these are controls, and at `compact` they came out
+    // 24px square with the hover fill drawn tight around a 16px glyph, so a row
+    // action looked like a different kind of control from every other icon
+    // button in the product. `comfortable` here makes it exactly the same
+    // control as the one in the frame beside it: same box, same fill, same
+    // corner. `DensityScope` still refuses to lower below `touch` on a
+    // register, so this cannot undercut §6.3's floor.
+    <DensityScope
+      value="comfortable"
+      className={clsx('flex items-center justify-end gap-[var(--vx-gap-md)]', className)}
+    >
       {children}
-    </div>
+    </DensityScope>
   );
 }
 

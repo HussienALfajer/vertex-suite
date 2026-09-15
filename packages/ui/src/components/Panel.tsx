@@ -27,7 +27,16 @@ export function Panel({
 }: PanelProps): ReactNode {
   return (
     <section
-      className={clsx('bg-surface-2 rounded-card border border-line', 'flex flex-col', className)}
+      className={clsx(
+        'bg-surface-2 rounded-card border border-line',
+        // A rounded container has to clip what it holds, or the corners are a
+        // lie: a flush `DataTable`'s square header background and the browser's
+        // own scrollbar track both sit right up against the edge, and without
+        // this they paint straight past the curve instead of following it.
+        'overflow-hidden',
+        'flex flex-col',
+        className,
+      )}
     >
       {title === undefined && actions === undefined ? null : (
         <header

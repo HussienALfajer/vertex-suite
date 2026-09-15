@@ -144,6 +144,9 @@ test('a withdrawn branch is still there to be put back', async ({ page }) => {
   await page.getByText('إظهار المسحوب من الخدمة').click();
   await expect(page.getByRole('switch', { name: 'إظهار المسحوب من الخدمة' })).toBeChecked();
   await expect(page.getByRole('rowheader', { name: 'حلب' })).toBeVisible();
-  await page.getByRole('button', { name: 'إعادة إلى الخدمة' }).click();
+  // Putting it back is confirmed the same way taking it out was: the two rows
+  // differ by one icon, and reopening a branch resumes its numbering series.
+  await page.getByRole('button', { name: 'إعادة الفرع إلى الخدمة' }).click();
+  await page.getByRole('button', { name: 'إعادة إلى الخدمة', exact: true }).click();
   await expect(page.getByText('قيد الاستخدام')).toBeVisible();
 });

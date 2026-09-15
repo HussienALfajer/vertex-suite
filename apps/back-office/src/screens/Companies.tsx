@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 
 import {
+  actionsColumnWidth,
   Button,
   ConfirmationDialog,
   DataTable,
@@ -60,6 +61,11 @@ export function Companies(): ReactNode {
   const [isRegistering, setIsRegistering] = useState(false);
   const [renaming, setRenaming] = useState<Company | null>(null);
   const [withdrawing, setWithdrawing] = useState<Company | null>(null);
+  // Restoring is asked about for the same reason withdrawing is, and not
+  // because it is dangerous: it puts a company back in front of everybody who
+  // issues a document, and the row that offers it sits one icon away from the
+  // row above. A confirmation is what makes the two rows different.
+  const [restoring, setRestoring] = useState<Company | null>(null);
 
   const branchesPerCompany = useMemo(() => {
     const counted = new Map<string, number>();
@@ -120,7 +126,9 @@ export function Companies(): ReactNode {
       id: 'actions',
       header: translator.format('companies.column.actions'),
       align: 'end',
-      width: '1%',
+      // Four: the profile, the branches, the rename, and whichever of withdraw
+      // and restore this row is in a state to offer.
+      width: actionsColumnWidth(4),
       render: (company) => (
         <TableRowActions>
           <TableRowAction
@@ -158,9 +166,9 @@ export function Companies(): ReactNode {
             </TableRowAction>
           ) : (
             <TableRowAction
-              aria-label={translator.format('companies.restore')}
+              aria-label={translator.format('companies.restore.title')}
               onPress={() => {
-                void restore(company);
+                setRestoring(company);
               }}
             >
               <RestoreIcon />
@@ -282,6 +290,21 @@ export function Companies(): ReactNode {
         }}
         onConfirm={() => {
           if (withdrawing !== null) void withdraw(withdrawing);
+        }}
+      />
+
+      {/* `primary`, not `danger`: §4.4 keeps the danger tone for what cannot be
+          taken back, and putting a company back is undone by the row above. */}
+      <ConfirmationDialog
+        title={translator.format('companies.restore.title')}
+        message={translator.format('companies.restore.message', { name: restoring?.name ?? '' })}
+        confirmLabel={translator.format('companies.restore')}
+        isOpen={restoring !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setRestoring(null);
+        }}
+        onConfirm={() => {
+          if (restoring !== null) void restore(restoring);
         }}
       />
     </>

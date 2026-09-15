@@ -165,6 +165,13 @@ describe('Branches — SYS-09', () => {
     await shop.person.click(
       screen.getByRole('switch', { name: catalogue['listing.includeWithdrawn'] }),
     );
+    // Putting a branch back is confirmed, like taking it out of service: it
+    // reopens the branch to selling and resumes its numbering series, and the
+    // control that does it sits one icon from the control that undoes it.
+    await shop.person.click(
+      screen.getByRole('button', { name: catalogue['branches.restore.title'] }),
+    );
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
     await shop.person.click(screen.getByRole('button', { name: catalogue['branches.restore'] }));
 
     expect(await screen.findByText(catalogue['status.inUse'])).toBeTruthy();

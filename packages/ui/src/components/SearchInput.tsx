@@ -86,11 +86,18 @@ export function SearchInput({
           className={clsx(
             'text-body text-fg min-w-0 flex-1 bg-transparent',
             'placeholder:text-fg-muted',
-            // The ring is on the group, which is what a person sees as the
-            // control; drawing a second one around the bare input inside it
-            // would put two rings on one thing.
+            // policy-exempt: §7.3 — the ring is on the group below, which is
+            // what a person sees as the control; drawing a second one around
+            // the bare input inside it would put two rings on one thing.
             'outline-none',
             'disabled:text-fg-disabled disabled:cursor-not-allowed',
+            // `SearchField` renders a native `type="search"` input, and WebKit
+            // and Blink draw their own built-in clear button on it — a second
+            // one, unstyled and undocumented, sitting beside the button below
+            // that this component actually controls. Turned off here rather
+            // than left to coincide with it.
+            '[&::-webkit-search-cancel-button]:hidden',
+            '[&::-webkit-search-decoration]:hidden',
           )}
         />
         {/* React Aria hides this whenever the field is empty, so it never

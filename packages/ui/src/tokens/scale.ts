@@ -64,10 +64,25 @@ export const WEIGHTS_DARK_COMPENSATED: Readonly<Record<string, number>> = {
 export const SIZE_TOKENS: Readonly<Record<string, Readonly<Record<Density, number>>>> = {
   'h-control': { compact: 24, comfortable: 32, touch: 48 },
   'h-control-nested': { compact: 18, comfortable: 22, touch: 32 },
-  'h-row': { compact: 28, comfortable: 36, touch: 52 },
+  // `compact` was 28 — four pixels above the type's own line height, which
+  // read as a grid rather than a table. Widened here, still nowhere near
+  // `comfortable`'s 36 (§6.1: a form's entry error costs more than a scroll,
+  // a stock keeper's row does not).
+  'h-row': { compact: 32, comfortable: 36, touch: 52 },
   icon: { compact: 16, comfortable: 20, touch: 24 },
-  radius: { compact: 6, comfortable: 8, touch: 10 },
-  'radius-card': { compact: 10, comfortable: 12, touch: 14 },
+  // **Nearly square, and deliberately not square.** A corner this tight is not
+  // a softened box: it is a box whose corner does not cut, which is what a
+  // screen full of dense tabular data wants — a radius large enough to read as
+  // rounding competes with the row it is drawn around, and twenty of them on
+  // one screen add up to a shape nobody asked for.
+  //
+  // The two-step system is unchanged — a surface is still rounder than the
+  // controls inside it — but at these sizes that gap is a matter of a pixel or
+  // two, felt rather than seen. Only the pill (§7.1) stays a pill: it is what
+  // keeps a status chip from reading as a button now that a button barely
+  // curves at all.
+  radius: { compact: 2, comfortable: 3, touch: 4 },
+  'radius-card': { compact: 4, comfortable: 5, touch: 6 },
   checkbox: { compact: 16, comfortable: 20, touch: 28 },
   'switch-h': { compact: 16, comfortable: 20, touch: 28 },
   'pad-xs': { compact: 4, comfortable: 6, touch: 8 },

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
+  actionsColumnWidth,
   Banner,
   Button,
   ConfirmationDialog,
@@ -68,6 +69,7 @@ export function Branches(): ReactNode {
   const [isOpening, setIsOpening] = useState(false);
   const [renaming, setRenaming] = useState<Branch | null>(null);
   const [withdrawing, setWithdrawing] = useState<Branch | null>(null);
+  const [restoring, setRestoring] = useState<Branch | null>(null);
 
   const openCompanies = useMemo(() => companies.filter((one) => one.active), [companies]);
   const nameOfCompany = useMemo(
@@ -128,7 +130,9 @@ export function Branches(): ReactNode {
       id: 'actions',
       header: translator.format('branches.column.actions'),
       align: 'end',
-      width: '1%',
+      // Three: the locations, the rename, and whichever of withdraw and
+      // restore this row is in a state to offer.
+      width: actionsColumnWidth(3),
       render: (branch) => (
         <TableRowActions>
           <TableRowAction
@@ -158,9 +162,9 @@ export function Branches(): ReactNode {
             </TableRowAction>
           ) : (
             <TableRowAction
-              aria-label={translator.format('branches.restore')}
+              aria-label={translator.format('branches.restore.title')}
               onPress={() => {
-                void restore(branch);
+                setRestoring(branch);
               }}
             >
               <RestoreIcon />
@@ -322,6 +326,19 @@ export function Branches(): ReactNode {
         }}
         onConfirm={() => {
           if (withdrawing !== null) void withdraw(withdrawing);
+        }}
+      />
+
+      <ConfirmationDialog
+        title={translator.format('branches.restore.title')}
+        message={translator.format('branches.restore.message', { name: restoring?.name ?? '' })}
+        confirmLabel={translator.format('branches.restore')}
+        isOpen={restoring !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setRestoring(null);
+        }}
+        onConfirm={() => {
+          if (restoring !== null) void restore(restoring);
         }}
       />
     </>

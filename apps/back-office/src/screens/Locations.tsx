@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
+  actionsColumnWidth,
   Banner,
   Button,
   ConfirmationDialog,
@@ -75,6 +76,7 @@ export function Locations(): ReactNode {
   const [isOpening, setIsOpening] = useState(false);
   const [renaming, setRenaming] = useState<Location | null>(null);
   const [withdrawing, setWithdrawing] = useState<Location | null>(null);
+  const [restoring, setRestoring] = useState<Location | null>(null);
 
   const openBranches = useMemo(() => branches.filter((one) => one.active), [branches]);
   const chosen = useMemo(
@@ -145,7 +147,9 @@ export function Locations(): ReactNode {
       id: 'actions',
       header: translator.format('locations.column.actions'),
       align: 'end',
-      width: '1%',
+      // Two: the rename, and whichever of withdraw and restore this row is in
+      // a state to offer.
+      width: actionsColumnWidth(2),
       render: (location) => (
         <TableRowActions>
           <TableRowAction
@@ -167,13 +171,9 @@ export function Locations(): ReactNode {
             </TableRowAction>
           ) : (
             <TableRowAction
-              aria-label={translator.format('locations.restore')}
+              aria-label={translator.format('locations.restore.title')}
               onPress={() => {
-                void command(
-                  (of) => of.locations.reactivate(location.id),
-                  (name) => translator.format('locations.restored', { name }),
-                  location,
-                );
+                setRestoring(location);
               }}
             >
               <RestoreIcon />
@@ -342,6 +342,25 @@ export function Locations(): ReactNode {
           void command(
             (of) => of.locations.deactivate(taken.id),
             (name) => translator.format('locations.withdrawn', { name }),
+            taken,
+          );
+        }}
+      />
+
+      <ConfirmationDialog
+        title={translator.format('locations.restore.title')}
+        message={translator.format('locations.restore.message', { name: restoring?.name ?? '' })}
+        confirmLabel={translator.format('locations.restore')}
+        isOpen={restoring !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setRestoring(null);
+        }}
+        onConfirm={() => {
+          if (restoring === null) return;
+          const taken = restoring;
+          void command(
+            (of) => of.locations.reactivate(taken.id),
+            (name) => translator.format('locations.restored', { name }),
             taken,
           );
         }}

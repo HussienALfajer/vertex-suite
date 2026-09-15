@@ -386,10 +386,10 @@ Density is set at the application root and inherited. A subtree may raise densit
 | ------------------------------------ | -------------------- | --------------------- | ---------------------- |
 | `h-control`                          | 24                   | 32                    | **48**                 |
 | `h-control-nested`                   | 18                   | 22                    | 32                     |
-| `h-row` (table row)                  | 28                   | 36                    | 52                     |
+| `h-row` (table row)                  | 32                   | 36                    | 52                     |
 | `icon`                               | 16                   | 20                    | 24                     |
-| `radius`                             | 6                    | 8                     | 10                     |
-| `radius-card`                        | 10                   | 12                    | 14                     |
+| `radius`                             | 2                    | 3                     | 4                      |
+| `radius-card`                        | 4                    | 5                     | 6                      |
 | `checkbox`                           | 16                   | 20                    | 28                     |
 | `switch-h`                           | 16                   | 20                    | 28                     |
 | `pad-xs` / `sm` / `md` / `lg` / `xl` | 4 / 6 / 8 / 12 / 20  | 6 / 8 / 12 / 16 / 24  | 8 / 12 / 16 / 22 / 32  |
@@ -408,6 +408,10 @@ On `touch`, **every interactive target is at least 48 × 48 px**, including icon
 ### 7.1 Radius
 
 `radius` and `radius-card` follow the density (§6.2). Pills use `9999px` and are reserved for **badges and status chips only** — a pill-shaped button reads as a chip and gets ignored.
+
+**Two radii and a pill, and nothing else.** `radius` is every control — button, field, row action, tooltip; `radius-card` is every surface that holds them — panel, dialog, toast, popover. A third value invented for one component is what turns a system into a collection, so there is no `rounded-lg` anywhere in this repository and a grep proves it.
+
+**The corner is nearly square.** 3px on a control and 5px on the card around it at `comfortable`: enough that no corner cuts, not enough to read as a rounded shape. This is a decision about what a screen of dense tabular data should feel like — rounding is a shape, and thirty of them on one grid is a shape competing with the figures on it. The two-step relationship survives at these sizes as something felt rather than seen, and it is the **pill** that now carries the whole visible distinction: a status chip is unmistakably not a button precisely because a button barely curves.
 
 ### 7.2 Elevation
 
@@ -487,7 +491,7 @@ in the same pull request as the unit that first needs it, built to these tokens.
 | **Actions**    | Button · ButtonGroup · DropdownButton · IconButton · TextLink · Kbd                                                                                               | Button · IconButton                              |
 | **Inputs**     | TextInput · TextArea · NumberInput · MoneyInput · QuantityInput · DateInput · Select · Combobox · Checkbox · RadioGroup · Switch · SegmentedControl · SearchInput | TextInput · Select · Checkbox · Switch           |
 | **Scanning**   | ScanInput — the shared scan-capture control                                                                                                                       | `POS`                                            |
-| **Overlays**   | Dialog · ConfirmationDialog · Popover · Tooltip · Toast · Drawer                                                                                                  | Dialog · ConfirmationDialog · Toast              |
+| **Overlays**   | Dialog · ConfirmationDialog · Popover · Tooltip · Toast · Drawer                                                                                                  | Dialog · ConfirmationDialog · Toast · Tooltip    |
 | **Layout**     | Page · PageHeader · Panel · Card · Tabs · Accordion · Splitter · Toolbar                                                                                          | Page · PageHeader · Panel                        |
 | **Data**       | DataTable (virtualised) · TableRowActions · Badge · StatusChip · Counter · KeyValueList · EmptyState · Pagination                                                 | DataTable · TableRowActions · Badge · EmptyState |
 | **Display**    | Money · Quantity · DateTime · CurrencyRate · UnitLabel — §12                                                                                                      | **all five**                                     |

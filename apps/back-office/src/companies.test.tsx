@@ -91,6 +91,13 @@ describe('Companies — SYS-09', () => {
     expect(await screen.findByRole('rowheader', { name: 'مؤسسة الشام' })).toBeTruthy();
     expect(screen.getByText(catalogue['status.withdrawn'])).toBeTruthy();
 
+    // Putting it back is asked about too. The two rows of a listing that shows
+    // withdrawn companies differ by one icon, and a misfire on either of them
+    // changes what every document issued from today names as its issuer.
+    await shop.person.click(
+      screen.getByRole('button', { name: catalogue['companies.restore.title'] }),
+    );
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
     await shop.person.click(screen.getByRole('button', { name: catalogue['companies.restore'] }));
     expect(await screen.findByText(catalogue['status.inUse'])).toBeTruthy();
   });

@@ -76,6 +76,10 @@ export const catalogue = {
   'action.close': 'إغلاق',
   'action.dismiss': 'إخفاء',
   'action.edit': 'تعديل',
+
+  /** Named by `TextInput` itself for any field of type `password`. */
+  'password.show': 'إظهار كلمة المرور',
+  'password.hide': 'إخفاء كلمة المرور',
   'action.openDialog': 'افتح نافذة',
   'action.confirmDelete': 'احذف الصنف',
   'action.notify': 'أظهر إشعارًا',
