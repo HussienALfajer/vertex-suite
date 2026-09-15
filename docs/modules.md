@@ -54,7 +54,7 @@ editions/
 
 | Code  | Module                    | Layer    | Owns                                                                                                                      | Depends on                               | Feat. |
 | ----- | ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----- |
-| `SYS` | System foundations        | **core** | Tenant · company · branch · location · register · numbering series · business profile · templates · terminology · licence | —                                        | 13    |
+| `SYS` | System foundations        | **core** | Tenant · company · branch · location · register · numbering series · business profile · templates · terminology · licence | —                                        | 14    |
 | `SEC` | Roles, permissions, audit | **core** | User · role · permission grant · audit record · session · device                                                          | `SYS`                                    | 9     |
 | `FX`  | Currencies and rates      | **core** | Currency · rate revision · rounding rule · redenomination factor                                                          | `SYS`                                    | 11    |
 | `FIN` | Financial core            | **core** | Account · journal entry · journal line · fiscal year · period                                                             | `FX` `SYS` `SEC`                         | 8     |
@@ -135,15 +135,15 @@ The ordering rule: **no unit exists to be finished later.** Each stage ends with
 
 ### Stage A — Spine
 
-| Unit  | Delivers                                                                                        | Features                                                       |
-| ----- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `U01` | Workspace, build, lint, test harness, the enforcement checks of `design-system.md` §13          | —                                                              |
-| `U02` | `packages/ui` — design system Stage 0 — and the `packages/i18n` skeleton it depends on          | `SYS-01`                                                       |
-| `U03` | `kernel` and `platform` — money, quantity, ids, clock, module registry, event bus, unit of work | —                                                              |
-| `U04` | Organisation, users, roles, numbering                                                           | `SYS-02` `SYS-05` `SYS-09` `SEC-01` `SEC-02` `SEC-04` `SEC-09` |
-| `U05` | Currencies, daily rates, stamping, rounding                                                     | `FX-01`–`FX-07`                                                |
-| `U06` | The ledger and the posting engine                                                               | `FIN-01`–`FIN-07`                                              |
-| `U07` | Store node, terminal store, outbox, delta sync, durability                                      | `SYN-01` `SYN-02` `SYN-03` `SYN-05` `SYN-06` `POS-18`          |
+| Unit  | Delivers                                                                                        | Features                                                                |
+| ----- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `U01` | Workspace, build, lint, test harness, the enforcement checks of `design-system.md` §13          | —                                                                       |
+| `U02` | `packages/ui` — design system Stage 0 — and the `packages/i18n` skeleton it depends on          | `SYS-01`                                                                |
+| `U03` | `kernel` and `platform` — money, quantity, ids, clock, module registry, event bus, unit of work | —                                                                       |
+| `U04` | Organisation, users, roles, numbering                                                           | `SYS-02` `SYS-05` `SYS-09` `SYS-14` `SEC-01` `SEC-02` `SEC-04` `SEC-09` |
+| `U05` | Currencies, daily rates, stamping, rounding                                                     | `FX-01`–`FX-07`                                                         |
+| `U06` | The ledger and the posting engine                                                               | `FIN-01`–`FIN-07`                                                       |
+| `U07` | Store node, terminal store, outbox, delta sync, durability                                      | `SYN-01` `SYN-02` `SYN-03` `SYN-05` `SYN-06` `POS-18`                   |
 
 `U07` sits here deliberately. A register built online-first and made offline later is rewritten, not extended.
 
@@ -154,6 +154,12 @@ component. A design system whose display components cannot meet their own contra
 `U02` lands in slices, each one green on its own: **`U02.1`** the generated palette and the checks
 that guard it, **`U02.2`** fonts, providers and the semantic layer, **`U02.3`** the Stage 0
 components and their keyboard journeys.
+
+`U04` lands in slices the same way, and **`U04.7`** — an address and a place on the map for a
+branch and for a stock location (`SYS-14`) — is the last of them. It arrives after the four
+organisation screens rather than with them because a point on a map is worth nothing until there is
+a structure to hang it on, and because `SYS-14` is the first feature in the product whose obvious
+implementation is a third-party service: settling that it is **not** one is the work.
 
 ### Stage B — The first sale
 
@@ -214,7 +220,7 @@ components and their keyboard journeys.
 
 ## 8. Coverage
 
-Every one of the 182 features appears in exactly one unit.
+Every one of the 183 features appears in exactly one unit.
 
 | Module | Units                                                                                                 |
 | ------ | ----------------------------------------------------------------------------------------------------- |
@@ -233,4 +239,4 @@ Every one of the 182 features appears in exactly one unit.
 | `HW`   | `U12` (01–04) · `U13` (05, 06) · `U17` (08) · `U20` (07)                                              |
 | `SYN`  | `U07` (01, 02, 03, 05, 06) · `U21` (04) · `U29` (07, 08, 09)                                          |
 | `MIG`  | `U26` (01–08)                                                                                         |
-| `SYS`  | `U02` (01) · `U04` (02, 05, 09) · `U24` (04, 07) · `U27` (06, 08) · `U30` (03, 10–13)                 |
+| `SYS`  | `U02` (01) · `U04` (02, 05, 09, 14) · `U24` (04, 07) · `U27` (06, 08) · `U30` (03, 10–13)             |

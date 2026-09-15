@@ -1,6 +1,6 @@
 # Vertex Suite — RMS Core Feature Specification
 
-182 features across 16 modules. Every feature has a stable ID; reference the ID in branch names, commit messages, PR titles, tests, and TODOs.
+183 features across 16 modules. Every feature has a stable ID; reference the ID in branch names, commit messages, PR titles, tests, and TODOs.
 
 | #   | Code  | Module                           |
 | --- | ----- | -------------------------------- |
@@ -684,5 +684,9 @@ _Acceptance:_ no inbound support port listens while no session is open; a sessio
 **`SYS-13` First-run installation**
 A new installation creates its tenant, company, first branch, and owner account locally, loads its seed data, and needs no vendor connection.
 _Acceptance:_ a store node installed with no internet connection reaches a completed register sale over the shop LAN, using only the installer and the owner's input.
+
+**`SYS-14` Addresses and places on a map**
+Every branch and every stock location carries a postal address, and may carry a point on a map. The point is set by hand — typed, pasted from a maps link the owner already has, or placed on the map — and is never derived from the address by an outside service: a tenant's addresses are not a query to send to somebody else's server, and a shop with no connection must still be able to say where it is. Neither field derives the other in either direction. A location with no point of its own is at its branch's; a location that is a vehicle has none, because a van's place is not a fact that holds still. The map is drawn from boundary geometry that ships with the product, so it reads with no connection at all; street imagery is an optional configured layer that nothing requires and no edition needs.
+_Acceptance:_ a branch is located, and every located place is read onto the map, with all network interfaces disabled; setting a point is refused to a user whose grant does not reach that branch (`SEC-04`); a vehicle location refuses a point rather than storing one.
 
 ---

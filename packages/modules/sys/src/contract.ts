@@ -46,6 +46,22 @@ export interface RecordSession {
 export type LocationKind = 'shop-floor' | 'store-room' | 'vehicle';
 
 /**
+ * A point on the Earth, as two exact decimal strings of degrees (`SYS-14`).
+ *
+ * Not a pair of numbers, and for the kernel's own reason: a value that is
+ * written, synced and read back has to come back as it was written. A float
+ * round-trips through JSON as whichever double happened to be nearest, and two
+ * store nodes comparing the same doorstep would find a difference nobody made.
+ *
+ * North and east are positive. `place.ts` is the only seam that produces one,
+ * and fixes what "as written" means.
+ */
+export interface GeoPoint {
+  readonly lat: string;
+  readonly lng: string;
+}
+
+/**
  * Everything `SYS` owns carries its tenant.
  *
  * A store node holds more than one, and there is no read in this system allowed
@@ -68,6 +84,13 @@ export interface Branch extends TenantOwned {
   readonly id: BranchId;
   readonly company: CompanyId;
   readonly name: string;
+  /** `SYS-14`. Free text, and empty until somebody writes it. */
+  readonly address: string;
+  /**
+   * `SYS-14`. Null is a branch nobody has placed yet, which is all of them on
+   * the day a shop installs this — so it is the ordinary state, not a gap.
+   */
+  readonly point: GeoPoint | null;
   readonly active: boolean;
 }
 
@@ -76,6 +99,22 @@ export interface Location extends TenantOwned {
   readonly branch: BranchId;
   readonly name: string;
   readonly kind: LocationKind;
+  /** `SYS-14`. Free text, and empty until somebody writes it. */
+  readonly address: string;
+  /**
+   * `SYS-14`, and **null means "at the branch"** rather than "unknown".
+   *
+   * A shop floor and the store room behind it share one doorstep, and giving
+   * each of them a copy of it would put three markers on one spot and make
+   * moving the shop a job of editing three records that must not disagree. A
+   * point here is for the location that is somewhere else — the overflow
+   * warehouse across town — which is the case this field exists for.
+   *
+   * A `vehicle` never has one. A van's place is not a fact that holds still,
+   * and a fixed point for one is a wrong answer rather than a missing one, so
+   * the command refuses it instead of storing it.
+   */
+  readonly point: GeoPoint | null;
   readonly active: boolean;
 }
 
@@ -190,6 +229,14 @@ export type OrganisationRefusalCode =
   | 'sys.register-prefix-taken'
   | 'sys.register-prefix-invalid'
   | 'sys.name-required'
+  /** `SYS-14`: not a decimal, or more degrees than the Earth has. */
+  | 'sys.point-out-of-range'
+  /**
+   * `SYS-14`: a van is a stock location whose place moves with it. Storing a
+   * point for one would answer a question about where the stock is with
+   * somewhere it was, which is worse than having no answer at all.
+   */
+  | 'sys.location-kind-has-no-place'
   /**
    * Two of anything under one name, in the one place a person has to tell them
    * apart. A dropdown of three branches called "الفرع الرئيسي" is a stock
@@ -243,12 +290,18 @@ export interface OrganisationAdministration {
   readonly branches: {
     open(by: CommandContext, input: NewBranch): Outcome<Branch>;
     rename(by: CommandContext, id: BranchId, name: string): Outcome<Branch>;
+    readdress(by: CommandContext, id: BranchId, address: string): Outcome<Branch>;
+    /** `null` takes the point off. A place wrongly marked is worse than unmarked. */
+    locate(by: CommandContext, id: BranchId, point: GeoPoint | null): Outcome<Branch>;
     deactivate(by: CommandContext, id: BranchId): Outcome<Branch>;
     reactivate(by: CommandContext, id: BranchId): Outcome<Branch>;
   };
   readonly locations: {
     open(by: CommandContext, input: NewLocation): Outcome<Location>;
     rename(by: CommandContext, id: LocationId, name: string): Outcome<Location>;
+    readdress(by: CommandContext, id: LocationId, address: string): Outcome<Location>;
+    /** `null` returns the location to its branch's place; a vehicle is refused. */
+    locate(by: CommandContext, id: LocationId, point: GeoPoint | null): Outcome<Location>;
     deactivate(by: CommandContext, id: LocationId): Outcome<Location>;
     reactivate(by: CommandContext, id: LocationId): Outcome<Location>;
   };
@@ -305,12 +358,25 @@ export interface NewCompany {
 export interface NewBranch {
   readonly company: CompanyId;
   readonly name: string;
+  /**
+   * Both optional, and both settable afterwards.
+   *
+   * Here because an administrator opening a branch usually knows where it is,
+   * and a second trip through a second command to say so is a step that gets
+   * skipped — leaving the map of `SYS-14` empty for a shop that could have
+   * filled it in while it was already typing.
+   */
+  readonly address?: string;
+  readonly point?: GeoPoint;
 }
 
 export interface NewLocation {
   readonly branch: BranchId;
   readonly name: string;
   readonly kind: LocationKind;
+  readonly address?: string;
+  /** Omitted is the ordinary case: the location is at its branch. */
+  readonly point?: GeoPoint;
 }
 
 export interface NewRegister {
