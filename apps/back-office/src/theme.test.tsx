@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { App } from './App.js';
 import { catalogue } from './catalogue.js';
 import { developmentSystem } from './dev-system.js';
-import { nextTheme } from './ThemeSwitch.js';
+import { nextTheme } from '@vertex/ui';
 
 afterEach(cleanup);
 

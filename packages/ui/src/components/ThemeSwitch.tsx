@@ -1,9 +1,16 @@
 import type { ReactNode } from 'react';
 
-import { IconButton, useTranslator, type ThemeChoice } from '@vertex/ui';
+import { useTranslator, type ThemeChoice } from '../providers/context.js';
+import { IconButton } from './Button.js';
 
 /**
  * The one control for §3.2's `data-theme` axis.
+ *
+ * It lives here rather than in an app because the axis does: §3.2 defines
+ * `data-theme` for the whole interface layer, and the register and the
+ * stocktaking app will want to switch it with the same three states, the same
+ * cycle and the same words. Three copies of a control that knows nothing about
+ * any module is three copies that drift.
  *
  * Three states rather than two, because the absence of the attribute is itself
  * a state: it means "follow the device", and a two-way switch would quietly

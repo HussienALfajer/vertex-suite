@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 
 import { isOk } from '@vertex/kernel';
-import { Banner, Button, Page, ProductMark, TextInput, useTranslator } from '@vertex/ui';
+import { Banner, Button, Page, TextInput, useTranslator, VertexLogo } from '@vertex/ui';
 
 import { messageForRefusal } from './catalogue.js';
 import { useSession } from './session.js';
@@ -83,7 +83,12 @@ export function SignIn({ themeSwitch }: { readonly themeSwitch: ReactNode }): Re
               supplied theirs, the brand here is the product's own — so the mark
               stands alone rather than on a `fill-brand` plate that would be the
               neutral primary wearing a brand's name. */}
-          <ProductMark title={translator.format('app.name')} className="size-16" />
+          <VertexLogo
+            layout="stacked"
+            tagline={translator.format('app.tagline')}
+            title={translator.format('app.name')}
+            className="h-28 w-auto"
+          />
           <div className="flex flex-col items-center gap-[var(--vx-gap-xs)] text-center">
             <h1 className="text-page font-body-bold text-fg">
               {translator.format('signIn.title')}

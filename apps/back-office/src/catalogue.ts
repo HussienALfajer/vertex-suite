@@ -23,6 +23,7 @@ export const catalogue = {
    * somebody checks they are signing in to the right shop.
    */
   'app.name': 'Vertex',
+  'app.tagline': 'RETAIL MANAGEMENT SUITE',
 
   'signIn.title': 'تسجيل الدخول',
   'signIn.description': 'أدخل اسم المستخدم وكلمة المرور الخاصين بك في هذا المتجر.',

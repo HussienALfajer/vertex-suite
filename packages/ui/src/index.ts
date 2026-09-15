@@ -71,8 +71,15 @@ export {
   type BrandResolution,
 } from './tokens/brand.js';
 
-/** The product's own mark, which is not the tenant's brand — see §4.5. */
-export { ProductMark, type ProductMarkProps, type ProductMarkTone } from './brand/ProductMark.js';
+/** The product's own mark and its lockups, which are not the tenant's brand — §4.5. */
+export {
+  VertexAppIcon,
+  VertexLogo,
+  type AppIconProps,
+  type LogoLayout,
+  type LogoTone,
+  type VertexLogoProps,
+} from './brand/VertexLogo.js';
 
 export { VertexProvider, type VertexProviderProps } from './providers/VertexProvider.js';
 export { DensityScope, densityAtLeast, type DensityScopeProps } from './providers/DensityScope.js';
@@ -125,6 +132,7 @@ export {
   type ToastRegionProps,
   type ToastTone,
 } from './components/Toast.js';
+export { ThemeSwitch, nextTheme, type ThemeSwitchProps } from './components/ThemeSwitch.js';
 export {
   BreadcrumbTrail,
   SideNav,
