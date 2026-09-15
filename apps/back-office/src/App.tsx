@@ -7,7 +7,7 @@ import { useSession, SessionProvider } from './session.js';
 import { SignIn } from './SignIn.js';
 import { Shell } from './Shell.js';
 import type { SystemOfRecord } from './system.js';
-import { ThemeSwitch } from './ThemeSwitch.js';
+import { ThemeSwitch } from '@vertex/ui';
 
 const translator = createTranslator();
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { Button, EmptyState, Page, PageHeader, ProductMark, useTranslator } from '@vertex/ui';
+import { Button, EmptyState, Page, PageHeader, useTranslator, VertexLogo } from '@vertex/ui';
 
 import { useSession } from './session.js';
 
@@ -27,7 +27,7 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       <PageHeader
         // The mark is decorative here: the title beside it already says the
         // name, and a screen reader announcing it twice is noise.
-        icon={<ProductMark className="size-7" />}
+        icon={<VertexLogo className="h-7 w-auto" />}
         title={translator.format('app.name')}
         description={translator.format('shell.signedInAs', { handle: session?.handle ?? '' })}
         actions={
