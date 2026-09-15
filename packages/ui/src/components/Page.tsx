@@ -5,6 +5,17 @@ import { useTranslator } from '../providers/context.js';
 
 export interface PageProps {
   readonly children: ReactNode;
+  /**
+   * The application's own bar: its mark, who is signed in, the way out.
+   *
+   * A slot rather than a component, because what stands here is the one part of
+   * a screen that knows which application it is — and a `TopBar` published from
+   * the design system would be a component whose every prop is an application's
+   * private business.
+   */
+  readonly banner?: ReactNode;
+  /** The primary navigation, on the inline start. Usually a `SideNav`. */
+  readonly nav?: ReactNode;
   readonly className?: string;
 }
 
@@ -13,11 +24,41 @@ export interface PageProps {
  *
  * It owns the skip link, because §11 requires every screen to begin with one
  * and a rule every screen has to remember is a rule some screen will not.
+ *
+ * It owns the **chrome slots** for the same reason. The skip link exists to put
+ * the content one keystroke away from a banner and a navigation column that are
+ * identical on every screen — so it has to come before both, and an application
+ * that assembled its own frame around this component would put its own controls
+ * in front of it and quietly make the link pointless. Here the ordering is a
+ * property of the page rather than a convention each app keeps.
  */
-export function Page({ children, className }: PageProps): ReactNode {
+export function Page({ children, banner, nav, className }: PageProps): ReactNode {
   const translator = useTranslator();
+  const hasChrome = banner !== undefined || nav !== undefined;
+
+  const main = (
+    <main
+      id="main"
+      className={clsx(
+        'flex flex-col gap-[var(--vx-gap-lg)] p-[var(--vx-pad-xl)]',
+        // Inside a frame the page no longer scrolls as one piece: the banner and
+        // the navigation stay put and the content moves under them, which is
+        // what keeps "where am I" and "where can I go" on screen at row 300.
+        hasChrome ? 'min-w-0 flex-1 overflow-auto' : '',
+      )}
+    >
+      {children}
+    </main>
+  );
+
   return (
-    <div className={clsx('bg-surface-1 text-fg min-h-full font-sans', className)}>
+    <div
+      className={clsx(
+        'bg-surface-1 text-fg min-h-full font-sans',
+        hasChrome ? 'flex h-full flex-col' : '',
+        className,
+      )}
+    >
       <a
         href="#main"
         className={clsx(
@@ -28,9 +69,15 @@ export function Page({ children, className }: PageProps): ReactNode {
       >
         {translator.format('a11y.skipToContent')}
       </a>
-      <main id="main" className="flex flex-col gap-[var(--vx-gap-lg)] p-[var(--vx-pad-xl)]">
-        {children}
-      </main>
+      {banner}
+      {nav === undefined ? (
+        main
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          {nav}
+          {main}
+        </div>
+      )}
     </div>
   );
 }

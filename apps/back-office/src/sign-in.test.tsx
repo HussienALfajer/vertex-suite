@@ -20,6 +20,23 @@ function open(system: SystemOfRecord = developmentSystem({ people: PEOPLE })): v
   render(<App system={system} />);
 }
 
+/**
+ * A system of record that answers sign-in however a test needs and holds an
+ * ordinary organisation behind it.
+ *
+ * The organisation is the real one, because what these tests are about is what
+ * happens **before** anybody reaches it — and a port that threw would make a
+ * failure to sign in indistinguishable from a shop that could not be read.
+ */
+function systemThatAnswers(signIn: SystemOfRecord['signIn']): SystemOfRecord {
+  return { signIn, organisation: developmentSystem({ people: PEOPLE }).organisation };
+}
+
+/** The frame, which is the one thing on screen that says somebody is signed in. */
+function isInsideTheShop(): boolean {
+  return screen.queryByRole('button', { name: catalogue['shell.signOut'] }) !== null;
+}
+
 async function signIn(handle: string, password: string): Promise<void> {
   const person = userEvent.setup();
   await person.type(screen.getByLabelText(catalogue['signIn.handle']), handle);
@@ -32,7 +49,7 @@ describe('Sign-in — SEC-09', () => {
     open();
     await signIn('owner', 'till-morning-1');
 
-    expect(screen.getByText(catalogue['shell.nothingYet'])).toBeTruthy();
+    expect(isInsideTheShop()).toBe(true);
     expect(screen.queryByLabelText(catalogue['signIn.password'])).toBeNull();
   });
 
@@ -61,7 +78,7 @@ describe('Sign-in — SEC-09', () => {
     await signIn('ahmad', 'till-morning-1');
 
     expect(screen.getByRole('alert').textContent).toContain(catalogue['refusal.sec.user-inactive']);
-    expect(screen.queryByText(catalogue['shell.nothingYet'])).toBeNull();
+    expect(isInsideTheShop()).toBe(false);
   });
 
   it('renders a refusal the catalogue has no words for rather than a raw code', async () => {
@@ -70,9 +87,7 @@ describe('Sign-in — SEC-09', () => {
     // grows and a catalogue lags. A screen that printed `sec.identity-shared`
     // at somebody would be showing them a symbol from a program they cannot
     // read.
-    open({
-      signIn: () => Promise.resolve(refuse('sec.identity-shared')),
-    });
+    open(systemThatAnswers(() => Promise.resolve(refuse('sec.identity-shared'))));
     await signIn('owner', 'till-morning-1');
 
     expect(screen.getByRole('alert').textContent).toContain(catalogue['refusal.unknown']);
@@ -80,9 +95,7 @@ describe('Sign-in — SEC-09', () => {
   });
 
   it('says so rather than failing silently when the store node cannot be reached', async () => {
-    open({
-      signIn: () => Promise.reject(new Error('no route to the store node')),
-    });
+    open(systemThatAnswers(() => Promise.reject(new Error('no route to the store node'))));
     await signIn('owner', 'till-morning-1');
 
     expect(screen.getByRole('alert').textContent).toContain(catalogue['refusal.unknown']);
@@ -97,7 +110,7 @@ describe('The sign-in screen is operable and readable — SYS-01', () => {
     await person.type(screen.getByLabelText(catalogue['signIn.handle']), 'owner');
     await person.type(screen.getByLabelText(catalogue['signIn.password']), 'till-morning-1{Enter}');
 
-    expect(screen.getByText(catalogue['shell.nothingYet'])).toBeTruthy();
+    expect(isInsideTheShop()).toBe(true);
   });
 
   it('puts the keyboard where the first thing to type is', () => {

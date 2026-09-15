@@ -56,7 +56,7 @@ export function SignIn({ themeSwitch }: { readonly themeSwitch: ReactNode }): Re
     setRefused(null);
     try {
       const outcome = await signIn({ handle, password });
-      if (!isOk(outcome)) setRefused(messageForRefusal(translator, outcome.error.code));
+      if (!isOk(outcome)) setRefused(messageForRefusal(translator, outcome.error));
     } catch {
       // A defect rather than a refusal — the store node unreachable, a
       // transport that failed. It still has to say something a person can act
