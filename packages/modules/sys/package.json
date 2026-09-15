@@ -1,0 +1,37 @@
+{
+  "name": "@vertex/sys",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SYS — system foundations: tenant, company, branch, location, register, business profile.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "default": "./dist/contract.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vertex/contracts": "workspace:*",
+    "@vertex/kernel": "workspace:*",
+    "@vertex/platform": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "6.0.2",
+    "vitest": "4.1.11"
+  }
+}
