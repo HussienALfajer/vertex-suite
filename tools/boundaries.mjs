@@ -28,10 +28,39 @@
  * worse than nothing: it sits in the list looking like cover. It belongs to the
  * slice that writes the first schema, which is where what to look for is known.
  *
- * There is deliberately no exemption comment. `check-policy.mjs` has one
- * because its rules have genuine local exceptions. These do not: an exempted
- * breach is a module that can no longer be left out of an edition, and that is
- * not a decision one file gets to make on behalf of the product line.
+ * The §4 rules above carry deliberately no exemption comment. `check-policy.mjs`
+ * has one because its rules have genuine local exceptions. These do not: an
+ * exempted breach is a module that can no longer be left out of an edition, and
+ * that is not a decision one file gets to make on behalf of the product line.
+ *
+ * ---
+ *
+ * **Altitude** is the second rule here, and it answers a different question
+ * about the same subject: not *what may this file reach*, but *where does it
+ * belong*.
+ *
+ * A unit's home is the lowest layer that holds everything it knows. That is not
+ * a matter of taste — it is derivable from what the file imports, which is why
+ * it is checked instead of agreed. The form it takes in practice, and the only
+ * form checked here, is the one that costs a product line the most:
+ *
+ * **An app may not hold a file that knows nothing about that app.** A file
+ * under an app's own `src` that reaches into the workspace and never once into its
+ * own application is a library component parked in an application. Nothing
+ * fails: it works, it is tested, and it is invisible — until the second app
+ * needs it, copies it, and the two drift. `modules.md` §1 is the bill for that:
+ * one codebase producing per-customer editions cannot ship a component that is
+ * welded inside one application.
+ *
+ * This one **is** exemptible, because unlike a boundary breach it is a judgement
+ * with real exceptions — and the exemption is written where the exception is:
+ *
+ *   // boundary-exempt: altitude — the reason
+ *
+ * What it does not see: a file that imports nothing at all. A constant table or
+ * a pure function leaves no trace of what it knows, so the rule has nothing to
+ * read. Those are cheap to move and cheap to notice; this catches the expensive
+ * case, which is the one that arrives already wired into a screen.
  */
 import { posix } from 'node:path';
 
@@ -228,6 +257,105 @@ export function findBoundaryBreaches(input) {
         );
       }
     }
+  }
+
+  findings.push(...findMisplaced(packages, files));
+  return findings;
+}
+
+/** Ships to a screen: not a test, not a fixture, not a config beside the source. */
+function isShippedSource(path) {
+  return (
+    /\/src\/.*\.tsx?$/.test(path) &&
+    !/\.(test|spec)\.tsx?$/.test(path) &&
+    !/\.fixture\.tsx?$/.test(path) &&
+    !/\.d\.ts$/.test(path)
+  );
+}
+
+/**
+ * An application's own strings, which `check-policy.mjs` already knows by the
+ * same name as "the one place a user-facing string is supposed to live".
+ *
+ * It is the most app-specific file an app has and it is invisible to this rule,
+ * because what it knows is its **content** rather than its imports: a thousand
+ * sentences about this product, reached through a translator that could equally
+ * serve any other. Exempting it one app at a time would spend a reasoned
+ * exception on something that is true by definition.
+ */
+function isCatalogue(path) {
+  return /catalogue|messages|strings/i.test(path);
+}
+
+/**
+ * An exemption, written where the exception is, and required to carry a reason
+ * so that it cannot be a shrug.
+ */
+function isExempt(source, rule) {
+  // Line by line, and the reason has to be on the same line as the marker. A
+  // pattern that let whitespace run across the newline would happily read the
+  // next line of code as the justification, which is a shrug that type-checks.
+  for (const line of source.split('\n')) {
+    const match = /boundary-exempt:[^\S\n]*(\S+)[^\S\n]*—[^\S\n]*(.+)/.exec(line);
+    if (match !== null && match[1] === rule && match[2].trim().length > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * The altitude rule: a file in an app that knows nothing about the app.
+ *
+ * Two facts decide it, and both are read from the imports. Does the file reach
+ * into its own application at all — any relative path, which in an app is the
+ * app's own code? And does it reach into the workspace, which is what says the
+ * file is built from this product rather than from React alone?
+ *
+ * A file that reaches the workspace and never its own app is the misplacement;
+ * a file that reaches neither is a leaf the rule cannot read and does not guess
+ * about.
+ */
+function findMisplaced(packages, files) {
+  /** @type {Finding[]} */
+  const findings = [];
+
+  for (const { file, source } of files) {
+    const home = ownerOf(packages, file);
+    if (home === null || !isApp(home) || !isShippedSource(file)) continue;
+    if (isCatalogue(file) || isExempt(source, 'altitude')) continue;
+
+    let knowsItsApp = false;
+    let usesTheWorkspace = null;
+    for (const { specifier } of specifiersIn(source)) {
+      if (specifier.startsWith('.')) {
+        knowsItsApp = true;
+        break;
+      }
+      const bare = resolveBare(packages, specifier);
+      if (bare === null) continue;
+      // Naming a module **is** knowing about the app: §4.1 lets nothing but an
+      // app do it, because composing an edition is the one thing an app is for.
+      // A file that does it is already in the only place it could be.
+      if (isModule(bare.target)) {
+        knowsItsApp = true;
+        break;
+      }
+      usesTheWorkspace ??= bare.target.name;
+    }
+
+    if (knowsItsApp || usesTheWorkspace === null) continue;
+
+    findings.push({
+      file,
+      line: 1,
+      rule: 'altitude',
+      message:
+        `Nothing in this file names ${home.name}: it is built from ${usesTheWorkspace} and ` +
+        'knows nothing about the application it sits in. That is a library component parked ' +
+        'in an app, and nothing will fail until the second app needs it, copies it, and the ' +
+        `two drift — which a product line cannot afford (modules.md §1). Move it to the ` +
+        'package whose knowledge it uses, or write the exception in place: ' +
+        '"// boundary-exempt: altitude — the reason".',
+    });
   }
 
   return findings;
