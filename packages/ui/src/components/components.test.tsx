@@ -133,6 +133,22 @@ describe('<TextInput>', () => {
     await user.type(screen.getByLabelText('اسم الصنف'), 'سكر');
     expect(screen.getByLabelText<HTMLInputElement>('اسم الصنف').value).toBe('سكر');
   });
+
+  it('never lets the browser write the error message — §12', () => {
+    // Left to validate natively, the browser writes "Please fill out this
+    // field." in its own language, under a label reading "اسم المستخدم". It is
+    // the one user-facing string nothing in this repository can translate and
+    // no tenant can rename, so the constraint is announced and the words are
+    // left to `errorMessage`.
+    wrap(<TextInput label="اسم الصنف" isRequired />);
+    const input = screen.getByLabelText<HTMLInputElement>('اسم الصنف');
+
+    expect(input.getAttribute('aria-required')).toBe('true');
+    // Native validation would report invalid on an empty required field and
+    // hand the browser its own words to say about it.
+    expect(input.required).toBe(false);
+    expect(input.validity.valid).toBe(true);
+  });
 });
 
 describe('<Page>', () => {

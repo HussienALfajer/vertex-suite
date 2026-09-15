@@ -9,7 +9,10 @@ import {
   type TextFieldProps,
 } from 'react-aria-components';
 
-export interface TextInputProps extends Omit<TextFieldProps, 'className' | 'children'> {
+export interface TextInputProps extends Omit<
+  TextFieldProps,
+  'className' | 'children' | 'validationBehavior'
+> {
   /** Required. A field without a label is a field someone has to guess at. */
   readonly label: string;
   readonly description?: string;
@@ -28,6 +31,15 @@ export interface TextInputProps extends Omit<TextFieldProps, 'className' | 'chil
  *
  * The field is `comfortable` by default: an entry error costs far more than a
  * scroll (§6.1).
+ *
+ * **Validation is `aria`, and the prop is not offered.** Left native, the
+ * browser validates `required` and `type` itself and writes the message — in
+ * *its own* language, from its own strings. On an Arabic-first interface that
+ * puts "Please fill out this field." under a label reading "اسم المستخدم", and
+ * it is not a string anything in this repository can translate or a tenant can
+ * rename (§12, `SYS-08`). So the field announces the constraint to assistive
+ * technology and leaves the words to `errorMessage`, which comes from the
+ * catalogue like every other string a person reads.
  */
 export function TextInput({
   label,
@@ -40,6 +52,7 @@ export function TextInput({
   return (
     <TextField
       {...props}
+      validationBehavior="aria"
       className={clsx('flex flex-col gap-[var(--vx-gap-xs)]', className)}
       {...(errorMessage === undefined ? {} : { isInvalid: true })}
     >

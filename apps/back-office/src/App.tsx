@@ -1,12 +1,13 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import { VertexProvider } from '@vertex/ui';
+import { VertexProvider, type ThemeChoice } from '@vertex/ui';
 
 import { createTranslator } from './catalogue.js';
 import { useSession, SessionProvider } from './session.js';
 import { SignIn } from './SignIn.js';
 import { Shell } from './Shell.js';
 import type { SystemOfRecord } from './system.js';
+import { ThemeSwitch } from './ThemeSwitch.js';
 
 const translator = createTranslator();
 
@@ -29,10 +30,15 @@ export interface AppProps {
  * at the root.
  */
 export function App({ system }: AppProps): ReactNode {
+  // `system` is the default and means the absence of `data-theme` (§3.2): the
+  // device decides, which on a machine that already turns dark at dusk is the
+  // answer somebody has given once and should not have to give again.
+  const [theme, setTheme] = useState<ThemeChoice>('system');
+
   return (
-    <VertexProvider translator={translator} locale="ar">
+    <VertexProvider translator={translator} locale="ar" theme={theme}>
       <SessionProvider system={system}>
-        <Screen />
+        <Screen themeSwitch={<ThemeSwitch theme={theme} onChange={setTheme} />} />
       </SessionProvider>
     </VertexProvider>
   );
@@ -43,8 +49,17 @@ export function App({ system }: AppProps): ReactNode {
  *
  * A router arrives with the second destination, for the reason `Shell` gives
  * about the navigation it does not have.
+ *
+ * The theme control is handed down as an element rather than reached for
+ * through a context, because the two screens put it in different places — the
+ * shell has a header to hang it in and the sign-in screen has a corner — and
+ * two callers is not yet a reason to invent a context for one value.
  */
-function Screen(): ReactNode {
+function Screen({ themeSwitch }: { themeSwitch: ReactNode }): ReactNode {
   const { session } = useSession();
-  return session === null ? <SignIn /> : <Shell />;
+  return session === null ? (
+    <SignIn themeSwitch={themeSwitch} />
+  ) : (
+    <Shell themeSwitch={themeSwitch} />
+  );
 }

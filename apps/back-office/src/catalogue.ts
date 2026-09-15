@@ -27,7 +27,9 @@ export const catalogue = {
   'signIn.title': 'تسجيل الدخول',
   'signIn.description': 'أدخل اسم المستخدم وكلمة المرور الخاصين بك في هذا المتجر.',
   'signIn.handle': 'اسم المستخدم',
+  'signIn.handle.required': 'أدخل اسم المستخدم.',
   'signIn.password': 'كلمة المرور',
+  'signIn.password.required': 'أدخل كلمة المرور.',
   'signIn.submit': 'دخول',
   'signIn.working': 'جارٍ التحقق…',
   'signIn.failed': 'تعذّر تسجيل الدخول',
@@ -41,6 +43,11 @@ export const catalogue = {
   'refusal.sec.password-wrong': 'اسم المستخدم أو كلمة المرور غير صحيحة.',
   'refusal.sec.user-inactive': 'هذا الحساب موقوف في هذا المتجر. راجع مدير المتجر.',
   'refusal.unknown': 'تعذّر إتمام الطلب. حاول مرة أخرى.',
+
+  'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
+  'theme.system': 'حسب الجهاز',
+  'theme.light': 'فاتح',
+  'theme.dark': 'داكن',
 
   'shell.signedInAs': 'المستخدم الحالي: {handle}',
   'shell.signOut': 'تسجيل الخروج',

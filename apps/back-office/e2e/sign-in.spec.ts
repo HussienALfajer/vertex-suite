@@ -53,9 +53,10 @@ test('every control on the screen is reachable by Tab, and shows focus when it i
     (document.activeElement as HTMLElement | null)?.blur();
   });
 
-  // One pass, four stops: the skip link, the two fields and the submit.
+  // One pass, five stops: the skip link, the theme control, the two fields and
+  // the submit.
   const reachable = new Set<string>();
-  for (let step = 0; step < 4; step += 1) {
+  for (let step = 0; step < 5; step += 1) {
     await page.keyboard.press('Tab');
     const focused = await page.evaluate(() => {
       const element = document.activeElement;

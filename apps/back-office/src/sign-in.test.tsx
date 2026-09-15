@@ -124,6 +124,32 @@ describe('The sign-in screen is operable and readable — SYS-01', () => {
     expect(screen.getByRole('alert')).toBeTruthy();
   });
 
+  it('says an empty field is empty in Arabic, and never lets the browser say it', async () => {
+    open();
+    const person = userEvent.setup();
+    await person.click(screen.getByRole('button', { name: catalogue['signIn.submit'] }));
+
+    expect(screen.getByText(catalogue['signIn.handle.required'])).toBeTruthy();
+    expect(screen.getByText(catalogue['signIn.password.required'])).toBeTruthy();
+    // The browser's own words, in the browser's own language, under an Arabic
+    // label. `TextInput` makes them unreachable; this is the screen holding the
+    // other half of the bargain by supplying its own.
+    expect(document.body.textContent).not.toContain('Please fill out this field');
+
+    // And it never asked the store node, because there was nothing to ask about.
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('clears the empty-field message as soon as there is something in it', async () => {
+    open();
+    const person = userEvent.setup();
+    await person.click(screen.getByRole('button', { name: catalogue['signIn.submit'] }));
+    expect(screen.getByText(catalogue['signIn.handle.required'])).toBeTruthy();
+
+    await person.type(screen.getByLabelText(catalogue['signIn.handle']), 'o');
+    expect(screen.queryByText(catalogue['signIn.handle.required'])).toBeNull();
+  });
+
   it('never writes a session anywhere it could outlive the tab', () => {
     // `SEC-09` can force a sign-out and `U23` owns sessions. Anything stored
     // here would be a session nobody upstream can take back.
