@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@vertex/sandbox", "dev"],
       "port": 5180
+    },
+    {
+      "name": "back-office",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@vertex/back-office", "dev"],
+      "port": 5181
     }
   ]
 }

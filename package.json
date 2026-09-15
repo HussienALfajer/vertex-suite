@@ -20,7 +20,7 @@
     "check:boundaries": "node tools/check-boundaries.mjs",
     "check:coverage": "node tools/check-coverage.mjs",
     "next": "node tools/next.mjs",
-    "e2e": "pnpm --filter @vertex/sandbox e2e",
+    "e2e": "pnpm --filter \"./apps/*\" --workspace-concurrency=1 run e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm test:tools && pnpm check:policy && pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm check:coverage"
