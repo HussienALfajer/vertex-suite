@@ -1,4 +1,11 @@
-import type { BranchId, CompanyId, LocationId, RegisterId, TenantId } from '@vertex/contracts';
+import type {
+  BranchId,
+  CompanyId,
+  DeviceId,
+  LocationId,
+  RegisterId,
+  TenantId,
+} from '@vertex/contracts';
 import { newId, ok, refuse, type Result } from '@vertex/kernel';
 
 import type {
@@ -12,7 +19,8 @@ import type {
   OrganisationRefusal,
   Register,
 } from './contract.js';
-import { readRecord, scanRecords, writeRecord, type RecordSession } from './records.js';
+import type { RecordSession } from './contract.js';
+import { readRecord, scanRecords, writeRecord } from './records.js';
 
 /**
  * Companies, branches, stock locations and registers: `SYS-09`.
@@ -209,8 +217,44 @@ export function openRegister(
     name: trimmed,
     prefix: input.prefix,
     active: true,
+    // Opened, and nothing standing at it yet. It cannot issue a document until
+    // a machine is named, because `SYS-02`'s number has to say which one.
+    generation: 0,
+    heldBy: null,
   };
   return ok(writeRecord(session, 'register', tenant, [register.id], register));
+}
+
+/**
+ * Says which machine is standing at this till.
+ *
+ * A different machine than the one before raises the generation, and that is
+ * the whole of `SYS-02`'s guarantee — every number either machine printed
+ * carries the generation it was printed under, so the replacement cannot
+ * reissue one the machine it replaced had printed but not yet sent.
+ *
+ * Naming the same machine again changes nothing. A register that reconnects, or
+ * a command `SYN-02` replays, must not spend a generation: a spent one is not
+ * recoverable, and the count is what a whole run of documents is filed under.
+ */
+export function assignDevice(
+  session: RecordSession,
+  tenant: TenantId,
+  id: RegisterId,
+  device: DeviceId,
+): Outcome<Register> {
+  const register = registerIn(session, tenant, id);
+  if (register === null) return refuse('sys.register-not-found', { register: id });
+  if (!register.active) return refuse('sys.register-inactive', { register: register.name });
+  if (register.heldBy === device) return ok(register);
+
+  return ok(
+    writeRecord(session, 'register', tenant, [id], {
+      ...register,
+      heldBy: device,
+      generation: register.generation + 1,
+    }),
+  );
 }
 
 export function renameCompany(

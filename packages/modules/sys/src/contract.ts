@@ -2,13 +2,14 @@ import {
   permissionId,
   type BranchId,
   type CompanyId,
+  type DeviceId,
   type LocationId,
   type PermissionId,
   type RegisterId,
   type TenantId,
 } from '@vertex/contracts';
 import type { Refusal, Result } from '@vertex/kernel';
-import { contractKey, type CommandContext } from '@vertex/platform';
+import { contractKey, type CommandContext, type UnitOfWork } from '@vertex/platform';
 
 /**
  * What `SYS` lets the rest of the system see.
@@ -23,6 +24,22 @@ import { contractKey, type CommandContext } from '@vertex/platform';
  * why it may not import the implementation behind it, and why the build refuses
  * if it ever does.
  */
+
+/**
+ * What `SYS` needs from a store, and nothing more.
+ *
+ * It is in the contract rather than hidden inside the module because numbering
+ * joins the **caller's** transaction (see `DocumentNumbering`), so a caller has
+ * to be able to name the handle it is passing. There is no `remove`: `SYS-09`
+ * says structural entities are deactivated and never deleted, and a module with
+ * no way to delete anything is a stronger statement of that than a rule
+ * somebody has to remember.
+ */
+export interface RecordSession {
+  put(key: string, value: unknown): void;
+  get(key: string): unknown;
+  keys(): readonly string[];
+}
 
 /** Where stock sits. A branch has several, and they behave differently in `STK`. */
 export type LocationKind = 'shop-floor' | 'store-room' | 'vehicle';
@@ -75,6 +92,22 @@ export interface Register extends TenantOwned {
   readonly name: string;
   readonly prefix: string;
   readonly active: boolean;
+  /**
+   * The machine standing at the till, and how many have stood there.
+   *
+   * `SEC` owns the device itself — what it is, whether it may sign in, when it
+   * was last seen. What is here is only what numbering turns on: which one
+   * holds the position now, and a count that goes up whenever a different one
+   * takes over. That count is the **device generation** of `SYS-02`, and it is
+   * what makes a replacement machine unable to reissue a number the machine it
+   * replaced had already printed but not yet sent.
+   *
+   * Zero, with nobody holding it, is a register that has been opened and not
+   * yet plugged in. It cannot issue a document, because there is nothing for
+   * the number to say it came from.
+   */
+  readonly generation: number;
+  readonly heldBy: DeviceId | null;
 }
 
 /**
@@ -147,6 +180,7 @@ export interface Organisation {
 
 export type OrganisationRefusalCode =
   | 'sys.company-not-found'
+  | 'sys.register-inactive'
   | 'sys.branch-not-found'
   | 'sys.location-not-found'
   | 'sys.register-not-found'
@@ -201,6 +235,19 @@ export interface OrganisationAdministration {
     rename(by: CommandContext, id: RegisterId, name: string): Outcome<Register>;
     deactivate(by: CommandContext, id: RegisterId): Outcome<Register>;
     reactivate(by: CommandContext, id: RegisterId): Outcome<Register>;
+    /**
+     * Says which machine is standing at this till now.
+     *
+     * A different machine than last time raises the device generation, which is
+     * the whole of `SYS-02`'s guarantee: the replacement cannot reissue a number
+     * the machine it replaced had printed but not yet sent, because every number
+     * either of them printed carries the generation it was printed under.
+     *
+     * Naming the same machine again changes nothing, deliberately. A register
+     * that reconnects, or a command that is replayed, must not spend a
+     * generation — and a spent generation is not recoverable.
+     */
+    assignDevice(by: CommandContext, id: RegisterId, device: DeviceId): Outcome<Register>;
   };
   readonly profile: {
     revise(
@@ -208,6 +255,13 @@ export interface OrganisationAdministration {
       company: CompanyId,
       changes: ProfileRevision,
     ): Outcome<BusinessProfile>;
+  };
+  readonly numbering: {
+    /**
+     * Sets the format of one series. Revising it leaves numbers already issued
+     * exactly as they were printed, and applies from the next one.
+     */
+    define(by: CommandContext, scope: SeriesScope, format: string): Numbered<NumberingSeries>;
   };
   readonly settings: {
     /** `null` removes the branch's override and returns it to the tenant's value. */
@@ -253,6 +307,107 @@ export interface ProfileRevision {
   readonly receiptHeader?: string;
   readonly receiptFooter?: string;
 }
+
+/**
+ * Which series a number is drawn from: `SYS-02`'s four dimensions.
+ *
+ * The document type is a name the **owning module** chose — `pos.sale`,
+ * `pur.invoice` — and `SYS` never learns what one means. The fiscal year is a
+ * label the caller supplies rather than an identifier `SYS` resolves, because
+ * `FIN` owns fiscal years and `FIN` depends on `SYS`; asking for the identifier
+ * would be the cycle `modules.md` §4 exists to prevent. `SYS` partitions by
+ * whatever label it is handed and has no opinion about when the year turns.
+ */
+export interface SeriesScope {
+  readonly documentType: string;
+  readonly branch: BranchId;
+  /** Null for a document nobody issues at a till: a purchase invoice, typed. */
+  readonly register: RegisterId | null;
+  readonly fiscalYear: string;
+}
+
+/** The configured shape of one series. The counter is not here; see below. */
+export interface NumberingSeries extends TenantOwned {
+  readonly scope: SeriesScope;
+  readonly format: string;
+}
+
+export interface IssuedNumber {
+  /** What is printed, and what a person reads back over the counter. */
+  readonly number: string;
+  readonly sequence: number;
+  /** Zero for a series with no register, where there is no machine to count. */
+  readonly generation: number;
+  readonly scope: SeriesScope;
+}
+
+export type NumberingRefusalCode =
+  | 'sys.document-type-unowned'
+  | 'sys.document-reference-required'
+  | 'sys.fiscal-year-required'
+  | 'sys.series-format-invalid'
+  | 'sys.series-format-must-carry-register'
+  | 'sys.series-format-carries-absent-register'
+  | 'sys.register-not-found'
+  | 'sys.register-inactive'
+  | 'sys.register-has-no-device'
+  | 'sys.register-outside-branch'
+  | 'sys.branch-not-found'
+  | 'sys.branch-inactive';
+
+export type NumberingRefusal = Refusal<NumberingRefusalCode>;
+
+type Numbered<T> = Promise<Result<T, NumberingRefusal>>;
+
+/**
+ * `SYS-02`, and the reason it is offline-safe **by construction** rather than
+ * by coordination.
+ *
+ * Each device counts from one. Two devices that have never met, and never will
+ * until they sync, cannot produce the same number, because every number carries
+ * the register's prefix — unique across the tenant — and the generation under
+ * which that machine took the position. Nothing has to be asked, reserved or
+ * agreed, which is what `POS-19` needs: a register with no connection still
+ * sells, and what it printed reconciles afterwards.
+ *
+ * That is also why the counter restarts when a device is replaced. A counter
+ * carried across the handover would have to know where the previous machine had
+ * got to — and the numbers it had not yet sent are exactly the ones nobody
+ * knows about. Restarting needs no such knowledge, and the generation keeps the
+ * two runs apart.
+ */
+export interface DocumentNumbering {
+  /**
+   * Takes the next number, **inside the caller's transaction**.
+   *
+   * Not its own: a sale that rolls back has to take its number with it, or the
+   * series grows a gap that a tax inspector asks about and nobody can explain.
+   * The caller passes the unit of work it is already in, and the counter moves
+   * only if the document does.
+   *
+   * `document` is the caller's own identifier for the thing being numbered,
+   * generated on the device before this call. It makes the issue repeatable:
+   * `SYN-02` replays an operation that may already have been applied, and a
+   * replay that asked for a new number would print a second document for one
+   * sale. Asking again for the same document returns the number it already has.
+   *
+   * Called **where the document is made, once**. A number is taken on the
+   * machine that prints it and then travels with the document; a store node
+   * applying that document from the outbox stores the number it was given and
+   * does not ask for one, because the receipt in the customer's hand is already
+   * the record of what this document is called.
+   */
+  next(
+    uow: UnitOfWork<RecordSession>,
+    scope: SeriesScope,
+    document: string,
+  ): Numbered<IssuedNumber>;
+
+  /** The configured series, or null where nobody has set a format yet. */
+  series(by: CommandContext, scope: SeriesScope): Promise<NumberingSeries | null>;
+}
+
+export const DocumentNumbering = contractKey<DocumentNumbering>('sys.document-numbering');
 
 export const Organisation = contractKey<Organisation>('sys.organisation');
 
@@ -328,6 +483,7 @@ export interface SysPermissions {
   readonly register: StructuralRights;
   readonly businessProfile: EditableRights;
   readonly branchSetting: EditableRights;
+  readonly numberingSeries: EditableRights;
 }
 
 export const SYS_PERMISSIONS: SysPermissions = Object.freeze({
@@ -337,6 +493,10 @@ export const SYS_PERMISSIONS: SysPermissions = Object.freeze({
   register: rightsOver('register'),
   businessProfile: rightsToReadAndRevise('business-profile'),
   branchSetting: rightsToReadAndRevise('branch-setting'),
+  // Revising a format is a right; taking the next number is not. Numbering is
+  // something a document does to itself, not something a person asks for, and a
+  // right nobody can be refused is a right that only clutters the role editor.
+  numberingSeries: rightsToReadAndRevise('numbering-series'),
 });
 
 export const SYS_PERMISSION_IDS: readonly PermissionId[] = Object.freeze([...DECLARED]);

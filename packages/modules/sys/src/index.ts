@@ -1,4 +1,4 @@
-import type { BranchId, CompanyId, LocationId, RegisterId } from '@vertex/contracts';
+import type { BranchId, CompanyId, DeviceId, LocationId, RegisterId } from '@vertex/contracts';
 import {
   defineModule,
   provideContract,
@@ -6,22 +6,27 @@ import {
   type ModuleContext,
   type ModuleDefinition,
   type PermissionDeclaration,
+  type UnitOfWork,
 } from '@vertex/platform';
 
 import {
+  DocumentNumbering,
   Organisation,
   OrganisationAdministration,
   SYS_PERMISSION_IDS,
+  type RecordSession,
+  type SeriesScope,
   type NewBranch,
   type NewCompany,
   type NewLocation,
   type NewRegister,
   type ProfileRevision,
 } from './contract.js';
+import { defineSeries, nextNumber, seriesIn } from './numbering.js';
 import { profileIn, reviseProfile, seedProfile } from './profile.js';
-import type { RecordSession } from './records.js';
 import { setBranchSetting, settingIn, setTenantSetting } from './settings.js';
 import {
+  assignDevice,
   branchesIn,
   branchIn,
   companiesIn,
@@ -45,7 +50,6 @@ import {
 } from './structure.js';
 
 export * from './contract.js';
-export type { RecordSession } from './records.js';
 
 /**
  * Every right this module defines, built from the same grammar the ids were.
@@ -113,6 +117,20 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
         } satisfies Organisation;
       }),
 
+      provideContract(DocumentNumbering, (context: ModuleContext<Session>) => {
+        return {
+          // The one contract in this module that does **not** open a
+          // transaction. It is handed the caller's, so that the counter moves
+          // only if the document it is numbering does.
+          next: (uow: UnitOfWork<RecordSession>, scope: SeriesScope, document: string) =>
+            Promise.resolve(nextNumber(uow.session, uow.context.tenant, scope, document)),
+          series: (by: CommandContext, scope: SeriesScope) =>
+            context.transactor.run(by, (uow) =>
+              Promise.resolve(seriesIn(uow.session, by.tenant, scope)),
+            ),
+        } satisfies DocumentNumbering;
+      }),
+
       provideContract(OrganisationAdministration, (context: ModuleContext<Session>) => {
         const run = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
           context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
@@ -166,10 +184,16 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
               run(by, (session) => setRegisterActive(session, by.tenant, id, false)),
             reactivate: (by: CommandContext, id: RegisterId) =>
               run(by, (session) => setRegisterActive(session, by.tenant, id, true)),
+            assignDevice: (by: CommandContext, id: RegisterId, device: DeviceId) =>
+              run(by, (session) => assignDevice(session, by.tenant, id, device)),
           },
           profile: {
             revise: (by: CommandContext, company: CompanyId, changes: ProfileRevision) =>
               run(by, (session) => reviseProfile(session, by.tenant, company, changes)),
+          },
+          numbering: {
+            define: (by: CommandContext, scope: SeriesScope, format: string) =>
+              run(by, (session) => defineSeries(session, by.tenant, scope, format)),
           },
           settings: {
             forBranch: (by: CommandContext, branch: BranchId, key: string, value: string | null) =>
