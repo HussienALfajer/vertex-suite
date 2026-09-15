@@ -13,7 +13,7 @@ import {
   DocumentNumbering,
   Organisation,
   OrganisationAdministration,
-  SYS_PERMISSION_IDS,
+  SYS_PERMISSION_SEEDS,
   type RecordSession,
   type SeriesScope,
   type NewBranch,
@@ -59,7 +59,11 @@ export * from './contract.js';
  * declared is a permission that silently does nothing.
  */
 function permissions(): readonly PermissionDeclaration[] {
-  return SYS_PERMISSION_IDS.map((id) => ({ id, labelKey: `permission.${id}` }));
+  return SYS_PERMISSION_SEEDS.map(({ id, seededFor }) => ({
+    id,
+    labelKey: `permission.${id}`,
+    seededFor,
+  }));
 }
 
 /**

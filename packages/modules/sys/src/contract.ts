@@ -6,6 +6,7 @@ import {
   type LocationId,
   type PermissionId,
   type RegisterId,
+  type SeededRole,
   type TenantId,
 } from '@vertex/contracts';
 import type { Refusal, Result } from '@vertex/kernel';
@@ -441,7 +442,8 @@ export interface EditableRights {
 }
 
 /**
- * Every right defined below, collected as each one is built.
+ * Every right defined below, collected as each one is built, with the roles
+ * that hold it on the day a shop is set up.
  *
  * The module declares its permissions from this list, and the two functions
  * beneath are the only way to make a right at all — so a right cannot exist
@@ -449,32 +451,78 @@ export interface EditableRights {
  * one, and a right nobody declared is a right `SEC` cannot grant: it shows up
  * as an administrator who simply cannot be given a job, with nothing anywhere
  * saying why.
+ *
+ * The seeds are `SEC-01`'s, and they are this module's to state rather than
+ * `SEC`'s: who has business with a stock location is a question about stock
+ * locations. The owner appears nowhere below, because the owner holds
+ * everything the edition declares and `SEC` works that out from the
+ * declarations themselves.
  */
-const DECLARED: PermissionId[] = [];
+interface Declared {
+  readonly id: PermissionId;
+  readonly seededFor: readonly SeededRole[];
+}
+
+const DECLARED: Declared[] = [];
+
+/** Who holds each of the four rights over a structural entity. */
+type StructuralSeeds = Readonly<Record<keyof StructuralRights, readonly SeededRole[]>>;
+
+/** Who holds each of the two rights over something read and revised. */
+type EditableSeeds = Readonly<Record<keyof EditableRights, readonly SeededRole[]>>;
 
 /**
  * Built through the grammar rather than written out, so that a right this
  * module declares and a right `SEC` later grants cannot differ by a character.
  */
-function rightsOver(resource: string): StructuralRights {
+function rightsOver(resource: string, seeds: StructuralSeeds): StructuralRights {
   const rights: StructuralRights = Object.freeze({
     view: permissionId('sys', resource, 'view'),
     create: permissionId('sys', resource, 'create'),
     edit: permissionId('sys', resource, 'edit'),
     withdraw: permissionId('sys', resource, 'delete'),
   });
-  DECLARED.push(rights.view, rights.create, rights.edit, rights.withdraw);
+  DECLARED.push(
+    { id: rights.view, seededFor: seeds.view },
+    { id: rights.create, seededFor: seeds.create },
+    { id: rights.edit, seededFor: seeds.edit },
+    { id: rights.withdraw, seededFor: seeds.withdraw },
+  );
   return rights;
 }
 
-function rightsToReadAndRevise(resource: string): EditableRights {
+function rightsToReadAndRevise(resource: string, seeds: EditableSeeds): EditableRights {
   const rights: EditableRights = Object.freeze({
     view: permissionId('sys', resource, 'view'),
     edit: permissionId('sys', resource, 'edit'),
   });
-  DECLARED.push(rights.view, rights.edit);
+  DECLARED.push(
+    { id: rights.view, seededFor: seeds.view },
+    { id: rights.edit, seededFor: seeds.edit },
+  );
   return rights;
 }
+
+/** Everyone who works in a shop can see which shop they are working in. */
+const EVERYONE: readonly SeededRole[] = Object.freeze([
+  'manager',
+  'accountant',
+  'purchasing',
+  'warehouse-keeper',
+  'floor-supervisor',
+  'cashier',
+]);
+
+const MANAGER: readonly SeededRole[] = Object.freeze(['manager']);
+
+/**
+ * Nobody but the owner, seeded.
+ *
+ * Registering a company and withdrawing one are decisions about the legal
+ * entity that issues every document; a shop that wants its manager doing them
+ * grants it in the role editor, which is a deliberate act and an auditable one.
+ */
+const OWNER_ONLY: readonly SeededRole[] = Object.freeze([]);
 
 export interface SysPermissions {
   readonly company: StructuralRights;
@@ -487,16 +535,59 @@ export interface SysPermissions {
 }
 
 export const SYS_PERMISSIONS: SysPermissions = Object.freeze({
-  company: rightsOver('company'),
-  branch: rightsOver('branch'),
-  location: rightsOver('location'),
-  register: rightsOver('register'),
-  businessProfile: rightsToReadAndRevise('business-profile'),
-  branchSetting: rightsToReadAndRevise('branch-setting'),
+  company: rightsOver('company', {
+    view: ['manager', 'accountant'],
+    create: OWNER_ONLY,
+    edit: OWNER_ONLY,
+    withdraw: OWNER_ONLY,
+  }),
+  branch: rightsOver('branch', {
+    view: EVERYONE,
+    // Opening and shutting a shop is the owner's; running the one you are in is
+    // the manager's.
+    create: OWNER_ONLY,
+    edit: MANAGER,
+    withdraw: OWNER_ONLY,
+  }),
+  location: rightsOver('location', {
+    view: ['manager', 'purchasing', 'warehouse-keeper', 'floor-supervisor'],
+    create: MANAGER,
+    edit: MANAGER,
+    withdraw: MANAGER,
+  }),
+  register: rightsOver('register', {
+    view: ['manager', 'floor-supervisor', 'cashier'],
+    create: MANAGER,
+    edit: MANAGER,
+    withdraw: MANAGER,
+  }),
+  // The cashier reads this one, and it is the only `SYS` record they revise
+  // nothing of: `SYS-05` puts the legal name and the tax number on every
+  // receipt, and a register that cannot read them cannot print one.
+  businessProfile: rightsToReadAndRevise('business-profile', {
+    view: ['manager', 'accountant', 'cashier'],
+    edit: MANAGER,
+  }),
+  branchSetting: rightsToReadAndRevise('branch-setting', {
+    view: MANAGER,
+    edit: MANAGER,
+  }),
   // Revising a format is a right; taking the next number is not. Numbering is
   // something a document does to itself, not something a person asks for, and a
   // right nobody can be refused is a right that only clutters the role editor.
-  numberingSeries: rightsToReadAndRevise('numbering-series'),
+  //
+  // The accountant revises it rather than the manager. A document series is
+  // what an inspector reads a year later, and its format is an accounting
+  // decision that outlives whoever is managing the shop this season.
+  numberingSeries: rightsToReadAndRevise('numbering-series', {
+    view: ['manager', 'accountant'],
+    edit: ['accountant'],
+  }),
 });
 
-export const SYS_PERMISSION_IDS: readonly PermissionId[] = Object.freeze([...DECLARED]);
+export const SYS_PERMISSION_IDS: readonly PermissionId[] = Object.freeze(
+  DECLARED.map((one) => one.id),
+);
+
+/** What the module hands the platform: every right, and who starts out holding it. */
+export const SYS_PERMISSION_SEEDS: readonly Declared[] = Object.freeze([...DECLARED]);
