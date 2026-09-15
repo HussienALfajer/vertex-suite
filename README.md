@@ -24,7 +24,8 @@ comments reference them.
 
 ```
 packages/kernel      exact money and quantities, identifiers, time, refusals
-packages/…           platform, contracts, ui, i18n, modules, adapters
+packages/platform    module registry, editions, event bus, unit of work
+packages/…           contracts, ui, i18n, modules, adapters
 apps/…               store-node, register, back-office, count-app
 editions/            which modules and switches ship to a given customer
 ```

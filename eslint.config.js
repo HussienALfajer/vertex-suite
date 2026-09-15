@@ -113,7 +113,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['packages/kernel/src/**/*.ts'],
+    files: ['packages/kernel/src/**/*.ts', 'packages/platform/src/**/*.ts'],
     rules: {
       'no-console': 'error',
       'no-restricted-properties': [
@@ -144,7 +144,7 @@ export default tseslint.config(
 
   {
     // A test of the clock has to be able to compare it against the machine's.
-    files: ['packages/kernel/src/**/*.test.ts'],
+    files: ['packages/kernel/src/**/*.test.ts', 'packages/platform/src/**/*.test.ts'],
     rules: {
       'no-restricted-properties': ['error', ...noFloatOrigin, ...noAdHocRounding, ...noWeakRandom],
     },
