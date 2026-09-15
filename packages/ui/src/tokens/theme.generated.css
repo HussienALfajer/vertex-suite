@@ -24,8 +24,8 @@
   /* Text */
   --vx-text-primary: var(--vx-neutral-900);
   --vx-text-secondary: var(--vx-neutral-600);
-  --vx-text-muted: var(--vx-neutral-500);
-  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-900) 38%, transparent);
+  --vx-text-muted: var(--vx-neutral-400);
+  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-900) 35%, transparent);
 
   /* Separation */
   --vx-border: color-mix(in srgb, var(--vx-neutral-900) 10%, transparent);
@@ -33,12 +33,12 @@
 
   /* Neutral fills, each with the one foreground it requires */
   --vx-fill-primary: var(--vx-neutral-900);
-  --vx-fill-primary-hover: var(--vx-neutral-800);
+  --vx-fill-primary-hover: var(--vx-neutral-750);
   --vx-fill-secondary: var(--vx-surface-2);
   --vx-fill-secondary-hover: var(--vx-neutral-50);
-  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-900) 6%, transparent);
+  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-900) 5%, transparent);
   --vx-fill-field: var(--vx-surface-2);
-  --vx-on-primary: var(--vx-neutral-10);
+  --vx-on-primary: var(--vx-neutral-0);
 
   /* Elevation */
   --vx-shadow-sm: 0 1px 2px rgb(12 11 9 / 0.05), 0 2px 8px rgb(12 11 9 / 0.06);
@@ -68,7 +68,7 @@
   --vx-bg-success: var(--vx-green-bg);
   --vx-on-bg-success: var(--vx-green-on-bg);
   --vx-border-success: var(--vx-green-border);
-  --vx-on-success: #ffffff;
+  --vx-on-success: #0b0b0b;
   /* danger */
   --vx-fill-danger: var(--vx-red-fill);
   --vx-fill-danger-hover: var(--vx-red-fill-hover);
@@ -84,7 +84,7 @@
   --vx-bg-warning: var(--vx-amber-bg);
   --vx-on-bg-warning: var(--vx-amber-on-bg);
   --vx-border-warning: var(--vx-amber-border);
-  --vx-on-warning: #ffffff;
+  --vx-on-warning: #0b0b0b;
   /* info */
   --vx-fill-info: var(--vx-teal-fill);
   --vx-fill-info-hover: var(--vx-teal-fill-hover);
@@ -92,7 +92,7 @@
   --vx-bg-info: var(--vx-teal-bg);
   --vx-on-bg-info: var(--vx-teal-on-bg);
   --vx-border-info: var(--vx-teal-border);
-  --vx-on-info: #ffffff;
+  --vx-on-info: #0b0b0b;
 
   /* Tenant brand (§4.5). Replaced at load when the tenant supplies one. */
   --vx-fill-brand: var(--vx-fill-primary);
@@ -171,18 +171,18 @@
   --vx-text-primary: var(--vx-neutral-50);
   --vx-text-secondary: var(--vx-neutral-200);
   --vx-text-muted: var(--vx-neutral-400);
-  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-50) 38%, transparent);
+  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-50) 35%, transparent);
 
   /* Separation */
-  --vx-border: color-mix(in srgb, var(--vx-neutral-50) 12%, transparent);
-  --vx-border-strong: color-mix(in srgb, var(--vx-neutral-50) 22%, transparent);
+  --vx-border: color-mix(in srgb, var(--vx-neutral-50) 10%, transparent);
+  --vx-border-strong: color-mix(in srgb, var(--vx-neutral-50) 20%, transparent);
 
   /* Neutral fills, each with the one foreground it requires */
-  --vx-fill-primary: var(--vx-neutral-50);
+  --vx-fill-primary: var(--vx-neutral-0);
   --vx-fill-primary-hover: var(--vx-neutral-100);
   --vx-fill-secondary: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
   --vx-fill-secondary-hover: color-mix(in srgb, var(--vx-neutral-50) 14%, transparent);
-  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
+  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-50) 7.5%, transparent);
   --vx-fill-field: color-mix(in srgb, var(--vx-neutral-50) 5%, transparent);
   --vx-on-primary: var(--vx-neutral-900);
 
@@ -222,18 +222,18 @@
   --vx-text-primary: var(--vx-neutral-50);
   --vx-text-secondary: var(--vx-neutral-200);
   --vx-text-muted: var(--vx-neutral-400);
-  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-50) 38%, transparent);
+  --vx-text-disabled: color-mix(in srgb, var(--vx-neutral-50) 35%, transparent);
 
   /* Separation */
-  --vx-border: color-mix(in srgb, var(--vx-neutral-50) 12%, transparent);
-  --vx-border-strong: color-mix(in srgb, var(--vx-neutral-50) 22%, transparent);
+  --vx-border: color-mix(in srgb, var(--vx-neutral-50) 10%, transparent);
+  --vx-border-strong: color-mix(in srgb, var(--vx-neutral-50) 20%, transparent);
 
   /* Neutral fills, each with the one foreground it requires */
-  --vx-fill-primary: var(--vx-neutral-50);
+  --vx-fill-primary: var(--vx-neutral-0);
   --vx-fill-primary-hover: var(--vx-neutral-100);
   --vx-fill-secondary: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
   --vx-fill-secondary-hover: color-mix(in srgb, var(--vx-neutral-50) 14%, transparent);
-  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-50) 8%, transparent);
+  --vx-fill-ghost-hover: color-mix(in srgb, var(--vx-neutral-50) 7.5%, transparent);
   --vx-fill-field: color-mix(in srgb, var(--vx-neutral-50) 5%, transparent);
   --vx-on-primary: var(--vx-neutral-900);
 

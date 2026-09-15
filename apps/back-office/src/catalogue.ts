@@ -90,7 +90,6 @@ export const catalogue = {
   'permission.unknown': 'غير معروفة',
 
   'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
-  'theme.system': 'حسب الجهاز',
   'theme.light': 'فاتح',
   'theme.dark': 'داكن',
 

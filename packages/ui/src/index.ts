@@ -135,7 +135,12 @@ export {
   type ToastRegionProps,
   type ToastTone,
 } from './components/Toast.js';
-export { ThemeSwitch, nextTheme, type ThemeSwitchProps } from './components/ThemeSwitch.js';
+export {
+  ThemeSwitch,
+  nextTheme,
+  type ThemeSwitchProps,
+  type TwoToneTheme,
+} from './components/ThemeSwitch.js';
 export { WithTooltip, type WithTooltipProps } from './components/Tooltip.js';
 export {
   BreadcrumbTrail,

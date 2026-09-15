@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 
-import { ThemeSwitch, ToastRegion, VertexProvider, type ThemeChoice } from '@vertex/ui';
+import { ThemeSwitch, ToastRegion, VertexProvider, type TwoToneTheme } from '@vertex/ui';
 
 import { createTranslator } from './catalogue.js';
 import { OrganisationProvider } from './organisation.js';
@@ -33,10 +33,12 @@ export interface AppProps {
  * at the root.
  */
 export function App({ system }: AppProps): ReactNode {
-  // `system` is the default and means the absence of `data-theme` (§3.2): the
-  // device decides, which on a machine that already turns dark at dusk is the
-  // answer somebody has given once and should not have to give again.
-  const [theme, setTheme] = useState<ThemeChoice>('system');
+  // A concrete choice, not `'system'`: §3.2's third state — the absence of
+  // `data-theme`, following the device — is no longer offered here. A shop's
+  // shared till does not turn dark at dusk the way a screen its owner also
+  // uses at home does, and this app now decides light or dark once at load
+  // rather than leaving the choice to change itself between visits.
+  const [theme, setTheme] = useState<TwoToneTheme>('light');
 
   return (
     <VertexProvider translator={translator} locale="ar" theme={theme} navigate={navigate}>

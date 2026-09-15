@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { gotoThemed } from './theme.js';
+
 /**
  * The sign-in screen, operated with no pointing device at all.
  *
@@ -11,7 +13,7 @@ import { expect, test } from '@playwright/test';
  */
 
 test('signs in from the keyboard alone, and lands on the shell', async ({ page }) => {
-  await page.goto('/');
+  await gotoThemed(page);
 
   // No click anywhere in this test. The field that takes the first keystroke is
   // already focused, which is what makes that possible.
@@ -24,7 +26,7 @@ test('signs in from the keyboard alone, and lands on the shell', async ({ page }
 });
 
 test('shows the refusal, and keeps the keyboard where it can be corrected', async ({ page }) => {
-  await page.goto('/');
+  await gotoThemed(page);
 
   await page.keyboard.type('owner');
   await page.keyboard.press('Tab');
@@ -45,7 +47,7 @@ test('shows the refusal, and keeps the keyboard where it can be corrected', asyn
 test('every control on the screen is reachable by Tab, and shows focus when it is', async ({
   page,
 }) => {
-  await page.goto('/');
+  await gotoThemed(page);
 
   // From the top of the document rather than from wherever the screen put the
   // keyboard. The sign-in screen focuses the field that takes the first
@@ -91,7 +93,7 @@ test('every control on the screen is reachable by Tab, and shows focus when it i
 });
 
 test('the skip link reaches the main region', async ({ page }) => {
-  await page.goto('/');
+  await gotoThemed(page);
 
   // It is the first tab stop on every screen (§11.1), and it is the one control
   // that is invisible until it has focus.
@@ -104,7 +106,7 @@ test('the skip link reaches the main region', async ({ page }) => {
 });
 
 test('the document is right-to-left and in Arabic, from the first paint', async ({ page }) => {
-  await page.goto('/');
+  await gotoThemed(page);
 
   // `SYS-01`: the interface is Arabic-first and direction follows the locale.
   // The served HTML carries it so the first paint is not backwards, and the

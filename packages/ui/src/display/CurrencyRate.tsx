@@ -52,7 +52,7 @@ export function CurrencyRate({
       </span>
       <DateTime value={asOf} timeZone={timeZone} precision="date" className="text-fg-muted" />
       {isCurrent ? null : (
-        <span className="rounded-pill bg-tint-warning text-on-tint-warning px-[0.5em] text-caption">
+        <span className="rounded bg-tint-warning text-on-tint-warning px-[0.5em] text-caption">
           {translator.format('rate.notToday')}
         </span>
       )}

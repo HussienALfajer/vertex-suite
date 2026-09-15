@@ -6,7 +6,7 @@
  * happen here alone — which is what makes them configuration rather than a fork.
  */
 
-import { ACCENT_ROLES, NEUTRAL_ROLES } from './spec.js';
+import { ACCENT_ROLES, NEUTRAL_ROLES, ON_ROLE_HEX } from './spec.js';
 
 /** A semantic token whose value differs between the themes. */
 export interface ThemedToken {
@@ -59,12 +59,17 @@ export const TEXT: Readonly<Record<string, ThemedToken>> = {
     light: neutral(NEUTRAL_ROLES.textMuted.light),
     dark: neutral(NEUTRAL_ROLES.textMuted.dark),
   },
-  'text-disabled': { light: overlay(900, 38), dark: overlay(50, 38) },
+  // 35% in both themes, not 38% — see `NEUTRAL_RAMP_HEX`.
+  'text-disabled': { light: overlay(900, 35), dark: overlay(50, 35) },
 };
 
+// The dark-theme percentages here used to run heavier than the light-theme
+// ones (12% and 22%, against 10% and 20%); both rows are now exactly double
+// the light-theme figure, matching the source palette's own symmetric alpha
+// scale. See `NEUTRAL_RAMP_HEX`.
 export const BORDERS: Readonly<Record<string, ThemedToken>> = {
-  border: { light: overlay(900, 10), dark: overlay(50, 12) },
-  'border-strong': { light: overlay(900, 20), dark: overlay(50, 22) },
+  border: { light: overlay(900, 10), dark: overlay(50, 10) },
+  'border-strong': { light: overlay(900, 20), dark: overlay(50, 20) },
 };
 
 /**
@@ -82,15 +87,25 @@ export const BORDERS: Readonly<Record<string, ThemedToken>> = {
  * arrives.
  */
 export const NEUTRAL_FILLS: Readonly<Record<string, ThemedToken>> = {
-  'fill-primary': { light: neutral(900), dark: neutral(50) },
-  'fill-primary-hover': { light: neutral(800), dark: neutral(100) },
+  // The dark fill used to be `neutral(50)` — an off-white a touch short of
+  // the ramp's own white — with `neutral(10)` as its label. Both are now the
+  // ramp's actual extremes: the source palette's primary button is literally
+  // pure black-on-white / white-on-black.
+  'fill-primary': { light: neutral(900), dark: neutral(0) },
+  // One stop darker than before (`neutral(800)`), matching the source
+  // palette's own hover — its warm-black ladder is compressed enough near
+  // black that the difference reads as one visible step, not a rounding one.
+  'fill-primary-hover': { light: neutral(750), dark: neutral(100) },
   'fill-secondary': { light: 'var(--vx-surface-2)', dark: overlay(50, 8) },
   // Not `fill-ghost-hover`: in the dark theme the two resolve to the same
   // value, so a default button's hover was a no-op that nobody could see.
   'fill-secondary-hover': { light: neutral(50), dark: overlay(50, 14) },
-  'fill-ghost-hover': { light: overlay(900, 6), dark: overlay(50, 8) },
+  // 5% and 7.5%, matching the source palette exactly (were 6% and 8%).
+  'fill-ghost-hover': { light: overlay(900, 5), dark: overlay(50, 7.5) },
   'fill-field': { light: 'var(--vx-surface-2)', dark: overlay(50, 5) },
-  'on-primary': { light: neutral(10), dark: neutral(900) },
+  // Pure white now that `fill-primary` is the ramp's actual white, not the
+  // off-white (`neutral(10)`) it used to label.
+  'on-primary': { light: neutral(0), dark: neutral(900) },
 };
 
 /**
@@ -139,8 +154,11 @@ export const ACCENT_TOKENS: readonly {
     [`bg-${role}`]: `var(--vx-${hue}-bg)`,
     [`on-bg-${role}`]: `var(--vx-${hue}-on-bg)`,
     [`border-${role}`]: `var(--vx-${hue}-border)`,
-    // §4.4: a label on a filled accent is white in either theme.
-    [`on-${role}`]: '#ffffff',
+    // Used to be `'#ffffff'` for every role, unconditionally (§4.4's old
+    // rule: "white in either theme"). `success`, `warning` and `info` sit at
+    // a lightness where white does not clear the contrast floor against
+    // their own fill — see `ON_ROLE_HEX`'s comment in `spec.ts`.
+    [`on-${role}`]: ON_ROLE_HEX[role as keyof typeof ON_ROLE_HEX],
   },
 }));
 

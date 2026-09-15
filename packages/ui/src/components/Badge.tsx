@@ -22,9 +22,11 @@ const toneClasses: Readonly<Record<BadgeTone, string>> = {
 /**
  * A small piece of status.
  *
- * Pill-shaped, and §7.1 reserves that shape for exactly this: badges and status
- * chips. A pill-shaped *button* reads as a chip and gets ignored, which is why
- * the radius is not a free choice.
+ * `rounded`, the same nearly-square control radius as everything else, not
+ * the pill §7.1 used to reserve for exactly this. What tells a badge from a
+ * button is not its corner — it is that a button fills with a flat surface
+ * colour and this fills with a *tint*, at caption size, inline rather than in
+ * the control row.
  *
  * Every tone pairs a `bg-*` with its own `on-bg-*`, so a badge is readable by
  * construction rather than by whoever picked the colours being careful.
@@ -33,7 +35,7 @@ export function Badge({ tone = 'neutral', children, className }: BadgeProps): Re
   return (
     <span
       className={clsx(
-        'inline-flex items-center rounded-pill whitespace-nowrap',
+        'rounded inline-flex items-center whitespace-nowrap',
         'px-[var(--vx-pad-sm)] py-[2px] text-caption font-medium',
         toneClasses[tone],
         className,

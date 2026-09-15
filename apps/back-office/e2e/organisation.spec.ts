@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { gotoThemed } from './theme.js';
+
 /**
  * Setting a shop up, in a real browser, with no pointing device.
  *
@@ -15,7 +17,7 @@ import { expect, test, type Page } from '@playwright/test';
  */
 
 async function signIn(page: Page): Promise<void> {
-  await page.goto('/');
+  await gotoThemed(page);
   await page.keyboard.type('owner');
   await page.keyboard.press('Tab');
   await page.keyboard.type('till-morning-1');
