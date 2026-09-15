@@ -1,4 +1,11 @@
-import { ACCENT_TOKENS, BORDERS, NEUTRAL_FILLS, SURFACES, TEXT } from './semantic.js';
+import {
+  ACCENT_TOKENS,
+  BORDERS,
+  COMPONENT_TOKENS,
+  NEUTRAL_FILLS,
+  SURFACES,
+  TEXT,
+} from './semantic.js';
 import { BUNDLED_WEIGHTS, TYPE_SCALE, WEIGHTS } from './scale.js';
 import { CHART_SERIES } from './spec.js';
 import { ELEVATION } from './style.js';
@@ -108,6 +115,7 @@ export function emitTailwind(): string {
   for (const name of Object.keys(TEXT)) push(tailwindColourAlias(name), name);
   for (const name of Object.keys(BORDERS)) push(tailwindColourAlias(name), name);
   for (const name of Object.keys(NEUTRAL_FILLS)) push(name, name);
+  for (const name of Object.keys(COMPONENT_TOKENS)) push(name, name);
   for (const { tokens } of ACCENT_TOKENS) {
     for (const name of Object.keys(tokens)) push(tailwindColourAlias(name), name);
   }

@@ -76,6 +76,85 @@ describe('every fill has exactly one on', () => {
   });
 });
 
+describe('a hover state is visible in both themes', () => {
+  const light = block(theme, ':root {');
+  const dark = block(theme, ":root[data-theme='dark'] {");
+
+  // This shipped broken. In the dark theme `fill-secondary` and
+  // `fill-ghost-hover` resolve to the same value, so hovering a default button
+  // changed nothing at all — and the test suite had no opinion about it,
+  // because no test compared a fill with the fill it hovers to.
+  const HOVER_PAIRS: readonly (readonly [fill: string, hover: string])[] = [
+    ['fill-primary', 'fill-primary-hover'],
+    ['fill-secondary', 'fill-secondary-hover'],
+  ];
+
+  for (const [fill, hover] of HOVER_PAIRS) {
+    it(`${hover} differs from ${fill} in both themes`, () => {
+      for (const [name, declarations] of [
+        ['light', light],
+        ['dark', dark],
+      ] as const) {
+        const base = declarations.get(fill);
+        const hovered = declarations.get(hover);
+        expect(base, `${name}/${fill}`).toBeDefined();
+        expect(hovered, `${name}/${hover}`).toBeDefined();
+        expect(hovered, `${name}: ${hover} is the same value as ${fill}`).not.toBe(base);
+      }
+    });
+  }
+
+  it('no hover fill is the same value as another fill it sits beside', () => {
+    // The original defect in its general form: two fills that are meant to read
+    // differently resolving to one value.
+    for (const declarations of [light, dark]) {
+      const secondary = declarations.get('fill-secondary');
+      const ghostHover = declarations.get('fill-ghost-hover');
+      const secondaryHover = declarations.get('fill-secondary-hover');
+      expect(secondaryHover).not.toBe(secondary);
+      expect(secondaryHover).not.toBe(ghostHover);
+    }
+  });
+});
+
+describe('the switch stays legible in all four states — §4.7', () => {
+  const light = block(theme, ':root {');
+  const dark = block(theme, ":root[data-theme='dark'] {");
+
+  // The knob disappeared: its track was `fill-secondary`, which in the light
+  // theme is `surface-2` — the same white as the knob itself.
+  for (const [name, declarations] of [
+    ['light', light],
+    ['dark', dark],
+  ] as const) {
+    it(`${name}: the knob is never the same value as its track`, () => {
+      expect(declarations.get('switch-knob'), `${name} off`).not.toBe(
+        declarations.get('switch-track'),
+      );
+      expect(declarations.get('switch-knob-on'), `${name} on`).not.toBe(
+        declarations.get('switch-track-on'),
+      );
+    });
+  }
+
+  it('the knob on carries the paired foreground of the track it sits on', () => {
+    // The same rule as any label on a fill (§4.4), so it inverts for free.
+    expect(light.get('switch-track-on')).toBe('var(--vx-fill-primary)');
+    expect(light.get('switch-knob-on')).toBe('var(--vx-on-primary)');
+  });
+
+  it('every component token resolves to the semantic layer, never to a primitive by name', () => {
+    // §3.1: layer 4 may hold values, but it reaches them through layer 3.
+    for (const declarations of [light, dark]) {
+      for (const [name, value] of declarations) {
+        if (!name.startsWith('switch-')) continue;
+        const namesAPrimitive = /var\(--vx-(neutral|blue|green|red|amber|teal)-/.test(value);
+        expect(namesAPrimitive, `${name}: ${value}`).toBe(false);
+      }
+    }
+  });
+});
+
 describe('the dark theme is an equal, not an afterthought', () => {
   const light = block(theme, ':root {');
   const dark = block(theme, ":root[data-theme='dark'] {");

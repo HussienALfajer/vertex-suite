@@ -22,10 +22,16 @@
   --color-line: var(--vx-border);
   --color-line-strong: var(--vx-border-strong);
   --color-fill-primary: var(--vx-fill-primary);
+  --color-fill-primary-hover: var(--vx-fill-primary-hover);
   --color-fill-secondary: var(--vx-fill-secondary);
+  --color-fill-secondary-hover: var(--vx-fill-secondary-hover);
   --color-fill-ghost-hover: var(--vx-fill-ghost-hover);
   --color-fill-field: var(--vx-fill-field);
   --color-on-primary: var(--vx-on-primary);
+  --color-switch-track: var(--vx-switch-track);
+  --color-switch-track-on: var(--vx-switch-track-on);
+  --color-switch-knob: var(--vx-switch-knob);
+  --color-switch-knob-on: var(--vx-switch-knob-on);
   --color-fill-accent: var(--vx-fill-accent);
   --color-fill-accent-hover: var(--vx-fill-accent-hover);
   --color-fg-accent: var(--vx-text-accent);

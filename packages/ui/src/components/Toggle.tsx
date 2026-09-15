@@ -105,15 +105,17 @@ export function Switch({ children, className, ...props }: SwitchProps): ReactNod
           'h-[var(--vx-switch-h)] w-[calc(var(--vx-switch-h)*1.75)] shrink-0',
           'rounded-pill flex items-center p-[2px] transition-colors',
           'duration-[var(--vx-dur-snap)] ease-out outline-none',
-          'bg-fill-secondary border-line-strong border',
-          'data-[selected]:bg-fill-primary data-[selected]:border-transparent',
+          // §4.7. Not `fill-secondary`: in the light theme that resolves to
+          // `surface-2`, the same white as the knob, and the knob vanishes.
+          'bg-switch-track data-[selected]:bg-switch-track-on',
           'data-[focus-visible]:shadow-[var(--vx-focus-ring)]',
         )}
       >
         <span
           className={clsx(
-            'bg-surface-2 aspect-square h-full rounded-full shadow-sm',
-            'transition-[margin] duration-[var(--vx-dur-snap)] ease-out',
+            'aspect-square h-full rounded-full shadow-sm',
+            'bg-switch-knob group-data-[selected]:bg-switch-knob-on',
+            'transition-[margin,background-color] duration-[var(--vx-dur-snap)] ease-out',
             'group-data-[selected]:ms-[calc(var(--vx-switch-h)*0.75)]',
           )}
         />

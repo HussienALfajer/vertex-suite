@@ -48,10 +48,11 @@ export type Tone = 'primary' | 'secondary' | 'ghost' | 'danger';
  * is the thing a keyboard-only cashier tracks — would have to compete with it.
  */
 export const tones: Readonly<Record<Tone, string>> = {
-  primary:
-    'bg-fill-primary text-on-primary hover:opacity-90 disabled:bg-fill-secondary disabled:opacity-100',
+  primary: 'bg-fill-primary text-on-primary hover:bg-fill-primary-hover disabled:bg-fill-secondary',
+  // Not `fill-ghost-hover`: in the dark theme that token and `fill-secondary`
+  // resolve to the same value, so this hover was a no-op nobody could see.
   secondary:
-    'bg-fill-secondary text-fg border border-line-strong hover:bg-fill-ghost-hover ' +
+    'bg-fill-secondary text-fg border border-line-strong hover:bg-fill-secondary-hover ' +
     'disabled:bg-fill-secondary',
   ghost: 'bg-transparent text-fg hover:bg-fill-ghost-hover',
   danger: 'bg-fill-danger text-on-danger hover:bg-fill-danger-hover disabled:bg-fill-secondary',

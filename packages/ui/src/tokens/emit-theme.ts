@@ -2,6 +2,7 @@ import {
   ACCENT_TOKENS,
   BORDERS,
   BRAND_FALLBACK,
+  COMPONENT_TOKENS,
   NEUTRAL_FILLS,
   SURFACES,
   TEXT,
@@ -60,6 +61,9 @@ function semanticBlock(theme: 'light' | 'dark'): string[] {
     '',
     '  /* Elevation */',
     ...themed(ELEVATION, theme),
+    '',
+    '  /* Component tokens (layer 4 of §3.1), owned by the component named */',
+    ...themed(COMPONENT_TOKENS, theme),
   ];
 }
 
