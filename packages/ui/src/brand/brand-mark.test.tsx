@@ -1,7 +1,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { INK, WORDMARK_GLYPHS } from './geometry.js';
+import { CUBE, INK, WORDMARK_GLYPHS } from './geometry.js';
 import { VertexAppIcon, VertexLogo } from './VertexLogo.js';
 
 afterEach(cleanup);
@@ -24,16 +24,50 @@ describe('<VertexLogo> — §4.5', () => {
     expect(container.querySelector('title')?.textContent).toBe('Vertex');
   });
 
-  it('draws a true isometric cube, which is what makes the faces read as squares', () => {
-    // The top face's half-width to half-height is √3 : 1. Off that ratio the
-    // three faces stop reading as equal squares seen from a corner and the mark
-    // reads as a flattened box.
+  it('draws a true isometric cube rather than one that only looks like one', () => {
+    // Two things have to hold together, and the first draft of this mark held
+    // only the first. The top face must be √3 across to 1 down — that is what
+    // makes it *look* isometric — **and** the vertical edges must be the cube's
+    // own edge. Get the second wrong and the rhombus still reads correctly
+    // while the whole is a box somebody sat on; it was short by a fifth.
+    expect(CUBE.rhombus.across / CUBE.rhombus.down).toBeCloseTo(Math.sqrt(3), 3);
+    expect(CUBE.width).toBeCloseTo(CUBE.edge * Math.sqrt(3), 3);
+    expect(CUBE.height).toBe(CUBE.edge * 2);
+
+    // Which makes the silhouette a regular hexagon: taller than it is wide, and
+    // the run the carve needs to read as a V rather than as a nick.
+    expect(CUBE.height).toBeGreaterThan(CUBE.width);
+  });
+
+  it('stops the carve short of the bottom vertex, so the mark has a foot', () => {
+    // Run to the corner, the two outer slivers taper to nothing: they go first
+    // in print and then on screen, and what is left is a bare V with no cube
+    // behind it.
+    expect(CUBE.foot).toBeGreaterThan(0);
+    expect(CUBE.foot).toBeLessThan(CUBE.edge / 2);
+
     const { container } = render(<VertexLogo />);
-    const faces = [...container.querySelectorAll('path')];
-    expect(faces.length).toBeGreaterThan(0);
-    // 52 across, 30 down, from the geometry.
-    expect(52 / 30).toBeCloseTo(Math.sqrt(3), 1);
-    expect(ratio(container.querySelector('svg'))).toBe(1);
+    const sides = [...container.querySelectorAll('path')].filter(
+      (one) => one.getAttribute('fill') === INK.left || one.getAttribute('fill') === INK.right,
+    );
+    // The side faces are whole and the carve lies over them, which is what
+    // leaves face colour in the foot without a seventh shape to keep in step.
+    expect(sides).toHaveLength(2);
+    for (const face of sides) {
+      expect((face.getAttribute('d')?.match(/L/g) ?? []).length).toBe(3);
+    }
+  });
+
+  it('holds the two halves of the top face apart, so the cube keeps its crease', () => {
+    // Nearly equal, the edge down the middle of the top face disappears and the
+    // cube stops saying which way it is turned.
+    expect(INK.topLeft).not.toBe(INK.topRight);
+    const lightness = (hex: string): number => Number.parseInt(hex.slice(1, 3), 16);
+    expect(lightness(INK.topRight) - lightness(INK.topLeft)).toBeGreaterThan(24);
+
+    // And the shadow arm sits on the left face, so that face is lighter than a
+    // lit cube would strictly make it — otherwise the two run together.
+    expect(lightness(INK.left)).toBeGreaterThan(lightness(INK.notchShadow) + 100);
   });
 
   it('takes its colour from the ground when it is monochrome', () => {
