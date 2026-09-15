@@ -17,9 +17,6 @@ export {
   type CommandContext,
   type CommandContextInput,
   type CorrelationId,
-  type DeviceId,
-  type TenantId,
-  type UserId,
 } from './context.js';
 
 export {

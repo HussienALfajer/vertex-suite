@@ -12,16 +12,18 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:tools": "vitest run --config tools/vitest.config.mjs",
     "test:watch": "turbo run test:watch",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "check:policy": "node tools/check-policy.mjs",
+    "check:boundaries": "node tools/check-boundaries.mjs",
     "check:coverage": "node tools/check-coverage.mjs",
     "next": "node tools/next.mjs",
     "e2e": "pnpm --filter @vertex/sandbox e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm check:policy && pnpm typecheck && pnpm test && pnpm check:coverage"
+    "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm test:tools && pnpm check:policy && pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm check:coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

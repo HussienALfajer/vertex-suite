@@ -47,6 +47,13 @@ The build comes **first** on purpose. A package consumes its neighbours through 
 unresolved type — which passes on a machine that happens to have built earlier and fails on a
 clean checkout.
 
+`check:boundaries` sits in the middle, and the tests in `tools/` run before it. `docs/modules.md`
+§4 says the thing that matters about the module boundary: it **decays silently**. Nothing fails
+when a module reaches past another module's contract — the code compiles and the tests pass, and
+the bill arrives years later as an edition that cannot drop a module the customer never bought.
+So it is checked rather than trusted, and the checker is itself tested, because a check nobody
+tests is one that stops catching things without saying so.
+
 The coverage check comes **last**, for the mirror-image reason. `docs/modules.md` §7 defines a
 unit as finished when the acceptance criteria of every feature it names are automated and
 passing; `check:coverage` reads the feature list from `docs/core-features.md`, the ownership from
@@ -54,13 +61,14 @@ passing; `check:coverage` reads the feature list from `docs/core-features.md`, t
 unit has none. Running it after the suites means proven is a test that passed, not a test that
 exists.
 
-| Command          |                                          |
-| ---------------- | ---------------------------------------- |
-| `pnpm verify`    | everything, in the order CI runs it      |
-| `pnpm test`      | tests only                               |
-| `pnpm typecheck` | types only                               |
-| `pnpm lint`      | lint only                                |
-| `pnpm format`    | rewrite files to the formatter's opinion |
+| Command          |                                           |
+| ---------------- | ----------------------------------------- |
+| `pnpm verify`    | everything, in the order CI runs it       |
+| `pnpm test`      | tests only                                |
+| `pnpm typecheck` | types only                                |
+| `pnpm lint`      | lint only                                 |
+| `pnpm format`    | rewrite files to the formatter's opinion  |
+| `pnpm next`      | the next unit, derived from the documents |
 
 ## Conventions
 

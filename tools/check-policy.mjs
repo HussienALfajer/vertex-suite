@@ -12,18 +12,18 @@
  *   4.      `process.env` is never reached by bracket, because a bundler only
  *           replaces the dotted form and the rest throws in a browser.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { filesUnder, posixPath, workspacePackages } from './workspace.mjs';
 
 const ROOT = process.cwd();
-const SCANNED = [
-  'packages/kernel/src',
-  'packages/platform/src',
-  'packages/ui/src',
-  'packages/i18n/src',
-  'apps',
-];
-const SKIP = new Set(['node_modules', 'dist', '.turbo', 'coverage']);
+
+/**
+ * Tests and journeys are not shipped interface: a spec that names a rule in
+ * prose is not a screen breaking it.
+ */
+const isShippedSource = (name) => /\.tsx?$/.test(name) && !/\.(test|spec)\.tsx?$/.test(name);
 
 /** Props whose value reaches a person's eyes. */
 const USER_FACING_PROPS = [
@@ -90,28 +90,8 @@ function isExempt(lines, index, rule) {
   return match !== null && match[1] === rule && match[2].trim().length > 0;
 }
 
-function* sourceFiles(dir) {
-  let entries;
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (SKIP.has(entry)) continue;
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      yield* sourceFiles(full);
-      // Tests and journeys are not shipped interface: a spec that names a rule
-      // in prose is not a screen breaking it.
-    } else if (/\.tsx?$/.test(entry) && !/\.(test|spec)\.tsx?$/.test(entry)) {
-      yield full;
-    }
-  }
-}
-
 function checkFile(full) {
-  const file = relative(ROOT, full).split(sep).join('/');
+  const file = posixPath(full);
   const source = readFileSync(full, 'utf8');
   const lines = source.split('\n');
   // The catalogue is the one place a user-facing string is supposed to live.
@@ -203,9 +183,13 @@ function checkFile(full) {
   });
 }
 
-for (const dir of SCANNED) {
-  for (const file of sourceFiles(join(ROOT, dir))) {
-    checkFile(file);
+// Every package the workspace declares, rather than a list kept by hand here.
+// A list here is correct until somebody adds a package, and then it is silently
+// wrong in the one direction nobody notices: the new code is never checked, and
+// the check goes on passing.
+for (const pkg of workspacePackages()) {
+  for (const full of filesUnder(join(ROOT, pkg.dir), isShippedSource)) {
+    checkFile(full);
   }
 }
 
