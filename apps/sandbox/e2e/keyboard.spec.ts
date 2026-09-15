@@ -98,7 +98,7 @@ test('the density axis reaches the document and changes control height', async (
   expect(touch).toBeGreaterThanOrEqual(48);
 });
 
-test('the document is right-to-left and never scrolls sideways', async ({ page }) => {
+test('the document is right-to-left and never scrolls sideways — SYS-01', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
   // §9: wide content scrolls inside its own container; the body never does.
