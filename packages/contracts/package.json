@@ -1,9 +1,9 @@
 {
-  "name": "@vertex/platform",
+  "name": "@vertex/contracts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Hosts modules: the registry, the edition they are composed into, the event bus and the unit of work. Knows what a module is, never what any module does.",
+  "description": "The shared vocabulary: identifiers that cross module boundaries and the grammar of a permission. Knows nothing about any module.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,7 +22,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@vertex/contracts": "workspace:*",
     "@vertex/kernel": "workspace:*"
   },
   "devDependencies": {

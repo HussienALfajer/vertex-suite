@@ -1,8 +1,12 @@
+import type { DeviceId, TenantId, UserId } from '@vertex/contracts';
 import { newId, type Id } from '@vertex/kernel';
 
-export type TenantId = Id<'tenant'>;
-export type UserId = Id<'user'>;
-export type DeviceId = Id<'device'>;
+/**
+ * A correlation is the platform's own, not a thing in the shop, so it is named
+ * here. The tenant, the actor and the device are entities two modules apart
+ * both write down, and so belong to the shared vocabulary rather than to
+ * whichever package happened to need them first.
+ */
 export type CorrelationId = Id<'command'>;
 
 /**
