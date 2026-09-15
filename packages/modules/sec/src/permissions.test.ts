@@ -33,7 +33,7 @@ describe('Action-level permissions — SEC-02', () => {
       }),
     );
 
-    const user = sec.someone();
+    const user = await sec.hire('person-1');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -58,7 +58,7 @@ describe('Action-level permissions — SEC-02', () => {
       }),
     );
 
-    const user = sec.someone();
+    const user = await sec.hire('person-2');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -92,7 +92,7 @@ describe('Action-level permissions — SEC-02', () => {
 
   it('grants nothing at all to somebody in no role', async () => {
     await aShopWithAnOwner(sec);
-    const stranger = sec.as(sec.someone());
+    const stranger = sec.as(await sec.hire('person-3'));
 
     expect(await sec.auth.may(stranger, SYS_PERMISSIONS.branch.view)).toBe(false);
     expect(await sec.auth.decide(stranger, SYS_PERMISSIONS.branch.view)).toEqual({
@@ -114,7 +114,7 @@ describe('Action-level permissions — SEC-02', () => {
     const owner = sec.as(await aShopWithAnOwner(sec));
     const role = await seeded(owner, 'floor-supervisor');
 
-    const user = sec.someone();
+    const user = await sec.hire('person-4');
     taken(
       await sec.admin.assignments.assign(owner, { user, role: role.id, confinement: TENANT_WIDE }),
     );
@@ -139,7 +139,7 @@ describe('Action-level permissions — SEC-02', () => {
     // right to edit a role is the right to become the owner: grant yourself
     // everything, then assign it to yourself.
     taken(await sec.admin.roles.grant(owner, manager.id, [SEC_PERMISSIONS.role.edit]));
-    const user = sec.someone();
+    const user = await sec.hire('person-5');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -164,7 +164,7 @@ describe('Action-level permissions — SEC-02', () => {
     const owner = sec.as(await aShopWithAnOwner(sec));
     const cashierRole = await seeded(owner, 'cashier');
 
-    const user = sec.someone();
+    const user = await sec.hire('person-6');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -185,7 +185,7 @@ describe('Action-level permissions — SEC-02', () => {
     expect(
       refusalOf(
         await sec.admin.assignments.assign(cashier, {
-          user: sec.someone(),
+          user: await sec.hire('person-7'),
           role: cashierRole.id,
           confinement: TENANT_WIDE,
         }),

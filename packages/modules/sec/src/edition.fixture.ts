@@ -25,8 +25,17 @@ import {
   type LocationKind,
 } from '@vertex/sys/contract';
 
-import { Authorisation, RoleAdministration, RoleDirectory, TENANT_WIDE } from './contract.js';
+import {
+  Authorisation,
+  Credentials,
+  RoleAdministration,
+  RoleDirectory,
+  TENANT_WIDE,
+  UserAdministration,
+  UserDirectory,
+} from './contract.js';
 import { secModule } from './index.js';
+import { identityIn, writeIdentity } from './records.js';
 
 /**
  * `SEC` installed over `SYS`'s **contract** rather than over `SYS`.
@@ -54,6 +63,9 @@ export interface Installed {
   readonly auth: Authorisation;
   readonly admin: RoleAdministration;
   readonly directory: RoleDirectory;
+  readonly users: UserAdministration;
+  readonly people: UserDirectory;
+  readonly credentials: Credentials;
   readonly tenant: Id<'tenant'>;
   /**
    * The system: a migration, a scheduled job, a sync applying somebody else's
@@ -65,12 +77,33 @@ export interface Installed {
   readonly otherTenant: Id<'tenant'>;
   readonly otherSystem: CommandContext;
   as(user: UserId): CommandContext;
-  someone(): UserId;
+  /**
+   * Somebody who actually works here.
+   *
+   * There is no such thing as a user identifier with nobody behind it any more:
+   * `SEC-09` made a person a record, and the decision reads it, so an assignment
+   * naming a stranger grants nothing. A test that wants somebody with rights
+   * has to hire them, exactly as a shop does.
+   */
+  hire(handle: string, password?: string): Promise<UserId>;
+  /** The same, in the second shop group on this store node. */
+  hireIn(tenant: Id<'tenant'>, handle: string, password?: string): Promise<UserId>;
+  asIn(tenant: Id<'tenant'>, user: UserId): CommandContext;
 
   /** The organisation `SEC` is asking about, as far as `SEC` can see it. */
   openBranch(name: string, tenant?: Id<'tenant'>): BranchId;
   openLocation(branch: BranchId, name: string, kind?: LocationKind): LocationId;
   shutBranch(branch: BranchId): void;
+
+  /**
+   * Writes a credential the way an older build would have written it.
+   *
+   * The one thing a test cannot produce by asking the module for it: a stored
+   * form whose parameters are not today's, which is what a raised cost and a
+   * replayed row from another device both look like.
+   */
+  ageCredential(user: UserId, stored: string): Promise<void>;
+  storedCredential(user: UserId): Promise<string | null>;
 
   /**
    * The same shop, its data untouched, running an edition that has since grown
@@ -185,12 +218,36 @@ function bring(
     auth: registry.require(Authorisation),
     admin: registry.require(RoleAdministration),
     directory: registry.require(RoleDirectory),
+    users: registry.require(UserAdministration),
+    people: registry.require(UserDirectory),
+    credentials: registry.require(Credentials),
     tenant,
     system: systemContext(tenant),
     otherTenant,
     otherSystem: systemContext(otherTenant),
     as: (user: UserId): CommandContext => commandContext({ tenant, actor: user }),
-    someone: (): UserId => newId<'user'>(),
+    async hire(handle: string, password = 'a-long-enough-password'): Promise<UserId> {
+      const hired = taken(
+        await registry
+          .require(UserAdministration)
+          .enrol(systemContext(tenant), { handle, name: handle, password }),
+      );
+      return hired.id;
+    },
+    async hireIn(
+      owner: Id<'tenant'>,
+      handle: string,
+      password = 'a-long-enough-password',
+    ): Promise<UserId> {
+      const hired = taken(
+        await registry
+          .require(UserAdministration)
+          .enrol(systemContext(owner), { handle, name: handle, password }),
+      );
+      return hired.id;
+    },
+    asIn: (owner: Id<'tenant'>, user: UserId): CommandContext =>
+      commandContext({ tenant: owner, actor: user }),
 
     openBranch(name: string, owner: Id<'tenant'> = tenant): BranchId {
       const branch: Branch = {
@@ -223,6 +280,20 @@ function bring(
       places.branches.set(branch, { ...of, active: false });
     },
 
+    ageCredential(user: UserId, stored: string): Promise<void> {
+      return transactor.run(systemContext(tenant), (uow) => {
+        const identity = identityIn(uow.session, user);
+        if (identity === null) throw new Error('Nobody by that identifier.');
+        writeIdentity(uow.session, { ...identity, credential: stored });
+        return Promise.resolve();
+      });
+    },
+    storedCredential(user: UserId): Promise<string | null> {
+      return transactor.run(systemContext(tenant), (uow) =>
+        Promise.resolve(identityIn(uow.session, user)?.credential ?? null),
+      );
+    },
+
     afterBuying(code: ModuleCode, rights: readonly SeededRight[]): Installed {
       const bought = defineModule<MemorySession>({
         code,
@@ -250,6 +321,31 @@ export function refusalOf<T>(result: Result<T, Refusal>): string {
 }
 
 /**
+ * A second shop group on the same store node, staffed the same way.
+ *
+ * Every rule about a shared sign-in is a rule about two tenants, and one of
+ * them has to be able to answer for itself: a recovery is approved by "an
+ * administrator of every tenant it belongs to", and a test that used the system
+ * context to stand in for that administrator would be asserting the rule
+ * against nobody.
+ */
+export async function aSecondShopWithAnOwner(sec: Installed): Promise<CommandContext> {
+  const roles = taken(await sec.admin.roles.seed(sec.otherSystem));
+  const owner = roles.find((role) => role.seeded === 'owner');
+  if (owner === undefined) throw new Error('Seeding produced no owner.');
+
+  const user = await sec.hireIn(sec.otherTenant, 'their-owner');
+  taken(
+    await sec.admin.assignments.assign(sec.otherSystem, {
+      user,
+      role: owner.id,
+      confinement: TENANT_WIDE,
+    }),
+  );
+  return sec.asIn(sec.otherTenant, user);
+}
+
+/**
  * A shop with its seven roles and an owner standing in it.
  *
  * Every test that is not about seeding starts here, because every real
@@ -262,7 +358,7 @@ export async function aShopWithAnOwner(sec: Installed): Promise<UserId> {
   const owner = roles.find((role) => role.seeded === 'owner');
   if (owner === undefined) throw new Error('Seeding produced no owner.');
 
-  const user = sec.someone();
+  const user = await sec.hire('owner');
   taken(
     await sec.admin.assignments.assign(sec.system, {
       user,

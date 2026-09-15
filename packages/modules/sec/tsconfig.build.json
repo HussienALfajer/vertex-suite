@@ -3,7 +3,14 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // The one package in this workspace that opts into Node's globals, which
+    // tsconfig.base.json says is the only way any package gets them. `SEC`
+    // hashes passwords with scrypt out of Node's own standard library — see
+    // `credentials.ts` for why that rather than a native Argon2 — and scrypt
+    // has no Web Crypto equivalent. Nothing here reaches a browser: a screen
+    // imports `@vertex/sec/contract`, which is types and keys.
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.fixture.ts"]

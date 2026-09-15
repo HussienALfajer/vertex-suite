@@ -1,6 +1,14 @@
 import type { TenantId, UserId } from '@vertex/contracts';
 
-import type { Assignment, RecordSession, Role, RoleId } from './contract.js';
+import type {
+  Assignment,
+  RecordSession,
+  Recovery,
+  RecoveryId,
+  Role,
+  RoleId,
+  User,
+} from './contract.js';
 
 /**
  * The key layout, and the one place a stored shape is asserted.
@@ -18,6 +26,7 @@ import type { Assignment, RecordSession, Role, RoleId } from './contract.js';
 export interface StoredShapes {
   readonly role: Role;
   readonly assignment: Assignment;
+  readonly user: User;
 }
 
 export type Collection = keyof StoredShapes;
@@ -110,4 +119,65 @@ export function writeAssignment(
 
 export function assignmentsIn(session: RecordSession, tenant: TenantId): readonly Assignment[] {
   return scanRecords(session, 'assignment', tenant);
+}
+
+export function userIn(session: RecordSession, tenant: TenantId, id: UserId): User | null {
+  return readRecord(session, 'user', tenant, [id]);
+}
+
+export function usersIn(session: RecordSession, tenant: TenantId): readonly User[] {
+  return scanRecords(session, 'user', tenant);
+}
+
+export function writeUser(session: RecordSession, user: User): User {
+  return writeRecord(session, 'user', user.tenant, [user.id], user);
+}
+
+/**
+ * The sign-in behind a person, and the two records in this module that **no
+ * tenant owns**.
+ *
+ * Everything else here is keyed under a tenant, and that is what makes a read
+ * that forgot the tenant a read that finds nothing. These two cannot be: a
+ * credential is precisely the thing two tenants may share, and `SEC-09`'s rule
+ * — that an administrator may reset a password only when the sign-in is this
+ * tenant's alone — is unanswerable from inside one tenant's keys.
+ *
+ * So the boundary moves rather than disappearing. The record is reachable only
+ * through this module's own commands, each of which checks the tenant asking
+ * against the tenants on the record, and nothing it holds is ever returned to a
+ * caller: `User.shared` is a boolean computed from it, never the list.
+ */
+export interface IdentityRecord {
+  readonly id: UserId;
+  /** Null for a sign-in that has never had a password set. */
+  readonly credential: string | null;
+  /** Every tenant this sign-in works in. Never shown to any of them. */
+  readonly tenants: readonly TenantId[];
+}
+
+function sharedKey(collection: 'identity' | 'recovery', id: string): string {
+  return ['sec', collection, encodeURIComponent(id)].join('/');
+}
+
+export function identityIn(session: RecordSession, id: UserId): IdentityRecord | null {
+  const value = session.get(sharedKey('identity', id));
+  return value === undefined || value === null ? null : (value as IdentityRecord);
+}
+
+export function writeIdentity(session: RecordSession, record: IdentityRecord): IdentityRecord {
+  Object.freeze(record);
+  session.put(sharedKey('identity', record.id), record);
+  return record;
+}
+
+export function recoveryIn(session: RecordSession, id: RecoveryId): Recovery | null {
+  const value = session.get(sharedKey('recovery', id));
+  return value === undefined || value === null ? null : (value as Recovery);
+}
+
+export function writeRecovery(session: RecordSession, record: Recovery): Recovery {
+  Object.freeze(record);
+  session.put(sharedKey('recovery', record.id), record);
+  return record;
 }

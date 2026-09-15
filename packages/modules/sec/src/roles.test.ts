@@ -103,7 +103,7 @@ describe('Seven seeded roles — SEC-01', () => {
     expect(nightManager.seeded).toBeNull();
     expect(nightManager.name).toBe('مناوبة ليلية');
 
-    const user = sec.someone();
+    const user = await sec.hire('person-1');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -119,7 +119,7 @@ describe('Seven seeded roles — SEC-01', () => {
     const owner = sec.as(await aShopWithAnOwner(sec));
     const cashier = seededAs(await sec.directory.roles(owner), 'cashier');
 
-    const user = sec.someone();
+    const user = await sec.hire('person-2');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -157,7 +157,7 @@ describe('Seven seeded roles — SEC-01', () => {
 
     // With a second owner in place there is no lock-out to prevent, and the
     // first one may be stood down like anybody else.
-    const second = sec.someone();
+    const second = await sec.hire('person-3');
     taken(
       await sec.admin.assignments.assign(owner, {
         user: second,

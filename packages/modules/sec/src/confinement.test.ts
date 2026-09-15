@@ -36,7 +36,7 @@ async function someoneHolding(
   name = 'role',
 ): Promise<{ user: UserId; role: RoleId }> {
   const role = taken(await sec.admin.roles.define(owner, { name, rights }));
-  const user = sec.someone();
+  const user = await sec.hire(name);
   taken(await sec.admin.assignments.assign(owner, { user, role: role.id, confinement }));
   return { user, role: role.id };
 }
@@ -114,7 +114,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
   });
 
   it('keeps a manager in one branch from managing the branch they only stand at a till in', async () => {
-    const user = sec.someone();
+    const user = await sec.hire('person-2');
     const manager = taken(
       await sec.admin.roles.define(owner, {
         name: 'branch manager',
@@ -155,7 +155,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
   });
 
   it('gathers the reach of one right across every role the user is in', async () => {
-    const user = sec.someone();
+    const user = await sec.hire('person-3');
     const viewer = taken(
       await sec.admin.roles.define(owner, {
         name: 'viewer',
@@ -206,7 +206,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
   });
 
   it('does not lift a narrowing in one branch onto another branch entirely', async () => {
-    const user = sec.someone();
+    const user = await sec.hire('person-4');
     const right = SYS_PERMISSIONS.location.edit;
     const inTheStoreRoom = taken(
       await sec.admin.roles.define(owner, { name: 'store keeper', rights: [right] }),
@@ -256,7 +256,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     expect(
       refusalOf(
         await sec.admin.assignments.assign(them, {
-          user: sec.someone(),
+          user: await sec.hire('person-5'),
           role: till.id,
           confinement: { kind: 'branches', branches: [aleppo], locations: [shopFloor] },
         }),
@@ -268,7 +268,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     const role = taken(
       await sec.admin.roles.define(owner, { name: 'r', rights: [SYS_PERMISSIONS.branch.view] }),
     );
-    const user = sec.someone();
+    const user = await sec.hire('person-6');
     const branches = [aleppo];
     taken(
       await sec.admin.assignments.assign(owner, {
@@ -290,8 +290,9 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     const role = taken(
       await sec.admin.roles.define(owner, { name: 'r', rights: [SYS_PERMISSIONS.branch.view] }),
     );
+    const candidate = await sec.hire('person-7');
     const assign = (confinement: Confinement) =>
-      sec.admin.assignments.assign(owner, { user: sec.someone(), role: role.id, confinement });
+      sec.admin.assignments.assign(owner, { user: candidate, role: role.id, confinement });
 
     expect(refusalOf(await assign({ kind: 'branches', branches: [], locations: [] }))).toBe(
       'sec.confinement-empty',
@@ -334,7 +335,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
         ],
       }),
     );
-    const user = sec.someone();
+    const user = await sec.hire('person-8');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -354,7 +355,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     // Their own shop: ordinary work.
     taken(
       await sec.admin.assignments.assign(them, {
-        user: sec.someone(),
+        user: await sec.hire('person-9'),
         role: till.id,
         confinement: { kind: 'branches', branches: [aleppo], locations: [] },
       }),
@@ -364,7 +365,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     expect(
       refusalOf(
         await sec.admin.assignments.assign(them, {
-          user: sec.someone(),
+          user: await sec.hire('person-10'),
           role: till.id,
           confinement: TENANT_WIDE,
         }),
@@ -373,7 +374,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     expect(
       refusalOf(
         await sec.admin.assignments.assign(them, {
-          user: sec.someone(),
+          user: await sec.hire('person-11'),
           role: till.id,
           confinement: { kind: 'branches', branches: [homs], locations: [] },
         }),
@@ -388,7 +389,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
         rights: [SEC_PERMISSIONS.assignment.create, SYS_PERMISSIONS.register.view],
       }),
     );
-    const user = sec.someone();
+    const user = await sec.hire('person-12');
     taken(
       await sec.admin.assignments.assign(owner, {
         user,
@@ -410,7 +411,7 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     expect(
       refusalOf(
         await sec.admin.assignments.assign(sec.as(user), {
-          user: sec.someone(),
+          user: await sec.hire('person-13'),
           role: richer.id,
           confinement: { kind: 'branches', branches: [aleppo], locations: [] },
         }),

@@ -1,4 +1,5 @@
 import {
+  operation,
   permissionId,
   type BranchId,
   type LocationId,
@@ -7,7 +8,7 @@ import {
   type TenantId,
   type UserId,
 } from '@vertex/contracts';
-import type { Id, Refusal, Result } from '@vertex/kernel';
+import type { Id, Instant, Refusal, Result } from '@vertex/kernel';
 import { contractKey, type CommandContext } from '@vertex/platform';
 
 /**
@@ -208,6 +209,88 @@ export interface Listing {
   readonly including?: 'active' | 'all';
 }
 
+/**
+ * A person as **this tenant** knows them: `SEC-09`.
+ *
+ * The person and the sign-in are two different records and the split is the
+ * whole of the feature's second paragraph. What is here belongs to one shop
+ * group — the name on the screen, the handle typed at the till, whether they
+ * still work here — and it is what a document that names a user resolves
+ * through. The credential behind it may be shared with another tenant, and no
+ * tenant may reach it.
+ *
+ * Deactivated and never deleted, for the reason `SYS-09` gives about branches
+ * and this feature repeats about people: every sale, every adjustment and every
+ * approval they ever made names them, and a removed row turns all of it into an
+ * identifier nobody can resolve.
+ */
+export interface User extends TenantOwned {
+  readonly id: UserId;
+  /** What they type to sign in here. Unique within the tenant, never beyond it. */
+  readonly handle: string;
+  /** What the shop calls them, in the shop's own words. */
+  readonly name: string;
+  readonly active: boolean;
+  /**
+   * `SEC-09`'s force sign-out, as a moment rather than an act.
+   *
+   * A register that has been offline for two days cannot be told to drop a
+   * session; it can be told that sessions issued before a moment are void, and
+   * it finds that out the next time it syncs or the next time it asks. `U23`
+   * owns sessions and honours this; nothing here issues one.
+   *
+   * It is on the **tenant's** record and not on the identity, so that one shop
+   * cannot sign somebody out of another shop's till.
+   */
+  readonly sessionsVoidBefore: Instant | null;
+  /**
+   * Whether the sign-in behind this person is also some other tenant's.
+   *
+   * A boolean and never a list. That this administrator may not reset the
+   * password is something they have to be told; **where else the person works
+   * is not theirs to know**, and a list here would leak one shop's staff to
+   * another through a screen built to be helpful.
+   */
+  readonly shared: boolean;
+}
+
+/**
+ * What a sign-in produced: who they are, and in which shop.
+ *
+ * Deliberately not a session. `SEC-07` and `SEC-08` own sessions and devices
+ * and arrive with `U23`; what this answers is the question underneath one —
+ * whether this password belongs to somebody who may still work here — so that
+ * `U23` builds session lifetime on an answer rather than beside it.
+ */
+export interface Authenticated {
+  readonly user: UserId;
+  readonly tenant: TenantId;
+  readonly at: Instant;
+}
+
+/**
+ * A password change for a sign-in that more than one tenant relies on.
+ *
+ * `SEC-09` allows exactly two ways for such a password to change: the owner's
+ * own current credential, or "a recovery approved by an administrator of every
+ * tenant it belongs to". This is the second. It exists because the first is
+ * unavailable precisely when it is needed — somebody has forgotten a password —
+ * and because the obvious shortcut, letting the tenant in front of you reset
+ * it, is how one shop's administrator signs in to another shop.
+ *
+ * The approvals are tenants, not people: each tenant approves once, through
+ * whoever there holds the right.
+ */
+export interface Recovery {
+  readonly id: RecoveryId;
+  readonly user: UserId;
+  readonly opened: Instant;
+  readonly approvedBy: readonly TenantId[];
+  readonly settled: boolean;
+}
+
+export type RecoveryId = Id<'recovery'>;
+
 export type SecRefusalCode =
   | 'sec.not-permitted'
   | 'sec.role-not-found'
@@ -222,7 +305,20 @@ export type SecRefusalCode =
   | 'sec.location-not-found'
   | 'sec.location-outside-confinement'
   | 'sec.assignment-not-found'
-  | 'sec.last-owner';
+  | 'sec.last-owner'
+  | 'sec.user-not-found'
+  | 'sec.user-inactive'
+  | 'sec.user-name-required'
+  | 'sec.handle-required'
+  | 'sec.handle-taken'
+  | 'sec.password-too-short'
+  | 'sec.password-wrong'
+  | 'sec.identity-shared'
+  | 'sec.identity-not-found'
+  | 'sec.recovery-not-found'
+  | 'sec.recovery-settled'
+  | 'sec.recovery-incomplete'
+  | 'sec.no-actor';
 
 export type SecRefusal = Refusal<SecRefusalCode>;
 
@@ -282,7 +378,122 @@ export interface RoleAdministration {
   };
 }
 
+/**
+ * The people of one tenant. Guarded by the caller, like every other read.
+ *
+ * There is no listing of identities anywhere, and no read that answers "which
+ * other tenants is this person in". `User.shared` says that the question of a
+ * password reset has a different answer, and stops there.
+ */
+export interface UserDirectory {
+  user(by: CommandContext, id: UserId): Promise<User | null>;
+  users(by: CommandContext, listing?: Listing): Promise<readonly User[]>;
+  byHandle(by: CommandContext, handle: string): Promise<User | null>;
+}
+
+export interface NewUser {
+  readonly handle: string;
+  readonly name: string;
+  /** Set now, so the cashier can work the moment the manager walks away. */
+  readonly password: string;
+}
+
+/**
+ * What the **tenant's own administrator** does, and the vendor never does.
+ *
+ * `SEC-09` says that twice, and the acceptance criterion is the test of it: a
+ * cashier is added and working at a register with no vendor involvement and no
+ * internet connection. Nothing here asks anything of anywhere.
+ *
+ * Two guards run through it, beyond the right itself:
+ *
+ *   - **an administrator cannot reset the password of somebody who holds more
+ *     than they do.** A reset is a sign-in as that person, so without this the
+ *     right to reset a password is the right to become whoever you like;
+ *   - **and cannot reset one at all if the sign-in behind it is shared.** That
+ *     is `SEC-09`'s own sentence, and the reason is that the password would
+ *     work in the other tenant too.
+ */
+export interface UserAdministration {
+  /** Creates the person and the sign-in behind them, together. */
+  enrol(by: CommandContext, input: NewUser): Promise<Result<User, SecRefusal>>;
+  rename(by: CommandContext, id: UserId, name: string): Promise<Result<User, SecRefusal>>;
+  deactivate(by: CommandContext, id: UserId): Promise<Result<User, SecRefusal>>;
+  reactivate(by: CommandContext, id: UserId): Promise<Result<User, SecRefusal>>;
+  resetPassword(
+    by: CommandContext,
+    id: UserId,
+    password: string,
+  ): Promise<Result<User, SecRefusal>>;
+  forceSignOut(by: CommandContext, id: UserId): Promise<Result<User, SecRefusal>>;
+  /**
+   * Admits a sign-in that already exists into this tenant as well.
+   *
+   * **The system only**, and that is the point rather than an oversight. If a
+   * tenant administrator could name any identifier and have that person appear
+   * in their shop, every protection in this file would be reachable by typing:
+   * attach somebody else's sign-in, give it a role, and wait for them to use
+   * the password their own shop set. Sharing is composed where a deployment is
+   * composed — an installer, a provisioning job, a migration — and never from
+   * inside one of the tenants that would benefit.
+   */
+  admit(by: CommandContext, input: AdmittedUser): Promise<Result<User, SecRefusal>>;
+}
+
+export interface AdmittedUser {
+  readonly user: UserId;
+  readonly handle: string;
+  readonly name: string;
+}
+
+/**
+ * The sign-in itself, which belongs to the person rather than to a shop.
+ *
+ * `authenticate` is the one call in this module made when there is nobody yet:
+ * it is handed the tenant whose register is asking, because a till belongs to
+ * one shop, and a handle is that shop's name for a person rather than a name
+ * the whole world shares.
+ */
+export interface Credentials {
+  authenticate(
+    by: CommandContext,
+    handle: string,
+    password: string,
+  ): Promise<Result<Authenticated, SecRefusal>>;
+
+  /** Always available to the person themselves, shared sign-in or not. */
+  changeOwnPassword(
+    by: CommandContext,
+    current: string,
+    next: string,
+  ): Promise<Result<void, SecRefusal>>;
+
+  readonly recovery: {
+    /** Opened by an administrator of any tenant the sign-in belongs to. */
+    open(by: CommandContext, user: UserId): Promise<Result<Recovery, SecRefusal>>;
+    approve(by: CommandContext, id: RecoveryId): Promise<Result<Recovery, SecRefusal>>;
+    /**
+     * Sets the password, once **every** tenant has approved.
+     *
+     * Not "a majority" and not "the one that opened it": a sign-in that works
+     * in three shops is three shops' risk, and any rule short of unanimity is a
+     * rule under which two of them decide for the third.
+     */
+    complete(
+      by: CommandContext,
+      id: RecoveryId,
+      password: string,
+    ): Promise<Result<void, SecRefusal>>;
+  };
+}
+
 export const Authorisation = contractKey<Authorisation>('sec.authorisation');
+
+export const UserDirectory = contractKey<UserDirectory>('sec.user-directory');
+
+export const UserAdministration = contractKey<UserAdministration>('sec.user-administration');
+
+export const Credentials = contractKey<Credentials>('sec.credentials');
 
 export const RoleDirectory = contractKey<RoleDirectory>('sec.role-directory');
 
@@ -314,6 +525,8 @@ export interface StructuralRights {
 interface Declared {
   readonly id: PermissionId;
   readonly seededFor: readonly SeededRole[];
+  /** `SEC-05`: re-authorisation, and an audit record, before it proceeds. */
+  readonly sensitive?: boolean;
 }
 
 const DECLARED: Declared[] = [];
@@ -336,9 +549,43 @@ function rightsOver(resource: string, seeds: Seeds): StructuralRights {
   return rights;
 }
 
+/**
+ * The four, and the two things done to a person that are neither an edit nor a
+ * deletion.
+ *
+ * `SEC-09` names both, and both are granted apart from `edit` because they are
+ * what an administrator is most careful about handing out: whoever may reset a
+ * password may sign in as that person, and whoever may force a sign-out can
+ * empty a shop floor mid-shift. Flattening either into `edit` would hide the
+ * one right in the role editor that a shop actually thinks about.
+ */
+export interface UserRights extends StructuralRights {
+  readonly resetPassword: PermissionId;
+  readonly forceSignOut: PermissionId;
+}
+
+type UserSeeds = Readonly<Record<keyof UserRights, readonly SeededRole[]>>;
+
+/**
+ * Built through the grammar like everything else, and through `operation()` for
+ * the two that are not one of the five — which is what that function exists
+ * for: leaving the grid is something a module has to say out loud.
+ */
+function userRights(seeds: UserSeeds): UserRights {
+  const structural = rightsOver('user', seeds);
+  const resetPassword = permissionId('sec', 'user', operation('reset-password'));
+  const forceSignOut = permissionId('sec', 'user', operation('force-sign-out'));
+  DECLARED.push(
+    { id: resetPassword, seededFor: seeds.resetPassword, sensitive: true },
+    { id: forceSignOut, seededFor: seeds.forceSignOut, sensitive: true },
+  );
+  return Object.freeze({ ...structural, resetPassword, forceSignOut });
+}
+
 export interface SecPermissions {
   readonly role: StructuralRights;
   readonly assignment: StructuralRights;
+  readonly user: UserRights;
 }
 
 const MANAGER: readonly SeededRole[] = Object.freeze(['manager']);
@@ -370,6 +617,22 @@ export const SEC_PERMISSIONS: SecPermissions = Object.freeze({
     create: MANAGER,
     edit: MANAGER,
     withdraw: MANAGER,
+  }),
+  /**
+   * Staffing a shop with people, which is the manager's job and not the
+   * vendor's — `SEC-09` says so twice.
+   *
+   * `delete` is a deactivation: a user is never removed, because every document
+   * they ever wrote names them. Both operations are marked sensitive, which is
+   * what `SEC-05` re-authorises at a till before it proceeds.
+   */
+  user: userRights({
+    view: MANAGER,
+    create: MANAGER,
+    edit: MANAGER,
+    withdraw: MANAGER,
+    resetPassword: MANAGER,
+    forceSignOut: MANAGER,
   }),
 });
 
