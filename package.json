@@ -17,6 +17,7 @@
     "lint:fix": "eslint . --fix",
     "check:policy": "node tools/check-policy.mjs",
     "check:coverage": "node tools/check-coverage.mjs",
+    "next": "node tools/next.mjs",
     "e2e": "pnpm --filter @vertex/sandbox e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
