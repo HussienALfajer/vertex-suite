@@ -16,10 +16,11 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "check:policy": "node tools/check-policy.mjs",
+    "check:coverage": "node tools/check-coverage.mjs",
     "e2e": "pnpm --filter @vertex/sandbox e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm check:policy && pnpm typecheck && pnpm test"
+    "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm check:policy && pnpm typecheck && pnpm test && pnpm check:coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

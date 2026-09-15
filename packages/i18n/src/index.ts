@@ -1,3 +1,5 @@
+export { directionOf, type Direction } from './direction.js';
+
 export {
   MissingMessageError,
   Translator,

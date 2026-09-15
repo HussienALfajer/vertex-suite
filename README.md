@@ -47,6 +47,13 @@ The build comes **first** on purpose. A package consumes its neighbours through 
 unresolved type — which passes on a machine that happens to have built earlier and fails on a
 clean checkout.
 
+The coverage check comes **last**, for the mirror-image reason. `docs/modules.md` §7 defines a
+unit as finished when the acceptance criteria of every feature it names are automated and
+passing; `check:coverage` reads the feature list from `docs/core-features.md`, the ownership from
+§8, and the proof from the names of the tests themselves, then fails if a feature of a delivered
+unit has none. Running it after the suites means proven is a test that passed, not a test that
+exists.
+
 | Command          |                                          |
 | ---------------- | ---------------------------------------- |
 | `pnpm verify`    | everything, in the order CI runs it      |

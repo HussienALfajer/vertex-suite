@@ -1,7 +1,7 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { I18nProvider } from 'react-aria-components';
 
-import type { Translator } from '@vertex/i18n';
+import { directionOf, type Translator } from '@vertex/i18n';
 
 import { DEFAULT_DENSITY, type Density } from '../tokens/scale.js';
 import {
@@ -78,7 +78,14 @@ export function VertexProvider({
       element.removeAttribute('data-reduce-motion');
     }
 
+    // `SYS-01`: direction is a consequence of the locale, not a setting beside
+    // it. The document served to the browser already carries `dir` so that the
+    // first paint is not backwards, but from here on this owns it — otherwise
+    // an interface switched to English would keep the direction of the HTML it
+    // happened to be served with, which is exactly the retrofit the feature
+    // says this is not.
     element.setAttribute('lang', locale);
+    element.setAttribute('dir', directionOf(locale));
   }, [root, theme, density, reduceMotion, locale]);
 
   return (
