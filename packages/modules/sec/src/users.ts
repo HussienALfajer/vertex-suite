@@ -24,7 +24,7 @@ import {
   writeUser,
   type IdentityRecord,
 } from './records.js';
-import { hashPassword, MINIMUM_PASSWORD_LENGTH, verifyPassword } from './credentials.js';
+import { hashPassword, isCurrent, MINIMUM_PASSWORD_LENGTH, verifyPassword } from './credentials.js';
 
 /**
  * People, and the sign-ins behind them: `SEC-09`.
@@ -299,6 +299,14 @@ export function forceSignOut(
 ): Outcome<User> {
   const user = found(session, by, declared, id, SEC_PERMISSIONS.user.forceSignOut);
   if (!user.ok) return user;
+
+  // Ranked like a reset, though it grants nothing. Repeated, it is a manager
+  // emptying the owner out of the system faster than the owner can revoke the
+  // right that allows it — and the way out of that is the vendor, which is what
+  // `SEC-09` rules out in the same sentence it grants the power in.
+  const beyond = holdsEverything(session, by, id);
+  if (beyond !== null) return err(beyond);
+
   return ok(writeUser(session, { ...user.value, sessionsVoidBefore: now }));
 }
 
@@ -399,6 +407,14 @@ export async function authenticate(
   // Only somebody who has the password learns that the account is withdrawn.
   // Refusing earlier would tell whoever is guessing which names are real.
   if (!user.active) return refuse('sec.user-inactive', { user: user.id });
+
+  // Raising the cost reaches everybody who works here, rather than waiting for
+  // each of them to forget a password — and the shop where nobody has forgotten
+  // one is exactly the shop whose passwords are oldest. Written here because
+  // this is the only moment the plaintext and the stored form are both in hand.
+  if (identity !== null && credential !== null && !isCurrent(credential)) {
+    writeIdentity(session, { ...identity, credential: await hashPassword(password) });
+  }
 
   return ok(Object.freeze({ user: user.id, tenant: by.tenant, at: now }));
 }
@@ -502,6 +518,14 @@ export async function completeRecovery(
 
   const identity = identityIn(session, recovery.user);
   if (identity === null) return refuse('sec.identity-not-found', { user: recovery.user });
+
+  // The same standing `open` and `approve` each required. Completing is the
+  // step that chooses the password, so a shop with no connection to this person
+  // deciding it would make the unanimity above a formality it was never party
+  // to.
+  if (userIn(session, by.tenant, recovery.user) === null) {
+    return refuse('sec.user-not-found', { user: recovery.user });
+  }
 
   // Every tenant, and not a majority or the one that asked. A sign-in that
   // works in three shops is three shops' risk, and any rule short of unanimity

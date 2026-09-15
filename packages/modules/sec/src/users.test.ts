@@ -1,3 +1,5 @@
+import { scrypt } from 'node:crypto';
+
 import type { BranchId, UserId } from '@vertex/contracts';
 import { SYS_PERMISSIONS } from '@vertex/sys/contract';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -26,6 +28,26 @@ async function seeded(role: string): Promise<Role> {
   const found = (await sec.directory.roles(owner)).find((one) => one.seeded === role);
   if (found === undefined) throw new Error(`No ${role} role.`);
   return found;
+}
+
+/** A credential as a build with a cheaper cost would have written it. */
+function hashUnder(cost: number, password: string): Promise<string> {
+  const salt = Buffer.alloc(16);
+  return new Promise((resolve, reject) => {
+    scrypt(
+      password,
+      salt,
+      64,
+      { N: cost, r: 8, p: 1, maxmem: 128 * cost * 8 * 2 },
+      (failure, key) => {
+        if (failure !== null) reject(failure);
+        else
+          resolve(
+            `scrypt$${String(cost)}$8$1$${salt.toString('base64url')}$${key.toString('base64url')}`,
+          );
+      },
+    );
+  });
 }
 
 /** Somebody in the cashier role, over one branch, the way a shop hires one. */
@@ -381,6 +403,80 @@ describe('User management — SEC-09', () => {
     );
     taken(await sec.users.deactivate(owner, theOwner));
     expect(await sec.auth.may(sec.as(second), SYS_PERMISSIONS.company.create)).toBe(true);
+  });
+
+  it('rewrites a password stored under an older cost, the next time its owner signs in', async () => {
+    const { user: cashier } = await aCashier('ahmad', 'till-morning-1');
+    const cheap = await hashUnder(2 ** 14, 'till-morning-1');
+    await sec.ageCredential(cashier, cheap);
+
+    expect(
+      taken(await sec.credentials.authenticate(sec.system, 'ahmad', 'till-morning-1')).user,
+    ).toBe(cashier);
+
+    // Raising the cost has to reach the people who never forget a password,
+    // because theirs are the oldest in the shop. A sign-in is the only moment
+    // the plaintext and the stored form are both in hand.
+    const now = await sec.storedCredential(cashier);
+    expect(now).not.toBe(cheap);
+    expect(now?.startsWith('scrypt$32768$8$1$')).toBe(true);
+    expect(
+      taken(await sec.credentials.authenticate(sec.system, 'ahmad', 'till-morning-1')).user,
+    ).toBe(cashier);
+  });
+
+  it('refuses a sign-in whose stored credential this build cannot honour, rather than failing', async () => {
+    const { user: cashier } = await aCashier('ahmad', 'till-morning-1');
+
+    // What a replayed row from another device can look like (`SYN-02`): a cost
+    // this runtime will not allocate for. A shift that cannot start is a
+    // refusal; a store node that falls over is every shift in the shop.
+    await sec.ageCredential(
+      cashier,
+      'scrypt$1073741824$8$1$AAAAAAAAAAAAAAAAAAAAAA$ZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    );
+    expect(
+      refusalOf(await sec.credentials.authenticate(sec.system, 'ahmad', 'till-morning-1')),
+    ).toBe('sec.password-wrong');
+  });
+
+  it('refuses a manager who would sign the owner out of their own shop', async () => {
+    const manager = await seeded('manager');
+    const who = await sec.hire('manager-person');
+    taken(
+      await sec.admin.assignments.assign(owner, {
+        user: who,
+        role: manager.id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+    const theirs = sec.as(who);
+    const { user: cashier } = await aCashier('ahmad', 'till-morning-1');
+
+    // Their own shop's cashier: ordinary work, and the reason the right is
+    // seeded to a manager at all.
+    taken(await sec.users.forceSignOut(theirs, cashier));
+
+    // The owner: repeated, it is a manager emptying them out of the system
+    // faster than they can revoke the right that allows it.
+    expect(refusalOf(await sec.users.forceSignOut(theirs, theOwner))).toBe('sec.right-not-held');
+  });
+
+  it('refuses a shop with no connection to this person the last word on their password', async () => {
+    const theirOwner = await aSecondShopWithAnOwner(sec);
+    const { user: cashier } = await aCashier('ahmad', 'till-morning-1');
+    const recovery = taken(await sec.credentials.recovery.open(owner, cashier));
+
+    // Every tenant the sign-in belongs to has approved — there is only one of
+    // them. Completing is the step that chooses the password, so a shop that
+    // was never party to it does not get to take that step.
+    expect(
+      refusalOf(await sec.credentials.recovery.complete(theirOwner, recovery.id, 'chosen-by-them')),
+    ).toBe('sec.user-not-found');
+    taken(await sec.credentials.recovery.complete(owner, recovery.id, 'chosen-by-us1'));
+    expect(
+      taken(await sec.credentials.authenticate(sec.system, 'ahmad', 'chosen-by-us1')).user,
+    ).toBe(cashier);
   });
 
   it('refuses the commands of this module to anybody not permitted to run them', async () => {

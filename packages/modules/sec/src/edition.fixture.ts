@@ -35,6 +35,7 @@ import {
   UserDirectory,
 } from './contract.js';
 import { secModule } from './index.js';
+import { identityIn, writeIdentity } from './records.js';
 
 /**
  * `SEC` installed over `SYS`'s **contract** rather than over `SYS`.
@@ -93,6 +94,16 @@ export interface Installed {
   openBranch(name: string, tenant?: Id<'tenant'>): BranchId;
   openLocation(branch: BranchId, name: string, kind?: LocationKind): LocationId;
   shutBranch(branch: BranchId): void;
+
+  /**
+   * Writes a credential the way an older build would have written it.
+   *
+   * The one thing a test cannot produce by asking the module for it: a stored
+   * form whose parameters are not today's, which is what a raised cost and a
+   * replayed row from another device both look like.
+   */
+  ageCredential(user: UserId, stored: string): Promise<void>;
+  storedCredential(user: UserId): Promise<string | null>;
 
   /**
    * The same shop, its data untouched, running an edition that has since grown
@@ -267,6 +278,20 @@ function bring(
       const of = places.branches.get(branch);
       if (of === undefined) throw new Error('That branch was never opened.');
       places.branches.set(branch, { ...of, active: false });
+    },
+
+    ageCredential(user: UserId, stored: string): Promise<void> {
+      return transactor.run(systemContext(tenant), (uow) => {
+        const identity = identityIn(uow.session, user);
+        if (identity === null) throw new Error('Nobody by that identifier.');
+        writeIdentity(uow.session, { ...identity, credential: stored });
+        return Promise.resolve();
+      });
+    },
+    storedCredential(user: UserId): Promise<string | null> {
+      return transactor.run(systemContext(tenant), (uow) =>
+        Promise.resolve(identityIn(uow.session, user)?.credential ?? null),
+      );
     },
 
     afterBuying(code: ModuleCode, rights: readonly SeededRight[]): Installed {

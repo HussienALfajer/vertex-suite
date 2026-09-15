@@ -14,9 +14,9 @@ import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
  *
  * **The parameters are stored beside the hash**, so raising them is not a
  * migration: a password written under the old cost still verifies under the
- * parameters it was written with, and is rewritten at the next reset. A hash
- * whose cost is implied by whatever the code happens to say today is a hash
- * nobody can ever raise the cost of.
+ * parameters it was written with, and is rewritten the next time its owner
+ * signs in. A hash whose cost is implied by whatever the code happens to say
+ * today is a hash nobody can ever raise the cost of.
  *
  * `N = 2^15, r = 8, p = 1` is about 32 MiB and roughly a tenth of a second on
  * the kind of machine a till runs on. That is the honest trade: a register
@@ -33,10 +33,19 @@ const SALT_BYTES = 16;
 
 /**
  * scrypt needs `128 * N * r` bytes, and Node refuses at its own default of
- * 32 MiB — which is exactly what these parameters ask for. Stated here rather
- * than raised blindly, so that changing `COST` makes somebody read this line.
+ * 32 MiB — which is exactly what these parameters ask for.
+ *
+ * Worked out from the parameters actually being used rather than from the
+ * constants above, because a stored credential carries its own and they are not
+ * always this build's: `SYN-02` applies rows written on other devices. The
+ * ceiling is what stops that becoming a way to make a store node allocate a
+ * gigabyte by writing one number into one row.
  */
-const MAX_MEMORY = 128 * COST * BLOCK_SIZE * 2;
+const MEMORY_CEILING = 512 * 1024 * 1024;
+
+function memoryFor(cost: number, blockSize: number): number {
+  return Math.min(128 * cost * blockSize * 2, MEMORY_CEILING);
+}
 
 /** The shortest password this system will store. */
 export const MINIMUM_PASSWORD_LENGTH = 8;
@@ -62,7 +71,7 @@ function derive(password: string, parameters: Omit<Parameters, 'key'>): Promise<
         N: parameters.cost,
         r: parameters.blockSize,
         p: parameters.parallelism,
-        maxmem: MAX_MEMORY,
+        maxmem: memoryFor(parameters.cost, parameters.blockSize),
       },
       (failure, key) => {
         if (failure !== null) reject(failure);
@@ -141,12 +150,29 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const parameters = parse(stored);
   if (parameters === null || parameters.key.length === 0) return false;
 
-  const key = await derive(password, parameters);
+  let key;
+  try {
+    key = await derive(password, parameters);
+  } catch {
+    // A parameter this runtime will not honour — beyond the ceiling above, or a
+    // combination a future Node rejects — is a credential nobody can verify,
+    // which is a refused sign-in and not a crashed store node. The distinction
+    // matters at the one moment it arises: the start of a shift.
+    return false;
+  }
   if (key.length !== parameters.key.length) return false;
   return timingSafeEqual(key, parameters.key);
 }
 
-/** Whether a stored credential was written with today's parameters. */
+/**
+ * Whether a stored credential was written with today's parameters.
+ *
+ * Asked on every successful sign-in, which is what makes the parameters in the
+ * stored form worth having: raising `COST` then costs nothing and reaches
+ * everybody who works here, rather than waiting for each of them to forget a
+ * password. A shop where nobody has forgotten one is exactly the shop whose
+ * passwords are oldest.
+ */
 export function isCurrent(stored: string): boolean {
   const parameters = parse(stored);
   return (
