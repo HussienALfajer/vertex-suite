@@ -293,6 +293,16 @@ export function OpenListIcon(): ReactNode {
 }
 
 /** A sheet with lines on it: the profile a document is printed from. */
+/** A pin, which is what a map marker looks like everywhere a person has seen one. */
+export function PlaceIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <path d="M10 17.5s5.5-5 5.5-9a5.5 5.5 0 10-11 0c0 4 5.5 9 5.5 9z" strokeLinejoin="round" />
+      <circle cx="10" cy="8.5" r="2" />
+    </svg>
+  );
+}
+
 export function ProfileIcon(): ReactNode {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">

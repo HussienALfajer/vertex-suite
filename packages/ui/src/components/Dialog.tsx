@@ -66,9 +66,18 @@ export function Dialog({
           className,
         )}
       >
+        {/*
+          `min-h-0` on both this and the scrolling body, and it is load-bearing
+          rather than tidy. A flex child defaults to `min-height: auto`, which
+          refuses to shrink below its content — so `max-h-full` on the modal
+          above was silently overruled by anything tall inside, and the dialog
+          grew past the bottom of the screen taking its footer with it. The
+          confirm button was then unreachable: present, focusable, and off the
+          viewport. The body scrolls; nothing else does.
+        */}
         {/* policy-exempt: §7.3 — the dialog is a programmatic focus landing
             point, not a control; focus moves on to the first control inside it. */}
-        <AriaDialog className="flex flex-col outline-none">
+        <AriaDialog className="flex min-h-0 flex-col outline-none">
           {({ close }) => (
             <>
               <header className="border-line flex items-start justify-between gap-[var(--vx-gap-md)] border-b px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]">
@@ -87,7 +96,9 @@ export function Dialog({
                 </IconButton>
               </header>
 
-              <div className="text-body text-fg overflow-auto p-[var(--vx-pad-lg)]">{children}</div>
+              <div className="text-body text-fg min-h-0 flex-1 overflow-auto p-[var(--vx-pad-lg)]">
+                {children}
+              </div>
 
               {footer === undefined ? null : (
                 <footer className="border-line flex items-center justify-end gap-[var(--vx-gap-sm)] border-t px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]">

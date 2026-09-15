@@ -4,6 +4,7 @@ import type {
   Branch,
   BusinessProfile,
   Company,
+  GeoPoint,
   Listing,
   Location,
   NewBranch,
@@ -85,6 +86,9 @@ export interface OrganisationOfRecord {
     list(listing?: Listing): Promise<readonly Branch[]>;
     open(input: NewBranch): Outcome<Branch>;
     rename(id: BranchId, name: string): Outcome<Branch>;
+    /** `SYS-14`: where it is, in words and on the map. */
+    readdress(id: BranchId, address: string): Outcome<Branch>;
+    locate(id: BranchId, point: GeoPoint | null): Outcome<Branch>;
     deactivate(id: BranchId): Outcome<Branch>;
     reactivate(id: BranchId): Outcome<Branch>;
   };
@@ -92,6 +96,8 @@ export interface OrganisationOfRecord {
     list(branch: BranchId, listing?: Listing): Promise<readonly Location[]>;
     open(input: NewLocation): Outcome<Location>;
     rename(id: LocationId, name: string): Outcome<Location>;
+    readdress(id: LocationId, address: string): Outcome<Location>;
+    locate(id: LocationId, point: GeoPoint | null): Outcome<Location>;
     deactivate(id: LocationId): Outcome<Location>;
     reactivate(id: LocationId): Outcome<Location>;
   };

@@ -1,4 +1,4 @@
-import { geoCentroid } from 'd3-geo';
+import { geoBounds, geoCentroid } from 'd3-geo';
 import type { Feature } from 'geojson';
 import { feature } from 'topojson-client';
 import type { GeometryCollection, Objects, Properties } from 'topojson-specification';
@@ -58,10 +58,29 @@ export function isHome(outline: Outline): boolean {
  * disagree with the atlas the moment the region list changes.
  */
 export function homeCentre(): LatLng {
+  const [lng, lat] = geoCentroid(homeOutline());
+  return { lat, lng };
+}
+
+/**
+ * The corners of the country this edition is sold in.
+ *
+ * What the picker opens on when it has nothing else to go by. Fitted rather
+ * than given a zoom, because a number chosen to frame one country is a number
+ * that frames the next edition's badly — and the geometry already knows.
+ */
+export function homeExtent(): readonly [LatLng, LatLng] {
+  const [[west, south], [east, north]] = geoBounds(homeOutline());
+  return [
+    { lat: south, lng: west },
+    { lat: north, lng: east },
+  ];
+}
+
+function homeOutline(): Outline {
   const home = regionOutlines().find(isHome);
   if (home === undefined) {
     throw new Error('The generated atlas has no home country. Re-run the generator.');
   }
-  const [lng, lat] = geoCentroid(home);
-  return { lat, lng };
+  return home;
 }

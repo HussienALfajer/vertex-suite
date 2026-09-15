@@ -19,14 +19,17 @@ import {
   type DataTableColumn,
   type SelectOption,
 } from '@vertex/ui';
-import type { Branch, Company } from '@vertex/sys/contract';
+import type { MapPlace, PickedPoint } from '@vertex/ui/map';
+import type { Branch, Company, GeoPoint } from '@vertex/sys/contract';
 
 import { useDeliveryMessage, useOrganisation } from '../organisation.js';
 import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
+import { PlaceDialog, PlaceFields, PlacesMap } from './place.js';
 import {
   ListingBar,
   NameDialog,
   OpenListIcon,
+  PlaceIcon,
   RenameIcon,
   RestoreIcon,
   StaleBanner,
@@ -70,6 +73,7 @@ export function Branches(): ReactNode {
   const [renaming, setRenaming] = useState<Branch | null>(null);
   const [withdrawing, setWithdrawing] = useState<Branch | null>(null);
   const [restoring, setRestoring] = useState<Branch | null>(null);
+  const [placing, setPlacing] = useState<Branch | null>(null);
 
   const openCompanies = useMemo(() => companies.filter((one) => one.active), [companies]);
   const nameOfCompany = useMemo(
@@ -87,6 +91,44 @@ export function Branches(): ReactNode {
           matchesQuery(one.name, query),
       ),
     [branches, includeWithdrawn, filter, query],
+  );
+
+  /**
+   * The branches that are somewhere, as the map wants them (`SYS-14`).
+   *
+   * Branches only. A stock location with a place of its own — the warehouse
+   * across town — is read per branch by the contract and no screen holds them
+   * all at once, so this is honestly a map of branches; the locations screen
+   * draws the rest of one branch's places.
+   */
+  const placed = useMemo(
+    (): readonly MapPlace[] =>
+      branches.flatMap((one) =>
+        one.point === null
+          ? []
+          : [
+              {
+                id: one.id,
+                label: one.name,
+                kind: 'branch' as const,
+                lat: one.point.lat,
+                lng: one.point.lng,
+                isActive: one.active,
+              },
+            ],
+      ),
+    [branches],
+  );
+
+  /** The others, drawn faintly under the picker so a new pin lands beside them. */
+  const elsewhere = useMemo(
+    (): readonly PickedPoint[] =>
+      branches.flatMap((one) =>
+        one.point === null || one.id === placing?.id
+          ? []
+          : [{ lat: one.point.lat, lng: one.point.lng }],
+      ),
+    [branches, placing],
   );
 
   async function restore(branch: Branch): Promise<void> {
@@ -130,9 +172,9 @@ export function Branches(): ReactNode {
       id: 'actions',
       header: translator.format('branches.column.actions'),
       align: 'end',
-      // Three: the locations, the rename, and whichever of withdraw and
-      // restore this row is in a state to offer.
-      width: actionsColumnWidth(3),
+      // Four: the locations, where it is, the rename, and whichever of withdraw
+      // and restore this row is in a state to offer.
+      width: actionsColumnWidth(4),
       render: (branch) => (
         <TableRowActions>
           <TableRowAction
@@ -142,6 +184,14 @@ export function Branches(): ReactNode {
             }}
           >
             <OpenListIcon />
+          </TableRowAction>
+          <TableRowAction
+            aria-label={translator.format('place.title', { name: branch.name })}
+            onPress={() => {
+              setPlacing(branch);
+            }}
+          >
+            <PlaceIcon />
           </TableRowAction>
           <TableRowAction
             aria-label={translator.format('branches.rename.title')}
@@ -288,11 +338,65 @@ export function Branches(): ReactNode {
         </>
       )}
 
+      {/*
+       * Under the listing rather than beside it. The table answers "which
+       * branches are there"; the map answers the one a table cannot — where
+       * they are in relation to each other — which is a second look at the
+       * same list rather than a competing one.
+       */}
+      {branches.length === 0 ? null : (
+        <PlacesMap
+          label={translator.format('branches.map')}
+          places={placed}
+          emptyMessage={translator.format('branches.map.empty')}
+          renderDetails={(place) => {
+            const branch = branches.find((one) => one.id === place.id);
+            if (branch === undefined) return null;
+            return (
+              <div className="flex flex-col items-start gap-[var(--vx-gap-xs)]">
+                <span className="font-body-semibold text-fg">{branch.name}</span>
+                <span className="text-footnote text-fg-secondary">
+                  {nameOfCompany.get(branch.company) ?? ''}
+                </span>
+                {branch.address === '' ? null : (
+                  <span className="text-footnote text-fg-secondary">{branch.address}</span>
+                )}
+                <StatusBadge isActive={branch.active} />
+                <Button
+                  tone="ghost"
+                  onPress={() => {
+                    goTo('locations', branch.id);
+                  }}
+                >
+                  {translator.format('branches.locations')}
+                </Button>
+              </div>
+            );
+          }}
+        />
+      )}
+
       <NewBranchDialog
         companies={openCompanies}
         preferred={filter}
         isOpen={isOpening}
         onOpenChange={setIsOpening}
+        around={elsewhere}
+      />
+
+      <PlaceDialog
+        subject={placing}
+        around={elsewhere}
+        commands={{
+          readdress: (of, id, address) => of.branches.readdress(id as Branch['id'], address),
+          locate: (of, id, point) => of.branches.locate(id as Branch['id'], point),
+        }}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setPlacing(null);
+        }}
+        onSaved={() => {
+          setPlacing(null);
+        }}
       />
 
       <NameDialog
@@ -351,6 +455,8 @@ interface NewBranchDialogProps {
   readonly preferred: string | null;
   readonly isOpen: boolean;
   readonly onOpenChange: (isOpen: boolean) => void;
+  /** The branches already placed, drawn faintly so a new one lands beside them. */
+  readonly around: readonly PickedPoint[];
 }
 
 /**
@@ -366,6 +472,7 @@ function NewBranchDialog({
   preferred,
   isOpen,
   onOpenChange,
+  around,
 }: NewBranchDialogProps): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
@@ -378,6 +485,12 @@ function NewBranchDialog({
   // a claim, and resolving it here is where the claim is checked.
   const [company, setCompany] = useState<Company | null>(null);
   const [name, setName] = useState('');
+  // `SYS-14`, asked here rather than on a second trip through a second command:
+  // whoever opens a branch usually knows where it is, and a step that comes
+  // later is a step that gets skipped — leaving the map empty for a shop that
+  // could have filled it in while it was already typing.
+  const [address, setAddress] = useState('');
+  const [point, setPoint] = useState<PickedPoint | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [missing, setMissing] = useState<{ company: boolean; name: boolean }>({
@@ -396,6 +509,8 @@ function NewBranchDialog({
     // the list to one has already answered it.
     setCompany(only ?? companies.find((one) => one.id === preferred) ?? null);
     setName('');
+    setAddress('');
+    setPoint(null);
     setRefused(null);
     setMissing({ company: false, name: false });
     setIsWorking(false);
@@ -415,7 +530,15 @@ function NewBranchDialog({
     setRefused(null);
     const chosen = name.trim();
     const into = company;
-    const delivery = await run((of) => of.branches.open({ company: into.id, name: chosen }));
+    const where: GeoPoint | undefined = point ?? undefined;
+    const delivery = await run((of) =>
+      of.branches.open({
+        company: into.id,
+        name: chosen,
+        address,
+        ...(where === undefined ? {} : { point: where }),
+      }),
+    );
     setIsWorking(false);
 
     const message = messageFor(delivery);
@@ -437,6 +560,9 @@ function NewBranchDialog({
       title={translator.format('branches.new.title')}
       isOpen={isOpen}
       onOpenChange={onOpenChange}
+      // Wider than the default, because `SYS-14`'s picker is a map and a map
+      // in a column of form fields is a map nobody can aim.
+      className="max-w-[40rem]"
       footer={
         <>
           <Button
@@ -491,6 +617,13 @@ function NewBranchDialog({
           autoFocus
           isRequired
           {...(missing.name ? { errorMessage: translator.format('name.required') } : {})}
+        />
+        <PlaceFields
+          address={address}
+          onAddress={setAddress}
+          point={point}
+          onPoint={setPoint}
+          around={around}
         />
         <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
       </form>

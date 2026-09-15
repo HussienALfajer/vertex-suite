@@ -130,6 +130,27 @@ export const COMPONENT_TOKENS: Readonly<Record<string, ThemedToken>> = {
   // The knob on carries the paired foreground of the track it sits on — the
   // same rule as any label on a fill — so it inverts with the theme for free.
   'switch-knob-on': { light: 'var(--vx-on-primary)', dark: 'var(--vx-on-primary)' },
+
+  /**
+   * The map's land, for the same reason the switch has a track.
+   *
+   * `SYS-14` draws a landmass on a page, and the surfaces cannot do it: in the
+   * light theme `surface-2` and `surface-3` are both `neutral-0`, the same
+   * white as `surface-1` is nearly — so a map built from them is an outline of
+   * nothing, which is exactly what the first one was. What a landmass wants is
+   * a **tint of the ink over the page**, which is what the border tokens
+   * already are, used as a fill rather than as a line. They invert with the
+   * theme on their own, so the map does too, with no value of its own here.
+   *
+   * The country the edition is sold in takes the stronger of the two: the
+   * question a person is asking is "where is my branch", and the answer reads
+   * faster when their own country is the subject and its neighbours context.
+   */
+  'map-land': { light: 'var(--vx-border)', dark: 'var(--vx-border)' },
+  'map-land-home': { light: 'var(--vx-border-strong)', dark: 'var(--vx-border-strong)' },
+  // A line, not a fill: `text-muted` is the quietest ink the palette measures,
+  // which is what a coastline should be beside a marker that has to be seen.
+  'map-line': { light: 'var(--vx-text-muted)', dark: 'var(--vx-text-muted)' },
 };
 
 /**

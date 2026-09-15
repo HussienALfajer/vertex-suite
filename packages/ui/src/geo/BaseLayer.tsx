@@ -90,15 +90,15 @@ export function BaseLayer({ view, viewport, basemap }: BaseLayerProps): ReactNod
            * what a person looking for their own branch is actually scanning for.
            */}
           {outlines.world.map((one) => (
-            <path key={one.key} d={one.d} className="fill-surface-2" />
+            <path key={one.key} d={one.d} className="fill-map-land" />
           ))}
           {outlines.region.map((one) => (
             <path
               key={one.key}
               d={one.d}
               className={clsx(
-                'stroke-line-strong',
-                one.isHome ? 'fill-surface-3' : 'fill-surface-2',
+                'stroke-map-line',
+                one.isHome ? 'fill-map-land-home' : 'fill-map-land',
               )}
               strokeWidth={0.75}
               vectorEffect="non-scaling-stroke"

@@ -11,7 +11,14 @@ export { PointPicker, type PickedPoint, type PointPickerProps } from './PointPic
 
 export { BaseLayer, OUTLINE_MAX_ZOOM, zoomCeilingOf, type Basemap } from './BaseLayer.js';
 
-export { homeCentre, isHome, regionOutlines, worldOutlines, type Outline } from './atlas.js';
+export {
+  homeCentre,
+  homeExtent,
+  isHome,
+  regionOutlines,
+  worldOutlines,
+  type Outline,
+} from './atlas.js';
 
 export { cluster, type Cluster, type Placed } from './cluster.js';
 

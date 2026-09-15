@@ -6,11 +6,11 @@ import { Button, IconButton } from '../components/Button.js';
 import { TextInput } from '../components/TextInput.js';
 import { focusRing } from '../components/styles.js';
 import { useTranslator } from '../providers/context.js';
-import { BaseLayer, type Basemap } from './BaseLayer.js';
+import { BaseLayer, OUTLINE_MAX_ZOOM, zoomCeilingOf, type Basemap } from './BaseLayer.js';
 import { asLatLng } from './GeoMap.js';
-import { homeCentre } from './atlas.js';
+import { homeCentre, homeExtent } from './atlas.js';
 import { parsePlace } from './parse.js';
-import { project, type LatLng, type MapView } from './projection.js';
+import { fitToPoints, project, type LatLng, type MapView } from './projection.js';
 import { useMapGestures, useMeasured } from './surface.js';
 
 /**
@@ -45,7 +45,16 @@ export interface PointPickerProps {
   readonly className?: string;
 }
 
-/** Where the view opens when there is a point already, or one is dropped. */
+/**
+ * Where the view opens when there is a point already, or one is dropped —
+ * **as far in as the base layer can still say something**.
+ *
+ * Country outlines run out at `OUTLINE_MAX_ZOOM`: past it the nearest border is
+ * off the screen and the map is a flat field with a marker floating on it,
+ * which looks broken and tells a person nothing about where they have just put
+ * their shop. With a tile source configured there is detail all the way down,
+ * and the picker goes there.
+ */
 const CLOSE_ZOOM = 13;
 
 /** Six decimal places, the same as the store keeps (`sys/place.ts`). */
@@ -82,6 +91,7 @@ export function PointPicker({
   const translator = useTranslator();
   const surface = useRef<HTMLDivElement>(null);
   const viewport = useMeasured(surface);
+  const closeZoom = Math.min(CLOSE_ZOOM, zoomCeilingOf(basemap));
 
   /**
    * Where the map opens, in the order the answers are worth having.
@@ -93,11 +103,20 @@ export function PointPicker({
    * asked it of is the fastest route to a permanent refusal.
    */
   const opening = useMemo((): MapView => {
-    if (value !== null) return { centre: asLatLng(value), zoom: CLOSE_ZOOM };
+    if (value !== null) return { centre: asLatLng(value), zoom: closeZoom };
     const first = around[0];
-    if (first !== undefined) return { centre: asLatLng(first), zoom: CLOSE_ZOOM - 3 };
-    return { centre: homeCentre(), zoom: 6 };
-  }, [value, around]);
+    if (first !== undefined) return { centre: asLatLng(first), zoom: closeZoom - 3 };
+    // Fitted to the country rather than given a zoom: a number chosen to frame
+    // one country frames the next edition's badly, and the geometry that
+    // shipped already knows where its own corners are.
+    return (
+      fitToPoints([...homeExtent()], viewport, {
+        padding: 12,
+        singleZoom: 6,
+        maxZoom: OUTLINE_MAX_ZOOM,
+      }) ?? { centre: homeCentre(), zoom: 6 }
+    );
+  }, [value, around, viewport, closeZoom]);
 
   const [moved, setMoved] = useState<MapView | null>(null);
   const view = moved ?? opening;
@@ -138,7 +157,7 @@ export function PointPicker({
     if (read.kind === 'point') {
       setPasteFailed(null);
       onChange({ lat: read.lat, lng: read.lng });
-      setMoved({ centre: asLatLng(read), zoom: CLOSE_ZOOM });
+      setMoved({ centre: asLatLng(read), zoom: closeZoom });
       return;
     }
     setPasteFailed(read.kind);
@@ -176,7 +195,7 @@ export function PointPicker({
         setAsking('idle');
         const at = { lat: position.coords.latitude, lng: position.coords.longitude };
         onChange(pointAt(at));
-        setMoved({ centre: at, zoom: CLOSE_ZOOM + 2 });
+        setMoved({ centre: at, zoom: closeZoom });
       },
       (failure) => {
         setAsking(failure.code === failure.PERMISSION_DENIED ? 'refused' : 'unavailable');
