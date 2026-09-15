@@ -1,0 +1,231 @@
+import type { BranchId, LocationId, UserId } from '@vertex/contracts';
+import { newId, orThrow, systemClock, type Id, type Refusal, type Result } from '@vertex/kernel';
+import {
+  commandContext,
+  composeEdition,
+  createEventBus,
+  createMemoryStore,
+  createRegistry,
+  createTransactor,
+  defineModule,
+  provideContract,
+  systemContext,
+  type CommandContext,
+  type MemorySession,
+  type MemoryStore,
+  type ModuleDefinition,
+  type Registry,
+} from '@vertex/platform';
+import {
+  Organisation,
+  SYS_PERMISSION_SEEDS,
+  type Branch,
+  type Location,
+  type LocationKind,
+} from '@vertex/sys/contract';
+
+import { Authorisation, RoleAdministration, RoleDirectory, TENANT_WIDE } from './contract.js';
+import { secModule } from './index.js';
+
+/**
+ * `SEC` installed over `SYS`'s **contract** rather than over `SYS`.
+ *
+ * `modules.md` §4.1 lets a module import another's contract and nothing else,
+ * and `check:boundaries` holds the workspace to it — so a test in this package
+ * cannot reach for `sysModule()` any more than the module can. That is the rule
+ * working rather than the rule being awkward: what `SEC` is entitled to rely on
+ * is the published interface, and a test that composed the real `SYS` beside it
+ * would be quietly asserting things about `SYS`'s behaviour that `SEC` is not
+ * allowed to know.
+ *
+ * So the edition here hosts a module under the code `SYS` that declares `SYS`'s
+ * own rights — the seeds of `SEC-01` are part of what `SYS` publishes — and
+ * answers the two questions `SEC` actually asks of it. Every other method of
+ * the contract raises, which keeps the dependency honest: a change that started
+ * asking `SYS` something new fails here, loudly, instead of widening the
+ * coupling unremarked.
+ *
+ * The build excludes `*.fixture.ts`, so none of this ships.
+ */
+export interface Installed {
+  readonly registry: Registry<MemorySession>;
+  readonly store: MemoryStore;
+  readonly auth: Authorisation;
+  readonly admin: RoleAdministration;
+  readonly directory: RoleDirectory;
+  readonly tenant: Id<'tenant'>;
+  /**
+   * The system: a migration, a scheduled job, a sync applying somebody else's
+   * work. It is how a shop gets its first role and its first owner, because at
+   * that moment there is nobody to have authorised it.
+   */
+  readonly system: CommandContext;
+  /** A second tenant on the same store node, which is the normal case. */
+  readonly otherTenant: Id<'tenant'>;
+  readonly otherSystem: CommandContext;
+  as(user: UserId): CommandContext;
+  someone(): UserId;
+
+  /** The organisation `SEC` is asking about, as far as `SEC` can see it. */
+  openBranch(name: string, tenant?: Id<'tenant'>): BranchId;
+  openLocation(branch: BranchId, name: string, kind?: LocationKind): LocationId;
+  shutBranch(branch: BranchId): void;
+}
+
+/** What `SEC` is entitled to know about a place: that it is there, and whose. */
+interface Places {
+  readonly branches: Map<BranchId, Branch>;
+  readonly locations: Map<LocationId, Location>;
+}
+
+function unasked(method: string): never {
+  throw new Error(
+    `SEC asked SYS for ${method}, which it has never needed. If that is now a real ` +
+      'dependency, say so deliberately — it widens what an edition without SYS would lose.',
+  );
+}
+
+function organisationStandIn(places: Places): ModuleDefinition<MemorySession> {
+  return defineModule<MemorySession>({
+    code: 'SYS',
+    labelKey: 'module.sys',
+    permissions: SYS_PERMISSION_SEEDS.map(({ id, seededFor }) => ({
+      id,
+      labelKey: `permission.${id}`,
+      seededFor,
+    })),
+    provides: [
+      provideContract(Organisation, () => {
+        // Every read is answered in the caller's tenant and nowhere else, which
+        // is the one behaviour of `SYS` that `SEC`'s own correctness rests on:
+        // a branch of another shop group must be as absent as one that was
+        // never opened.
+        const mine = <T extends { readonly tenant: Id<'tenant'> }>(
+          record: T | undefined,
+          by: CommandContext,
+        ): T | null => (record?.tenant === by.tenant ? record : null);
+
+        return {
+          branch: (by, id) => Promise.resolve(mine(places.branches.get(id), by)),
+          location: (by, id) => Promise.resolve(mine(places.locations.get(id), by)),
+          company: () => unasked('a company'),
+          register: () => unasked('a register'),
+          companies: () => unasked('every company'),
+          branches: () => unasked('every branch'),
+          locations: () => unasked('the locations of a branch'),
+          registers: () => unasked('the registers of a branch'),
+          profile: () => unasked('a business profile'),
+          setting: () => unasked('a setting'),
+        } satisfies Organisation;
+      }),
+    ],
+  });
+}
+
+export function installSec(): Installed {
+  const places: Places = { branches: new Map(), locations: new Map() };
+  const catalogue = [organisationStandIn(places), secModule<MemorySession>()];
+  const plan = orThrow(composeEdition(catalogue, { modules: ['SYS', 'SEC'] }), (refusal) => {
+    return new Error(`The edition would not compose: ${refusal.code}`);
+  });
+
+  const bus = createEventBus({
+    onHandlerFailure: (failure) => {
+      throw new Error(`A subscriber failed: ${String(failure.cause)}`);
+    },
+  });
+  const store = createMemoryStore();
+  const transactor = createTransactor({
+    driver: store.driver,
+    bus,
+    clock: systemClock,
+    onEffectFailure: (failure) => {
+      throw new Error(`An effect failed: ${String(failure.cause)}`);
+    },
+  });
+  const registry = createRegistry({ catalogue, plan, bus, transactor, clock: systemClock });
+
+  const tenant = newId<'tenant'>();
+  const otherTenant = newId<'tenant'>();
+  const company = newId<'company'>();
+
+  return {
+    registry,
+    store,
+    auth: registry.require(Authorisation),
+    admin: registry.require(RoleAdministration),
+    directory: registry.require(RoleDirectory),
+    tenant,
+    system: systemContext(tenant),
+    otherTenant,
+    otherSystem: systemContext(otherTenant),
+    as: (user: UserId): CommandContext => commandContext({ tenant, actor: user }),
+    someone: (): UserId => newId<'user'>(),
+
+    openBranch(name: string, owner: Id<'tenant'> = tenant): BranchId {
+      const branch: Branch = {
+        id: newId<'branch'>(),
+        tenant: owner,
+        company,
+        name,
+        active: true,
+      };
+      places.branches.set(branch.id, branch);
+      return branch.id;
+    },
+    openLocation(branch: BranchId, name: string, kind: LocationKind = 'shop-floor'): LocationId {
+      const of = places.branches.get(branch);
+      if (of === undefined) throw new Error('That branch was never opened.');
+      const location: Location = {
+        id: newId<'location'>(),
+        tenant: of.tenant,
+        branch,
+        name,
+        kind,
+        active: true,
+      };
+      places.locations.set(location.id, location);
+      return location.id;
+    },
+    shutBranch(branch: BranchId): void {
+      const of = places.branches.get(branch);
+      if (of === undefined) throw new Error('That branch was never opened.');
+      places.branches.set(branch, { ...of, active: false });
+    },
+  };
+}
+
+/** The value, or a failure naming the refusal — for a step a test is not testing. */
+export function taken<T>(result: Result<T, Refusal>): T {
+  return orThrow(result, (refusal) => new Error(`refused: ${refusal.code}`));
+}
+
+/** The refusal code, for a test that came to assert one. */
+export function refusalOf<T>(result: Result<T, Refusal>): string {
+  if (result.ok) throw new Error('Expected a refusal; the command succeeded.');
+  return result.error.code;
+}
+
+/**
+ * A shop with its seven roles and an owner standing in it.
+ *
+ * Every test that is not about seeding starts here, because every real
+ * installation does: the first run seeds the roles and puts the first owner in
+ * place, and a test that hand-built a user with rights would be testing a shop
+ * that cannot exist.
+ */
+export async function aShopWithAnOwner(sec: Installed): Promise<UserId> {
+  const roles = taken(await sec.admin.roles.seed(sec.system));
+  const owner = roles.find((role) => role.seeded === 'owner');
+  if (owner === undefined) throw new Error('Seeding produced no owner.');
+
+  const user = sec.someone();
+  taken(
+    await sec.admin.assignments.assign(sec.system, {
+      user,
+      role: owner.id,
+      confinement: TENANT_WIDE,
+    }),
+  );
+  return user;
+}

@@ -90,6 +90,57 @@ describe('defineModule', () => {
     ).toThrow(ModuleDeclarationError);
   });
 
+  it('refuses a right seeded into a role that is not one of the seven', () => {
+    expect(() =>
+      defineModule({
+        code: 'STK',
+        labelKey: 'module.stk',
+        permissions: [
+          {
+            id: 'stk.movement.create',
+            labelKey: 'permission.stk.movement.create',
+            // A role SEC never seeds is a right that reaches nobody, and the
+            // symptom months later is a job somebody cannot do with a role
+            // editor that looks right.
+            seededFor: ['stock-keeper' as 'warehouse-keeper'],
+          },
+        ],
+      }),
+    ).toThrow(ModuleDeclarationError);
+  });
+
+  it('refuses a right seeded into the owner, who holds every right there is', () => {
+    expect(() =>
+      defineModule({
+        code: 'STK',
+        labelKey: 'module.stk',
+        permissions: [
+          {
+            id: 'stk.movement.create',
+            labelKey: 'permission.stk.movement.create',
+            seededFor: ['owner'],
+          },
+        ],
+      }),
+    ).toThrow(ModuleDeclarationError);
+  });
+
+  it('refuses one role named twice for one right', () => {
+    expect(() =>
+      defineModule({
+        code: 'STK',
+        labelKey: 'module.stk',
+        permissions: [
+          {
+            id: 'stk.movement.create',
+            labelKey: 'permission.stk.movement.create',
+            seededFor: ['warehouse-keeper', 'warehouse-keeper'],
+          },
+        ],
+      }),
+    ).toThrow(ModuleDeclarationError);
+  });
+
   it('accepts a complete declaration and freezes it', () => {
     const History = contractKey<{ read(): string }>('pur.item-purchase-history');
     const module = defineModule({

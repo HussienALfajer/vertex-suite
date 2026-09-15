@@ -124,9 +124,17 @@ export function createRegistry<Session>(options: RegistryOptions<Session>): Regi
     }
   };
 
+  // One frozen list, handed to the modules and reported by the registry, so
+  // that what SEC seeds roles from and what a host shows in the role editor
+  // cannot be two different answers to the same question.
+  const declaredPermissions: readonly PermissionDeclaration[] = Object.freeze(
+    inActivationOrder.flatMap((one) => [...one.permissions]),
+  );
+
   const context: ModuleContext<Session> = {
     clock,
     transactor,
+    declaredPermissions,
     resolve,
     require<T>(key: ContractKey<T>): T {
       const value = resolve(key);
@@ -154,7 +162,7 @@ export function createRegistry<Session>(options: RegistryOptions<Session>): Regi
     module(code: ModuleCode): ModuleDefinition<Session> | null {
       return byCode.get(code) ?? null;
     },
-    permissions: Object.freeze(inActivationOrder.flatMap((one) => [...one.permissions])),
+    permissions: declaredPermissions,
     accounts: Object.freeze(inActivationOrder.flatMap((one) => [...one.accounts])),
     settings: Object.freeze(inActivationOrder.flatMap((one) => [...one.settings])),
     migrationPlan(target: 'store-node' | 'terminal'): readonly MigrationDeclaration<Session>[] {

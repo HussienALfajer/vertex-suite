@@ -1,3 +1,4 @@
+import { isSeededRole, OWNER, type SeededRole } from '@vertex/contracts';
 import type { Clock } from '@vertex/kernel';
 
 import type { ContractKey, ContractResolver } from './contract.js';
@@ -91,6 +92,26 @@ export interface PermissionDeclaration {
   readonly labelKey: string;
   /** SEC-05: re-authorisation, and an audit record, before the action proceeds. */
   readonly sensitive?: boolean;
+  /**
+   * Which of the seven seeded roles hold this right when a tenant is set up
+   * (SEC-01), and nothing more than that.
+   *
+   * The module that defines a right is the only one that knows who needs it: a
+   * warehouse keeper's business with a stock location is CAT and STK's
+   * knowledge, not SEC's. The alternative — SEC holding a table of every
+   * module's rights — makes shipping a module an edit to SEC, and an edition
+   * that omits that module a table with dead rows in it.
+   *
+   * It is a **seed and not a rule**: the roles are ordinary editable rows from
+   * the moment they exist, so a shop that wants its cashiers counting stock
+   * says so once in the role editor and this list never argues with it.
+   *
+   * `owner` is refused here. The owner holds every right the edition declares,
+   * computed by SEC rather than listed by each module, because a list is
+   * something a module can forget to join — and an owner who cannot do one
+   * thing in their own shop has no way to find out why.
+   */
+  readonly seededFor?: readonly SeededRole[];
 }
 
 /**
@@ -162,6 +183,22 @@ export interface ModuleContext<Session = unknown> extends ContractResolver {
   readonly clock: Clock;
   readonly transactor: Transactor<Session>;
   switchEnabled(key: string): boolean;
+  /**
+   * Every right the modules of **this edition** declare, and SEC is why it is
+   * here.
+   *
+   * SEC-01 seeds the seven roles out of what an edition actually has, and
+   * SEC-02 refuses to grant a right no module declared. Neither is answerable
+   * from inside SEC alone: a role holding `pos.sale.create` in an edition that
+   * did not buy POS is a tick in the role editor that silently does nothing,
+   * and nothing about it looks wrong.
+   *
+   * It is names, never behaviour. A module still cannot reach another module's
+   * repository, table or screen — the list says what may be asked for, which is
+   * public by construction, since every one of these ends up on a screen an
+   * administrator reads.
+   */
+  readonly declaredPermissions: readonly PermissionDeclaration[];
 }
 
 export interface ContractProvision<Session = unknown> {
@@ -267,6 +304,38 @@ function requireNamespaced(code: ModuleCode, what: string, name: string, seen: S
   seen.add(name);
 }
 
+/**
+ * A seed that names a role nobody seeds is a right that quietly reaches nobody.
+ *
+ * Checked at declaration for the same reason as the namespace: it is wrong
+ * identically on every machine this edition is installed on, and the symptom
+ * otherwise arrives months later as a job somebody cannot do, with a role
+ * editor that looks right.
+ */
+function requireSeededRoles(code: ModuleCode, permission: PermissionDeclaration): void {
+  const seen = new Set<SeededRole>();
+  for (const role of permission.seededFor ?? []) {
+    if (!isSeededRole(role)) {
+      throw new ModuleDeclarationError(
+        `${code} seeds "${permission.id}" into "${String(role)}", which is not one of the ` +
+          'seven roles of SEC-01.',
+      );
+    }
+    if (role === OWNER) {
+      throw new ModuleDeclarationError(
+        `${code} seeds "${permission.id}" into the owner. The owner holds every right the ` +
+          'edition declares, worked out from the declarations rather than listed by each ' +
+          'module — so naming it here is either redundant or, read by the next person, a ' +
+          'suggestion that an unnamed right is one the owner does not hold.',
+      );
+    }
+    if (seen.has(role)) {
+      throw new ModuleDeclarationError(`${code} seeds "${permission.id}" into "${role}" twice.`);
+    }
+    seen.add(role);
+  }
+}
+
 function requireCodes(
   code: ModuleCode,
   what: string,
@@ -328,7 +397,10 @@ export function defineModule<Session = unknown>(
   const subscribes = input.subscribes ?? [];
 
   const names = new Set<string>();
-  for (const permission of permissions) requireNamespaced(code, 'permission', permission.id, names);
+  for (const permission of permissions) {
+    requireNamespaced(code, 'permission', permission.id, names);
+    requireSeededRoles(code, permission);
+  }
   for (const account of accounts) requireNamespaced(code, 'account role', account.role, names);
   for (const setting of settings) requireNamespaced(code, 'setting', setting.key, names);
   for (const item of switches) requireNamespaced(code, 'feature switch', item.key, names);

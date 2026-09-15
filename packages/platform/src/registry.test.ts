@@ -212,6 +212,32 @@ describe('what the host asks the registry', () => {
     expect(registry.settings.map((one) => one.key)).toEqual(['fin.fiscal-start']);
   });
 
+  it('hands a module the same rights it reports to the host', () => {
+    const Seeder = contractKey<{ seen(): readonly string[] }>('sec.seeder');
+    const seeing = defineModule<MemorySession>({
+      code: 'SEC',
+      labelKey: 'module.sec',
+      dependsOn: ['SYS'],
+      permissions: [{ id: 'sec.role.edit', labelKey: 'permission.sec.role.edit' }],
+      provides: [
+        provideContract(Seeder, (context) => ({
+          seen: () => context.declaredPermissions.map((one) => one.id),
+        })),
+      ],
+    });
+
+    const { registry } = bring(
+      catalogue.map((one) => (one.code === 'SEC' ? seeing : one)),
+      { modules: [...CORE] },
+    );
+
+    // SEC-01 seeds the seven roles out of this list and SEC-02 refuses to grant
+    // a right outside it, so a module seeing a different list from the one the
+    // role editor shows is a role editor offering ticks that do nothing.
+    expect(registry.require(Seeder).seen()).toEqual(registry.permissions.map((one) => one.id));
+    expect(registry.require(Seeder).seen()).toEqual(['sys.branch.manage', 'sec.role.edit']);
+  });
+
   it('plans migrations per store, in the order the modules activate', () => {
     const { registry } = bring(catalogue, { modules: [...CORE] });
     expect(registry.migrationPlan('store-node').map((one) => one.id)).toEqual([

@@ -1,0 +1,38 @@
+{
+  "name": "@vertex/sec",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SEC — roles, action-level permissions and the branches a user's rights reach.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "default": "./dist/contract.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vertex/contracts": "workspace:*",
+    "@vertex/kernel": "workspace:*",
+    "@vertex/platform": "workspace:*",
+    "@vertex/sys": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "6.0.2",
+    "vitest": "4.1.11"
+  }
+}
