@@ -12,8 +12,8 @@ import {
   type RoleId,
   type SecRefusal,
 } from './contract.js';
-import { coveredBy, reachesNothing, reachFor } from './decide.js';
-import { assignmentIn, assignmentsIn, roleIn, rolesIn, writeAssignment } from './records.js';
+import { coveredBy, reachesNothing, reachFor, stillHeldByAnybody } from './decide.js';
+import { assignmentIn, roleIn, rolesIn, writeAssignment } from './records.js';
 
 /**
  * Putting a user into a role over a stretch of the shop group: `SEC-04`.
@@ -206,6 +206,10 @@ export function withdrawAssignment(
  * work and **never the vendor's**, and a shop whose last administrator has been
  * withdrawn has no way back that does not involve somebody with a database
  * client. The command is refused while there is still somebody who can act.
+ *
+ * Counted by `stillHeldByAnybody`, which requires the person, the assignment
+ * and the role to be live together — an assignment left behind by somebody who
+ * no longer works here is not somebody who can act.
  */
 function wouldStrandTheTenant(
   session: RecordSession,
@@ -213,18 +217,14 @@ function wouldStrandTheTenant(
   leaving: Assignment,
 ): SecRefusal | null {
   const keystone = SEC_PERMISSIONS.role.edit;
-  const rolesHolding = new Set(
-    rolesIn(session, tenant)
-      .filter((role) => role.active && role.rights.includes(keystone))
-      .map((role) => role.id),
-  );
-  if (!rolesHolding.has(leaving.role)) return null;
+  const role = rolesIn(session, tenant).find((one) => one.id === leaving.role);
+  if (role === undefined || !role.active || !role.rights.includes(keystone)) return null;
 
-  const others = assignmentsIn(session, tenant).filter(
-    (one) =>
-      one.active &&
-      rolesHolding.has(one.role) &&
-      !(one.user === leaving.user && one.role === leaving.role),
-  );
-  return others.length === 0 ? refusal('sec.last-owner', { user: leaving.user }) : null;
+  return stillHeldByAnybody(session, tenant, keystone, {
+    kind: 'assignment',
+    user: leaving.user,
+    role: leaving.role,
+  })
+    ? null
+    : refusal('sec.last-owner', { user: leaving.user });
 }

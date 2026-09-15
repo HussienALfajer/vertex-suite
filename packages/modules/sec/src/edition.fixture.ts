@@ -210,7 +210,18 @@ function bring(
       throw new Error(`An effect failed: ${String(failure.cause)}`);
     },
   });
-  const registry = createRegistry({ catalogue, plan, bus, transactor, clock: systemClock });
+  // The real wiring: `SEC` is what answers "may they" for every module in the
+  // edition, and the host is the one thing allowed to say so. `SEC` guards its
+  // own commands with its own decision rather than through this, which is the
+  // same answer reached without a round trip through the registry.
+  const registry = createRegistry({
+    catalogue,
+    plan,
+    bus,
+    transactor,
+    clock: systemClock,
+    authorisedBy: Authorisation,
+  });
 
   return {
     registry,

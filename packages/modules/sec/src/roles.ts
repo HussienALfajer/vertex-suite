@@ -16,7 +16,7 @@ import {
   type RoleId,
   type SecRefusal,
 } from './contract.js';
-import { decideFor } from './decide.js';
+import { decideFor, stillHeldByAnybody } from './decide.js';
 import { roleIn, rolesIn, writeRecord } from './records.js';
 
 /**
@@ -300,6 +300,10 @@ export function setRoleActive(
  * involve somebody with a database client, which is the one outcome those two
  * features exist to rule out. So the command that would do it is refused, and
  * the administrator is told why while there is still somebody who can act.
+ *
+ * The question is about **people, not roles** — see `stillHeldByAnybody`. A
+ * second role carrying the keystone that nobody was put into is not a way back,
+ * and counting it as one is what let this command lock a shop out of itself.
  */
 export function wouldStrandTheTenant(
   session: RecordSession,
@@ -310,8 +314,7 @@ export function wouldStrandTheTenant(
   const keystone = SEC_PERMISSIONS.role.edit;
   if (!role.rights.includes(keystone) || !losing.includes(keystone)) return null;
 
-  const others = rolesIn(session, tenant).filter(
-    (one) => one.id !== role.id && one.active && one.rights.includes(keystone),
-  );
-  return others.length === 0 ? refusal('sec.last-owner', { role: role.id }) : null;
+  return stillHeldByAnybody(session, tenant, keystone, { kind: 'role', role: role.id })
+    ? null
+    : refusal('sec.last-owner', { role: role.id });
 }

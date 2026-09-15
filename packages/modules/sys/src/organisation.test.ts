@@ -93,6 +93,152 @@ describe('Organisation structure — SYS-09', () => {
     expect(sys.store.committed().size).toBe(committedWhileActive);
   });
 
+  it('asks whether the caller may, and refuses the command rather than running it', async () => {
+    const company = await aCompany();
+
+    // Somebody who holds nothing. Every command below declares a right, and
+    // before this guard existed every one of them ran for whoever called it:
+    // the rights were on the role editor and on nothing else.
+    sys.answers(() => false);
+
+    const refused = await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' });
+    expect(refusalOf(refused)).toBe('sys.not-permitted');
+    // The right is named in the refusal, so a screen can say which one is
+    // missing rather than showing a failure it cannot explain.
+    expect(refused.ok ? null : refused.error.values['right']).toBe(SYS_PERMISSIONS.branch.create);
+
+    // Refused rather than half-done: the guard runs before the transaction, so
+    // there is nothing written for a later reader to find.
+    sys.answers(() => true);
+    expect(await sys.read.branches(sys.by)).toEqual([]);
+  });
+
+  it('judges the caller against the branch the thing is actually in', async () => {
+    const company = await aCompany();
+    const aleppo = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' }),
+    );
+    const homs = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Homs' }),
+    );
+    const inHoms = taken(
+      await sys.admin.locations.open(sys.by, {
+        branch: homs.id,
+        name: 'Store room',
+        kind: 'store-room',
+      }),
+    );
+
+    // A manager of Aleppo and of nowhere else (`SEC-04`). The place has to
+    // reach the decision for that to mean anything — a guard that asked
+    // without saying where would give them Homs as well.
+    sys.answers((_by, _right, where) => where?.branch === aleppo.id);
+
+    expect(
+      refusalOf(
+        await sys.admin.locations.open(sys.by, {
+          branch: homs.id,
+          name: 'Second room',
+          kind: 'store-room',
+        }),
+      ),
+    ).toBe('sys.not-permitted');
+    expect(refusalOf(await sys.admin.locations.rename(sys.by, inHoms.id, 'Cellar'))).toBe(
+      'sys.not-permitted',
+    );
+
+    taken(
+      await sys.admin.locations.open(sys.by, {
+        branch: aleppo.id,
+        name: 'Shop floor',
+        kind: 'shop-floor',
+      }),
+    );
+    expect(await sys.read.locations(sys.by, aleppo.id)).toHaveLength(1);
+    expect((await sys.read.location(sys.by, inHoms.id))?.name).toBe('Store room');
+  });
+
+  it('lets the system act, because a migration and a sync have nobody to be', async () => {
+    // No actor is not a weaker caller, it is no caller: `POS-19` has a store
+    // node take up the trading of a shop that was offline, and the register
+    // that did the work is where it was authorised.
+    sys.answers(() => false);
+
+    const company = taken(await sys.admin.companies.register(sys.system, { name: 'Vertex' }));
+    expect(company.name).toBe('Vertex');
+  });
+
+  it('refuses two of anything under one name in the list a person reads', async () => {
+    const company = await aCompany();
+    const aleppo = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'الفرع الرئيسي' }),
+    );
+
+    // The same name again, and the same name with the spacing a second typist
+    // would use: a picker showing it twice is a transfer sent to the wrong shop.
+    expect(
+      refusalOf(
+        await sys.admin.branches.open(sys.by, { company: company.id, name: '  الفرع الرئيسي  ' }),
+      ),
+    ).toBe('sys.name-taken');
+    expect(refusalOf(await sys.admin.companies.register(sys.by, { name: 'vertex retail' }))).toBe(
+      'sys.name-taken',
+    );
+
+    const homs = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Homs' }),
+    );
+    expect(refusalOf(await sys.admin.branches.rename(sys.by, homs.id, 'الفرع الرئيسي'))).toBe(
+      'sys.name-taken',
+    );
+    // Renaming something to the name it already has is not a collision with
+    // itself, and `SYN-02` replays commands, so it has to stay possible.
+    taken(await sys.admin.branches.rename(sys.by, aleppo.id, 'الفرع الرئيسي'));
+
+    // Locations are told apart within their own branch, so one name may be used
+    // once in each — two branches both have a store room, and always will.
+    taken(
+      await sys.admin.locations.open(sys.by, {
+        branch: aleppo.id,
+        name: 'المستودع',
+        kind: 'store-room',
+      }),
+    );
+    taken(
+      await sys.admin.locations.open(sys.by, {
+        branch: homs.id,
+        name: 'المستودع',
+        kind: 'store-room',
+      }),
+    );
+    expect(
+      refusalOf(
+        await sys.admin.locations.open(sys.by, {
+          branch: homs.id,
+          name: 'المستودع',
+          kind: 'shop-floor',
+        }),
+      ),
+    ).toBe('sys.name-taken');
+  });
+
+  it('frees a name when the thing carrying it closes, and defends it on the way back', async () => {
+    const company = await aCompany();
+    const first = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' }),
+    );
+
+    // A closed shop keeps its name on every document it ever issued, but the
+    // name is not spent: refusing it years later would be this module deciding
+    // something `SYS-09` never said.
+    taken(await sys.admin.branches.deactivate(sys.by, first.id));
+    taken(await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' }));
+
+    // And reopening the old one would put two live shops under one name without
+    // anybody typing it, which is the one outcome this rule is about.
+    expect(refusalOf(await sys.admin.branches.reactivate(sys.by, first.id))).toBe('sys.name-taken');
+  });
+
   it('offers no way to delete a structural entity', () => {
     const forbidden = ['delete', 'remove', 'destroy', 'purge', 'drop'];
     for (const group of [

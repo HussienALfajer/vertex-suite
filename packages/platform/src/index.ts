@@ -1,4 +1,5 @@
 export {
+  AuthoriserUnavailableError,
   ContractCycleError,
   ContractUnavailableError,
   DuplicateDeclarationError,
@@ -8,6 +9,8 @@ export {
   RegistryError,
   UndeclaredEventError,
 } from './errors.js';
+
+export type { AuthorisationScope, Authoriser } from './authorise.js';
 
 export { contractKey, type ContractKey, type ContractResolver } from './contract.js';
 
