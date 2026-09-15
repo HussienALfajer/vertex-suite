@@ -2,7 +2,7 @@ import type { PermissionId, TenantId, UserId } from '@vertex/contracts';
 import type { CommandContext } from '@vertex/platform';
 
 import type { Assignment, Confinement, Decision, RecordSession, Where } from './contract.js';
-import { assignmentsIn, rolesIn } from './records.js';
+import { assignmentsIn, rolesIn, userIn } from './records.js';
 
 /**
  * The answer to `SEC-02` and `SEC-04`, and nothing else.
@@ -97,12 +97,22 @@ export function reachesNothing(grants: readonly Confinement[]): boolean {
   return grants.length === 0;
 }
 
-/** The assignments of one user that are live, with the roles behind them live too. */
-export function liveGrants(
-  session: RecordSession,
-  tenant: TenantId,
-  user: UserId,
-): readonly { assignment: Assignment; rights: readonly PermissionId[] }[] {
+export interface Grant {
+  readonly assignment: Assignment;
+  readonly rights: readonly PermissionId[];
+}
+
+/**
+ * Everything a role would give this person, whether or not they still work
+ * here.
+ *
+ * The distinction from `liveGrants` is not pedantry. It is what a **password
+ * reset** has to be measured against (`SEC-09`): resetting the password of a
+ * withdrawn administrator, then putting them back, is the same escalation as
+ * resetting a working one — and a check that read only live grants would wave
+ * the first one through because a withdrawn person appears to hold nothing.
+ */
+export function grantsOf(session: RecordSession, tenant: TenantId, user: UserId): readonly Grant[] {
   const roles = new Map(rolesIn(session, tenant).map((role) => [role.id, role] as const));
   return assignmentsIn(session, tenant)
     .filter((assignment) => assignment.user === user && assignment.active)
@@ -111,6 +121,25 @@ export function liveGrants(
       if (!role?.active) return [];
       return [{ assignment, rights: role.rights }];
     });
+}
+
+/**
+ * What this person may actually do here, now.
+ *
+ * A withdrawn user holds nothing, immediately and everywhere: `SEC-09`
+ * deactivates rather than deletes, and a deactivation that left the rights
+ * behind would be a sacking that still opens the till. Somebody who was never
+ * enrolled in this tenant holds nothing for the same reason — an assignment
+ * naming them is a row about a person who does not work here.
+ */
+export function liveGrants(
+  session: RecordSession,
+  tenant: TenantId,
+  user: UserId,
+): readonly Grant[] {
+  const here = userIn(session, tenant, user);
+  if (!here?.active) return [];
+  return grantsOf(session, tenant, user);
 }
 
 /**

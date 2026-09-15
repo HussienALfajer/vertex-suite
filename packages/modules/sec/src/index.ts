@@ -12,20 +12,26 @@ import { Organisation } from '@vertex/sys/contract';
 
 import {
   Authorisation,
+  Credentials,
   RoleAdministration,
   RoleDirectory,
   SEC_PERMISSION_SEEDS,
   TENANT_WIDE,
+  UserAdministration,
+  UserDirectory,
+  type AdmittedUser,
   type Listing,
   type NewAssignment,
   type NewRole,
+  type NewUser,
   type RecordSession,
+  type RecoveryId,
   type RoleId,
   type Where,
 } from './contract.js';
 import { assignRole, placesNamed, withdrawAssignment } from './assignments.js';
 import { decideFor, reachFor } from './decide.js';
-import { assignmentsIn, roleIn, rolesIn } from './records.js';
+import { assignmentsIn, roleIn, rolesIn, userIn, usersIn } from './records.js';
 import {
   defineRole,
   grantRights,
@@ -34,6 +40,20 @@ import {
   seedRoles,
   setRoleActive,
 } from './roles.js';
+import {
+  admitUser,
+  approveRecovery,
+  authenticate,
+  changeOwnPassword,
+  completeRecovery,
+  enrolUser,
+  forceSignOut,
+  normaliseHandle,
+  openRecovery,
+  renameUser,
+  resetPassword,
+  setUserActive,
+} from './users.js';
 
 export * from './contract.js';
 
@@ -166,6 +186,75 @@ export function secModule<Session extends RecordSession>(): ModuleDefinition<Ses
               run(by, (session) => withdrawAssignment(session, by, user, role)),
           },
         } satisfies RoleAdministration;
+      }),
+
+      provideContract(UserDirectory, (context: ModuleContext<Session>) => {
+        const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
+          context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          user: (by: CommandContext, id: UserId) =>
+            read(by, (session) => userIn(session, by.tenant, id)),
+          users: (by: CommandContext, listing?: Listing) =>
+            read(by, (session) => visible(usersIn(session, by.tenant), listing)),
+          byHandle: (by: CommandContext, handle: string) =>
+            read(by, (session) => {
+              const wanted = normaliseHandle(handle);
+              if (wanted === null) return null;
+              return usersIn(session, by.tenant).find((one) => one.handle === wanted) ?? null;
+            }),
+        } satisfies UserDirectory;
+      }),
+
+      provideContract(UserAdministration, (context: ModuleContext<Session>) => {
+        const declared = new Set(context.declaredPermissions.map((one) => one.id));
+        const run = <T>(
+          by: CommandContext,
+          work: (session: Session) => Promise<T> | T,
+        ): Promise<T> => context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          enrol: (by: CommandContext, input: NewUser) =>
+            run(by, (session) => enrolUser(session, by, declared, input)),
+          rename: (by: CommandContext, id: UserId, name: string) =>
+            run(by, (session) => renameUser(session, by, declared, id, name)),
+          deactivate: (by: CommandContext, id: UserId) =>
+            run(by, (session) => setUserActive(session, by, declared, id, false)),
+          reactivate: (by: CommandContext, id: UserId) =>
+            run(by, (session) => setUserActive(session, by, declared, id, true)),
+          resetPassword: (by: CommandContext, id: UserId, password: string) =>
+            run(by, (session) => resetPassword(session, by, declared, id, password)),
+          forceSignOut: (by: CommandContext, id: UserId) =>
+            // The moment comes from the clock this module was handed, never from
+            // the machine: a register's own clock is a claim, and this stamp is
+            // what says whose sessions are over.
+            run(by, (session) => forceSignOut(session, by, declared, id, context.clock.now())),
+          admit: (by: CommandContext, input: AdmittedUser) =>
+            run(by, (session) => admitUser(session, by, input)),
+        } satisfies UserAdministration;
+      }),
+
+      provideContract(Credentials, (context: ModuleContext<Session>) => {
+        const declared = new Set(context.declaredPermissions.map((one) => one.id));
+        const run = <T>(
+          by: CommandContext,
+          work: (session: Session) => Promise<T> | T,
+        ): Promise<T> => context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          authenticate: (by: CommandContext, handle: string, password: string) =>
+            run(by, (session) => authenticate(session, by, handle, password, context.clock.now())),
+          changeOwnPassword: (by: CommandContext, current: string, next: string) =>
+            run(by, (session) => changeOwnPassword(session, by, current, next)),
+          recovery: {
+            open: (by: CommandContext, user: UserId) =>
+              run(by, (session) => openRecovery(session, by, declared, user, context.clock.now())),
+            approve: (by: CommandContext, id: RecoveryId) =>
+              run(by, (session) => approveRecovery(session, by, declared, id)),
+            complete: (by: CommandContext, id: RecoveryId, password: string) =>
+              run(by, (session) => completeRecovery(session, by, declared, id, password)),
+          },
+        } satisfies Credentials;
       }),
     ],
   });
