@@ -1,7 +1,14 @@
 import type { Clock } from '@vertex/kernel';
 
+import type { AuthorisationScope, Authoriser } from './authorise.js';
+import type { CommandContext } from './context.js';
 import type { ContractKey } from './contract.js';
-import { ContractCycleError, ContractUnavailableError, UndeclaredEventError } from './errors.js';
+import {
+  AuthoriserUnavailableError,
+  ContractCycleError,
+  ContractUnavailableError,
+  UndeclaredEventError,
+} from './errors.js';
 import type { EventBus } from './events.js';
 import type { EditionPlan } from './edition.js';
 import type {
@@ -39,6 +46,16 @@ export interface Registry<Session = unknown> {
   resolve<T>(key: ContractKey<T>): T | null;
   require<T>(key: ContractKey<T>): T;
   switchEnabled(key: string): boolean;
+
+  /**
+   * The same question a module asks through its context, offered to the host.
+   *
+   * A request boundary has to ask it too — an app screen calls a module's
+   * contract, and the app is where a session becomes a `CommandContext`. One
+   * implementation for both, so a module and the app in front of it can never
+   * be answering to two different authorities.
+   */
+  authorise(by: CommandContext, right: string, where?: AuthorisationScope): Promise<boolean>;
 }
 
 export interface RegistryOptions<Session> {
@@ -48,6 +65,19 @@ export interface RegistryOptions<Session> {
   readonly bus: EventBus;
   readonly transactor: Transactor<Session>;
   readonly clock: Clock;
+  /**
+   * Which contract answers "may they" for every module in this edition.
+   *
+   * Named by the **host**, because the host composes the edition and is the one
+   * thing `modules.md` §4 lets name a module: in every real edition it is
+   * `Authorisation` from `@vertex/sec/contract`. The platform holds the key and
+   * never the name, and resolves it on first use — `SEC` is built from this
+   * same registry, so there is nothing to hand in at construction.
+   *
+   * Optional only so that a module's own tests can compose an edition of one.
+   * Asking without it is a defect rather than a denial (`AuthoriserUnavailableError`).
+   */
+  readonly authorisedBy?: ContractKey<Authoriser>;
 }
 
 /**
@@ -131,10 +161,32 @@ export function createRegistry<Session>(options: RegistryOptions<Session>): Regi
     inActivationOrder.flatMap((one) => [...one.permissions]),
   );
 
+  /**
+   * The system is not a person and holds every right, which is the same rule
+   * `SEC` applies inside its own decision: a migration, a scheduled job, and a
+   * sync applying work that was authorised on the register that did it all
+   * arrive with no actor. Refusing them would leave a store node unable to take
+   * up the trading of a shop that was offline, which is the one thing `POS-19`
+   * promises. It is settled here as well as there so that a module cannot be
+   * guarded into refusing its own installation.
+   */
+  const authorise = async (
+    by: CommandContext,
+    right: string,
+    where?: AuthorisationScope,
+  ): Promise<boolean> => {
+    if (by.actor === null) return true;
+    const key = options.authorisedBy;
+    const authoriser = key === undefined ? null : resolve(key);
+    if (authoriser === null) throw new AuthoriserUnavailableError(right);
+    return authoriser.may(by, right, where);
+  };
+
   const context: ModuleContext<Session> = {
     clock,
     transactor,
     declaredPermissions,
+    authorise,
     resolve,
     require<T>(key: ContractKey<T>): T {
       const value = resolve(key);
@@ -181,5 +233,6 @@ export function createRegistry<Session>(options: RegistryOptions<Session>): Regi
     switchEnabled(key: string): boolean {
       return context.switchEnabled(key);
     },
+    authorise,
   };
 }

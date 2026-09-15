@@ -1,7 +1,14 @@
 import type { PermissionId, TenantId, UserId } from '@vertex/contracts';
 import type { CommandContext } from '@vertex/platform';
 
-import type { Assignment, Confinement, Decision, RecordSession, Where } from './contract.js';
+import type {
+  Assignment,
+  Confinement,
+  Decision,
+  RecordSession,
+  RoleId,
+  Where,
+} from './contract.js';
 import { assignmentsIn, rolesIn, userIn } from './records.js';
 
 /**
@@ -160,6 +167,62 @@ export function reachFor(
       .filter((grant) => grant.rights.includes(right))
       .map((grant) => grant.assignment.confinement),
   );
+}
+
+/**
+ * The grant about to stop granting anything, as the lock-out rule weighs it.
+ *
+ * Three commands can take the last way back out of a shop — withdrawing a role
+ * or revoking the right from it, standing a person down, and withdrawing one
+ * assignment — so the question each of them asks is the same question about a
+ * different removal.
+ */
+export type Removing =
+  | { readonly kind: 'role'; readonly role: RoleId }
+  | { readonly kind: 'user'; readonly user: UserId }
+  | { readonly kind: 'assignment'; readonly user: UserId; readonly role: RoleId };
+
+function removed(assignment: Assignment, removing: Removing): boolean {
+  switch (removing.kind) {
+    case 'role':
+      return assignment.role === removing.role;
+    case 'user':
+      return assignment.user === removing.user;
+    case 'assignment':
+      return assignment.user === removing.user && assignment.role === removing.role;
+  }
+}
+
+/**
+ * Whether anybody would still hold a right once that grant is gone.
+ *
+ * **A person holds a right only when three things are live at once**: the
+ * person, the assignment, and the role. Counting any one of them by itself is
+ * how a shop is told it has a way back that nobody can walk — a second role
+ * carrying the right that nobody was ever put into, or an assignment to
+ * somebody who no longer works here. Both look like cover and neither is.
+ *
+ * One function for all three commands on purpose. The rule was written out
+ * three times, each counting something different, and the one that counted
+ * roles let an administrator withdraw the only role anybody held: the command
+ * was permitted, and afterwards nobody in the shop could restore the role,
+ * staff anybody, or hire. `SEC-09` and `SYS-09` both say the way back is never
+ * the vendor, so there was no way back at all.
+ */
+export function stillHeldByAnybody(
+  session: RecordSession,
+  tenant: TenantId,
+  right: PermissionId,
+  removing: Removing,
+): boolean {
+  const roles = new Map(rolesIn(session, tenant).map((role) => [role.id, role] as const));
+
+  return assignmentsIn(session, tenant).some((assignment) => {
+    if (!assignment.active || removed(assignment, removing)) return false;
+    const role = roles.get(assignment.role);
+    if (role === undefined || !role.active || !role.rights.includes(right)) return false;
+    return userIn(session, tenant, assignment.user)?.active === true;
+  });
 }
 
 /**

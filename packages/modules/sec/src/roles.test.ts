@@ -170,6 +170,72 @@ describe('Seven seeded roles — SEC-01', () => {
     expect(await sec.auth.may(sec.as(second), SYS_PERMISSIONS.branch.create)).toBe(true);
   });
 
+  it('counts who holds the last right rather than which roles carry it', async () => {
+    const only = await aShopWithAnOwner(sec);
+    const owner = sec.as(only);
+    const ownerRole = seededAs(await sec.directory.roles(owner), 'owner');
+
+    // A second role that carries the keystone and that nobody has been put
+    // into. Reading the roles alone, the shop appears to have two ways back;
+    // reading the people, it has one, and this is the one being taken away.
+    const deputy = taken(
+      await sec.admin.roles.define(owner, {
+        name: 'نائب',
+        rights: [SEC_PERMISSIONS.role.edit],
+      }),
+    );
+    expect(await sec.directory.holdersOf(owner, deputy.id)).toHaveLength(0);
+
+    expect(refusalOf(await sec.admin.roles.withdraw(owner, ownerRole.id))).toBe('sec.last-owner');
+    expect(
+      refusalOf(await sec.admin.roles.revoke(owner, ownerRole.id, [SEC_PERMISSIONS.role.edit])),
+    ).toBe('sec.last-owner');
+
+    // The shop is still its own: the command was refused while somebody could
+    // still act, which is the whole of the rule.
+    expect(await sec.auth.may(owner, SEC_PERMISSIONS.role.edit)).toBe(true);
+
+    // Put somebody into the second role and there are genuinely two ways back,
+    // so standing the first one down is an ordinary decision again.
+    const second = await sec.hire('deputy-1');
+    taken(
+      await sec.admin.assignments.assign(owner, {
+        user: second,
+        role: deputy.id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+    taken(await sec.admin.roles.withdraw(owner, ownerRole.id));
+    expect(await sec.auth.may(sec.as(second), SEC_PERMISSIONS.role.edit)).toBe(true);
+  });
+
+  it('does not count somebody who no longer works here as a way back', async () => {
+    const first = await aShopWithAnOwner(sec);
+    const owner = sec.as(first);
+    const ownerRole = seededAs(await sec.directory.roles(owner), 'owner');
+
+    const second = await sec.hire('owner-2');
+    taken(
+      await sec.admin.assignments.assign(owner, {
+        user: second,
+        role: ownerRole.id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+    taken(await sec.users.deactivate(owner, second));
+
+    // Their assignment is still on the record — `SEC-09` withdraws a person and
+    // never deletes them — so the row survives while the person does not, and a
+    // guard reading rows alone would count a way back that nobody can walk.
+    expect(await sec.directory.assignmentsOf(owner, second)).toHaveLength(1);
+
+    expect(refusalOf(await sec.admin.assignments.withdraw(owner, first, ownerRole.id))).toBe(
+      'sec.last-owner',
+    );
+    expect(refusalOf(await sec.users.deactivate(owner, first))).toBe('sec.last-owner');
+    expect(await sec.auth.may(owner, SEC_PERMISSIONS.role.edit)).toBe(true);
+  });
+
   it('keeps one tenant roles out of another tenant reach', async () => {
     taken(await sec.admin.roles.seed(sec.system));
     taken(await sec.admin.roles.seed(sec.otherSystem));

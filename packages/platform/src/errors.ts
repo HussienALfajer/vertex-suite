@@ -49,5 +49,30 @@ export class ContractUnavailableError extends PlatformError {
 /** A contract's construction reached back into itself. */
 export class ContractCycleError extends PlatformError {}
 
+/**
+ * A module asked whether somebody may do something, and this edition was
+ * composed with nothing that can answer.
+ *
+ * A defect, and loudly, because the alternative is the failure this seam exists
+ * to prevent. Answering "yes" would hand the organisation of the shop to
+ * whoever reached the request first; answering "no" would leave an
+ * administrator locked out of their own system with nothing saying why. Both
+ * are silent, and both are wrong on every machine this edition is installed on,
+ * so it is the host's wiring that is reported rather than the caller's command.
+ */
+export class AuthoriserUnavailableError extends PlatformError {
+  readonly right: string;
+
+  constructor(right: string) {
+    super(
+      `A module asked whether the caller may "${right}", and this edition has no authoriser. ` +
+        'Pass `authorisedBy` to createRegistry, naming the contract that answers it — ' +
+        '`Authorisation` from @vertex/sec/contract in every edition that ships SEC, which is ' +
+        'every edition, since SEC is a core module.',
+    );
+    this.right = right;
+  }
+}
+
 /** A migration failed, or the journal and the plan disagree about what has run. */
 export class MigrationError extends PlatformError {}

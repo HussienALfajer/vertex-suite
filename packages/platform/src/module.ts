@@ -1,6 +1,8 @@
 import { isSeededRole, OWNER, type SeededRole } from '@vertex/contracts';
 import type { Clock } from '@vertex/kernel';
 
+import type { AuthorisationScope } from './authorise.js';
+import type { CommandContext } from './context.js';
 import type { ContractKey, ContractResolver } from './contract.js';
 import { ModuleDeclarationError } from './errors.js';
 import type { DomainEvent, EventType } from './events.js';
@@ -182,6 +184,20 @@ export interface MigrationDeclaration<Session = unknown> {
 export interface ModuleContext<Session = unknown> extends ContractResolver {
   readonly clock: Clock;
   readonly transactor: Transactor<Session>;
+  /**
+   * Whether this caller may do this, here (`SEC-02`, `SEC-04`).
+   *
+   * The seam of `authorise.ts`: a module asks without knowing that `SEC` is
+   * what answers, because it may not know. A command whose right is declared
+   * and never asked is a right that reads on the role editor as protection and
+   * is none — so a module guards its own commands with this, exactly as `SEC`
+   * guards its own with its own decision.
+   *
+   * Throws when the edition was composed with nothing that can answer. That is
+   * the host's wiring rather than the caller's command, and a silent yes or a
+   * silent no would each be wrong in a way nobody could see.
+   */
+  authorise(by: CommandContext, right: string, where?: AuthorisationScope): Promise<boolean>;
   switchEnabled(key: string): boolean;
   /**
    * Every right the modules of **this edition** declare, and SEC is why it is

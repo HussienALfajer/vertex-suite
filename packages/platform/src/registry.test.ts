@@ -1,10 +1,16 @@
 import { newId, orThrow, systemClock } from '@vertex/kernel';
 import { describe, expect, it } from 'vitest';
 
-import { contractKey } from './contract.js';
+import type { AuthorisationScope, Authoriser } from './authorise.js';
+import { contractKey, type ContractKey } from './contract.js';
 import { commandContext } from './context.js';
 import { composeEdition, type EditionPlan, type EditionRequest } from './edition.js';
-import { ContractCycleError, ContractUnavailableError, UndeclaredEventError } from './errors.js';
+import {
+  AuthoriserUnavailableError,
+  ContractCycleError,
+  ContractUnavailableError,
+  UndeclaredEventError,
+} from './errors.js';
 import { createEventBus, eventType, type EventBus } from './events.js';
 import {
   defineModule,
@@ -45,6 +51,7 @@ interface Brought {
 function bring(
   catalogue: readonly ModuleDefinition<MemorySession>[],
   request: EditionRequest,
+  authorisedBy?: ContractKey<Authoriser>,
 ): Brought {
   const composed = composeEdition(catalogue, request);
   const plan = orThrow(composed, (refusal) => new Error(refusal.code));
@@ -63,12 +70,91 @@ function bring(
     },
   });
   return {
-    registry: createRegistry({ catalogue, plan, bus, transactor, clock: systemClock }),
+    registry: createRegistry({
+      catalogue,
+      plan,
+      bus,
+      transactor,
+      clock: systemClock,
+      ...(authorisedBy === undefined ? {} : { authorisedBy }),
+    }),
     bus,
     plan,
     store,
   };
 }
+
+describe('authorisation', () => {
+  const Authority = contractKey<Authoriser>('sec.authorisation');
+  const asked: { right: string; where: AuthorisationScope | undefined }[] = [];
+
+  /**
+   * `SEC` as the platform can ever see it: a shape resolved by key. The platform
+   * holds no name of any module, so what answers is whatever the host said.
+   */
+  const sec = (answer: boolean): ModuleDefinition<MemorySession> =>
+    defineModule<MemorySession>({
+      code: 'SEC',
+      labelKey: 'module.sec',
+      dependsOn: ['SYS'],
+      provides: [
+        provideContract(Authority, () => ({
+          may: (_by, right, where) => {
+            asked.push({ right, where });
+            return Promise.resolve(answer);
+          },
+        })),
+      ],
+    });
+
+  // The real `SEC`, replaced by one that answers: every other module of the
+  // core is left exactly as the rest of this file composes it.
+  const catalogue = (answer: boolean): readonly ModuleDefinition<MemorySession>[] => [
+    ...core.filter((one) => one.code !== 'SEC'),
+    sec(answer),
+  ];
+
+  const somebody = commandContext({ tenant: newId<'tenant'>(), actor: newId<'user'>() });
+
+  it('asks whatever the host named, and carries the place with the question', async () => {
+    asked.length = 0;
+    const branch = newId<'branch'>();
+    const { registry } = bring(catalogue(true), { modules: [...CORE] }, Authority);
+
+    expect(await registry.authorise(somebody, 'sys.branch.edit', { branch })).toBe(true);
+    expect(asked).toEqual([{ right: 'sys.branch.edit', where: { branch } }]);
+  });
+
+  it('carries a refusal back as one', async () => {
+    const { registry } = bring(catalogue(false), { modules: [...CORE] }, Authority);
+    expect(await registry.authorise(somebody, 'sys.branch.edit', undefined)).toBe(false);
+  });
+
+  it('lets the system through without asking, since it has nobody to be', async () => {
+    asked.length = 0;
+    const { registry } = bring(catalogue(false), { modules: [...CORE] }, Authority);
+    const system = commandContext({ tenant: newId<'tenant'>() });
+
+    // A migration, a scheduled job, a sync applying work authorised on the
+    // register that did it. `POS-19` turns on a store node being able to take
+    // up the trading of a shop that was offline.
+    expect(await registry.authorise(system, 'sys.branch.edit', undefined)).toBe(true);
+    expect(asked).toEqual([]);
+  });
+
+  it('raises rather than deciding for itself when the host wired nothing', async () => {
+    // The two silent answers are both wrong. Yes hands the organisation of the
+    // shop to whoever asked; no locks an administrator out of their own system
+    // with nothing saying why. Either would be wrong on every machine this
+    // edition is installed on, which makes it the host's defect to be told
+    // about at the first question rather than at the first cashier.
+    const { registry } = bring(catalogue(true), { modules: [...CORE] });
+
+    await expect(registry.authorise(somebody, 'sys.branch.edit', undefined)).rejects.toThrow(
+      AuthoriserUnavailableError,
+    );
+  });
+});
 
 describe('subscriptions', () => {
   const stk = defineModule<MemorySession>({

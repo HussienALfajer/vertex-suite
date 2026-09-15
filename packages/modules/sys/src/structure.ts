@@ -56,6 +56,44 @@ function named(value: string): string | null {
   return name === '' ? null : name;
 }
 
+/**
+ * Two names are the same name when the person reading the list cannot tell them
+ * apart.
+ *
+ * Composed and folded the way `SEC` folds a sign-in handle, and for the same
+ * reason: Arabic is written with combining marks that two keyboards encode
+ * differently, so two entries that look identical on screen can differ byte for
+ * byte. A branch picker showing "الفرع الرئيسي" twice is a stock transfer sent
+ * to the wrong shop, and the mistake is made when the list is read rather than
+ * when the name is typed.
+ */
+function sameName(one: string, two: string): boolean {
+  const fold = (value: string): string => value.normalize('NFC').trim().toLowerCase();
+  return fold(one) === fold(two);
+}
+
+/**
+ * Whether a name is already in use among the things it has to be told apart
+ * from.
+ *
+ * **Against what is in use, not against what ever existed.** A shop that closed
+ * keeps its name in every document it ever issued, and refusing to reuse it
+ * years later would be this module deciding that a name is spent — which is not
+ * `SYS-09`'s rule about deactivation, only a side effect of it. What matters is
+ * that no two live entities in one list carry one name.
+ *
+ * `except` is the entity being renamed: renaming something to the name it
+ * already has is not a collision with itself, and `SYN-02` replays commands, so
+ * it has to stay a thing that can happen twice.
+ */
+function nameTaken<T extends { readonly name: string; readonly active: boolean }>(
+  siblings: readonly T[],
+  name: string,
+  except: (one: T) => boolean = () => false,
+): boolean {
+  return siblings.some((one) => one.active && !except(one) && sameName(one.name, name));
+}
+
 function visible<T extends { readonly active: boolean }>(
   records: readonly T[],
   listing: Listing | undefined,
@@ -130,6 +168,9 @@ export function registerCompany(
 ): Outcome<Company> {
   const trimmed = named(name);
   if (trimmed === null) return refuse('sys.name-required', { of: 'company' });
+  if (nameTaken(scanRecords(session, 'company', tenant), trimmed)) {
+    return refuse('sys.name-taken', { of: 'company', name: trimmed });
+  }
 
   const company: Company = {
     id: newId<'company'>(),
@@ -152,6 +193,15 @@ export function openBranch(
   if (company === null) return refuse('sys.company-not-found', { company: input.company });
   if (!company.active) return refuse('sys.company-inactive', { company: company.name });
 
+  // Within the company rather than the tenant: a group that holds two companies
+  // may well run a "الفرع الرئيسي" in each, and they are never listed together.
+  const siblings = scanRecords(session, 'branch', tenant).filter(
+    (one) => one.company === company.id,
+  );
+  if (nameTaken(siblings, trimmed)) {
+    return refuse('sys.name-taken', { of: 'branch', name: trimmed });
+  }
+
   const branch: Branch = {
     id: newId<'branch'>(),
     tenant,
@@ -173,6 +223,10 @@ export function openLocation(
   const branch = branchIn(session, tenant, input.branch);
   if (branch === null) return refuse('sys.branch-not-found', { branch: input.branch });
   if (!branch.active) return refuse('sys.branch-inactive', { branch: branch.name });
+
+  if (nameTaken(locationsIn(session, tenant, branch.id, { including: 'all' }), trimmed)) {
+    return refuse('sys.name-taken', { of: 'location', name: trimmed });
+  }
 
   const location: Location = {
     id: newId<'location'>(),
@@ -209,6 +263,10 @@ export function openRegister(
     (one) => one.prefix.toUpperCase() === wanted,
   );
   if (taken) return refuse('sys.register-prefix-taken', { prefix: input.prefix });
+
+  if (nameTaken(registersIn(session, tenant, branch.id, { including: 'all' }), trimmed)) {
+    return refuse('sys.name-taken', { of: 'register', name: trimmed });
+  }
 
   const register: Register = {
     id: newId<'register'>(),
@@ -267,6 +325,9 @@ export function renameCompany(
   if (trimmed === null) return refuse('sys.name-required', { of: 'company' });
   const company = companyIn(session, tenant, id);
   if (company === null) return refuse('sys.company-not-found', { company: id });
+  if (nameTaken(scanRecords(session, 'company', tenant), trimmed, (one) => one.id === id)) {
+    return refuse('sys.name-taken', { of: 'company', name: trimmed });
+  }
   return ok(writeRecord(session, 'company', tenant, [id], { ...company, name: trimmed }));
 }
 
@@ -280,6 +341,12 @@ export function renameBranch(
   if (trimmed === null) return refuse('sys.name-required', { of: 'branch' });
   const branch = branchIn(session, tenant, id);
   if (branch === null) return refuse('sys.branch-not-found', { branch: id });
+  const siblings = scanRecords(session, 'branch', tenant).filter(
+    (one) => one.company === branch.company,
+  );
+  if (nameTaken(siblings, trimmed, (one) => one.id === id)) {
+    return refuse('sys.name-taken', { of: 'branch', name: trimmed });
+  }
   return ok(writeRecord(session, 'branch', tenant, [id], { ...branch, name: trimmed }));
 }
 
@@ -293,6 +360,10 @@ export function renameLocation(
   if (trimmed === null) return refuse('sys.name-required', { of: 'location' });
   const location = locationIn(session, tenant, id);
   if (location === null) return refuse('sys.location-not-found', { location: id });
+  const siblings = locationsIn(session, tenant, location.branch, { including: 'all' });
+  if (nameTaken(siblings, trimmed, (one) => one.id === id)) {
+    return refuse('sys.name-taken', { of: 'location', name: trimmed });
+  }
   return ok(writeRecord(session, 'location', tenant, [id], { ...location, name: trimmed }));
 }
 
@@ -306,6 +377,10 @@ export function renameRegister(
   if (trimmed === null) return refuse('sys.name-required', { of: 'register' });
   const register = registerIn(session, tenant, id);
   if (register === null) return refuse('sys.register-not-found', { register: id });
+  const siblings = registersIn(session, tenant, register.branch, { including: 'all' });
+  if (nameTaken(siblings, trimmed, (one) => one.id === id)) {
+    return refuse('sys.name-taken', { of: 'register', name: trimmed });
+  }
   return ok(writeRecord(session, 'register', tenant, [id], { ...register, name: trimmed }));
 }
 
@@ -326,6 +401,14 @@ export function setCompanyActive(
   const company = companyIn(session, tenant, id);
   if (company === null) return refuse('sys.company-not-found', { company: id });
   if (company.active === active) return ok(company);
+  // Coming back is where a name can collide without anybody typing one: the
+  // name was free while this was closed, and somebody used it.
+  if (
+    active &&
+    nameTaken(scanRecords(session, 'company', tenant), company.name, (one) => one.id === id)
+  ) {
+    return refuse('sys.name-taken', { of: 'company', name: company.name });
+  }
   return ok(writeRecord(session, 'company', tenant, [id], { ...company, active }));
 }
 
@@ -342,6 +425,12 @@ export function setBranchActive(
     const company = companyIn(session, tenant, branch.company);
     if (company !== null && !company.active) {
       return refuse('sys.company-inactive', { company: company.name });
+    }
+    const siblings = scanRecords(session, 'branch', tenant).filter(
+      (one) => one.company === branch.company,
+    );
+    if (nameTaken(siblings, branch.name, (one) => one.id === id)) {
+      return refuse('sys.name-taken', { of: 'branch', name: branch.name });
     }
   }
   return ok(writeRecord(session, 'branch', tenant, [id], { ...branch, active }));
@@ -361,6 +450,10 @@ export function setLocationActive(
     if (branch !== null && !branch.active) {
       return refuse('sys.branch-inactive', { branch: branch.name });
     }
+    const siblings = locationsIn(session, tenant, location.branch, { including: 'all' });
+    if (nameTaken(siblings, location.name, (one) => one.id === id)) {
+      return refuse('sys.name-taken', { of: 'location', name: location.name });
+    }
   }
   return ok(writeRecord(session, 'location', tenant, [id], { ...location, active }));
 }
@@ -378,6 +471,10 @@ export function setRegisterActive(
     const branch = branchIn(session, tenant, register.branch);
     if (branch !== null && !branch.active) {
       return refuse('sys.branch-inactive', { branch: branch.name });
+    }
+    const siblings = registersIn(session, tenant, register.branch, { including: 'all' });
+    if (nameTaken(siblings, register.name, (one) => one.id === id)) {
+      return refuse('sys.name-taken', { of: 'register', name: register.name });
     }
   }
   return ok(writeRecord(session, 'register', tenant, [id], { ...register, active }));

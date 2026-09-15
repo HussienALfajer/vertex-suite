@@ -1,7 +1,16 @@
-import type { BranchId, CompanyId, DeviceId, LocationId, RegisterId } from '@vertex/contracts';
+import type {
+  BranchId,
+  CompanyId,
+  DeviceId,
+  LocationId,
+  PermissionId,
+  RegisterId,
+} from '@vertex/contracts';
+import { refuse, type Refusal, type Result } from '@vertex/kernel';
 import {
   defineModule,
   provideContract,
+  type AuthorisationScope,
   type CommandContext,
   type ModuleContext,
   type ModuleDefinition,
@@ -14,6 +23,7 @@ import {
   Organisation,
   OrganisationAdministration,
   SYS_PERMISSION_SEEDS,
+  SYS_PERMISSIONS,
   type RecordSession,
   type SeriesScope,
   type NewBranch,
@@ -136,13 +146,65 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
       }),
 
       provideContract(OrganisationAdministration, (context: ModuleContext<Session>) => {
-        const run = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
+        const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
           context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        /**
+         * Ask, then act.
+         *
+         * The question comes first and outside the transaction, which is the
+         * same arrangement `SEC` uses when it asks `SYS` to confirm a place: a
+         * refusal then costs no transaction at all, and the answer never holds
+         * a second connection open while this one waits — the habit that costs
+         * a connection per command the day the drivers arrive in `U07`.
+         *
+         * A denial is a **refusal and not a throw**. Whether somebody may open
+         * a branch is an ordinary business answer that has to reach the screen
+         * with its right named, so that the interface can say which one is
+         * missing rather than showing a failure.
+         */
+        const guarded = async <T, Code extends string>(
+          by: CommandContext,
+          right: PermissionId,
+          where: AuthorisationScope | undefined,
+          work: (session: Session) => Result<T, Refusal<Code>>,
+        ): Promise<Result<T, Refusal<Code | 'sys.not-permitted'>>> => {
+          if (!(await context.authorise(by, right, where))) {
+            return refuse('sys.not-permitted', { right });
+          }
+          return read(by, work);
+        };
+
+        /**
+         * Where an existing entity sits, read before the guard so that a
+         * branch-confined administrator is judged against the branch the thing
+         * is actually in rather than against nowhere.
+         *
+         * An entity nobody can find yields `undefined`, which is the
+         * tenant-wide place: the command itself then answers "no such branch"
+         * to somebody whose rights reach the whole tenant, and "not permitted"
+         * to somebody whose rights do not — which is also the answer that
+         * declines to say whether the identifier names anything.
+         */
+        const placeOfLocation = async (
+          by: CommandContext,
+          id: LocationId,
+        ): Promise<AuthorisationScope | undefined> => {
+          const location = await read(by, (session) => locationIn(session, by.tenant, id));
+          return location === null ? undefined : { branch: location.branch, location: id };
+        };
+        const placeOfRegister = async (
+          by: CommandContext,
+          id: RegisterId,
+        ): Promise<AuthorisationScope | undefined> => {
+          const register = await read(by, (session) => registerIn(session, by.tenant, id));
+          return register === null ? undefined : { branch: register.branch };
+        };
 
         return {
           companies: {
             register: (by: CommandContext, input: NewCompany) =>
-              run(by, (session) => {
+              guarded(by, SYS_PERMISSIONS.company.create, undefined, (session) => {
                 const registered = registerCompany(session, by.tenant, input.name);
                 if (registered.ok) {
                   // Part of registering a company rather than a second command
@@ -153,57 +215,118 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
                 return registered;
               }),
             rename: (by: CommandContext, id: CompanyId, name: string) =>
-              run(by, (session) => renameCompany(session, by.tenant, id, name)),
+              guarded(by, SYS_PERMISSIONS.company.edit, undefined, (session) =>
+                renameCompany(session, by.tenant, id, name),
+              ),
             deactivate: (by: CommandContext, id: CompanyId) =>
-              run(by, (session) => setCompanyActive(session, by.tenant, id, false)),
+              guarded(by, SYS_PERMISSIONS.company.withdraw, undefined, (session) =>
+                setCompanyActive(session, by.tenant, id, false),
+              ),
             reactivate: (by: CommandContext, id: CompanyId) =>
-              run(by, (session) => setCompanyActive(session, by.tenant, id, true)),
+              guarded(by, SYS_PERMISSIONS.company.withdraw, undefined, (session) =>
+                setCompanyActive(session, by.tenant, id, true),
+              ),
           },
           branches: {
+            // Opening one has no branch to be judged against — the branch is
+            // what is being made — so it is the tenant-wide place, which is
+            // also what `SYS_PERMISSIONS` seeds it as: the owner's.
             open: (by: CommandContext, input: NewBranch) =>
-              run(by, (session) => openBranch(session, by.tenant, input)),
+              guarded(by, SYS_PERMISSIONS.branch.create, undefined, (session) =>
+                openBranch(session, by.tenant, input),
+              ),
             rename: (by: CommandContext, id: BranchId, name: string) =>
-              run(by, (session) => renameBranch(session, by.tenant, id, name)),
+              guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
+                renameBranch(session, by.tenant, id, name),
+              ),
             deactivate: (by: CommandContext, id: BranchId) =>
-              run(by, (session) => setBranchActive(session, by.tenant, id, false)),
+              guarded(by, SYS_PERMISSIONS.branch.withdraw, { branch: id }, (session) =>
+                setBranchActive(session, by.tenant, id, false),
+              ),
             reactivate: (by: CommandContext, id: BranchId) =>
-              run(by, (session) => setBranchActive(session, by.tenant, id, true)),
+              guarded(by, SYS_PERMISSIONS.branch.withdraw, { branch: id }, (session) =>
+                setBranchActive(session, by.tenant, id, true),
+              ),
           },
           locations: {
             open: (by: CommandContext, input: NewLocation) =>
-              run(by, (session) => openLocation(session, by.tenant, input)),
-            rename: (by: CommandContext, id: LocationId, name: string) =>
-              run(by, (session) => renameLocation(session, by.tenant, id, name)),
-            deactivate: (by: CommandContext, id: LocationId) =>
-              run(by, (session) => setLocationActive(session, by.tenant, id, false)),
-            reactivate: (by: CommandContext, id: LocationId) =>
-              run(by, (session) => setLocationActive(session, by.tenant, id, true)),
+              guarded(by, SYS_PERMISSIONS.location.create, { branch: input.branch }, (session) =>
+                openLocation(session, by.tenant, input),
+              ),
+            rename: async (by: CommandContext, id: LocationId, name: string) =>
+              guarded(by, SYS_PERMISSIONS.location.edit, await placeOfLocation(by, id), (session) =>
+                renameLocation(session, by.tenant, id, name),
+              ),
+            deactivate: async (by: CommandContext, id: LocationId) =>
+              guarded(
+                by,
+                SYS_PERMISSIONS.location.withdraw,
+                await placeOfLocation(by, id),
+                (session) => setLocationActive(session, by.tenant, id, false),
+              ),
+            reactivate: async (by: CommandContext, id: LocationId) =>
+              guarded(
+                by,
+                SYS_PERMISSIONS.location.withdraw,
+                await placeOfLocation(by, id),
+                (session) => setLocationActive(session, by.tenant, id, true),
+              ),
           },
           registers: {
             open: (by: CommandContext, input: NewRegister) =>
-              run(by, (session) => openRegister(session, by.tenant, input)),
-            rename: (by: CommandContext, id: RegisterId, name: string) =>
-              run(by, (session) => renameRegister(session, by.tenant, id, name)),
-            deactivate: (by: CommandContext, id: RegisterId) =>
-              run(by, (session) => setRegisterActive(session, by.tenant, id, false)),
-            reactivate: (by: CommandContext, id: RegisterId) =>
-              run(by, (session) => setRegisterActive(session, by.tenant, id, true)),
-            assignDevice: (by: CommandContext, id: RegisterId, device: DeviceId) =>
-              run(by, (session) => assignDevice(session, by.tenant, id, device)),
+              guarded(by, SYS_PERMISSIONS.register.create, { branch: input.branch }, (session) =>
+                openRegister(session, by.tenant, input),
+              ),
+            rename: async (by: CommandContext, id: RegisterId, name: string) =>
+              guarded(by, SYS_PERMISSIONS.register.edit, await placeOfRegister(by, id), (session) =>
+                renameRegister(session, by.tenant, id, name),
+              ),
+            deactivate: async (by: CommandContext, id: RegisterId) =>
+              guarded(
+                by,
+                SYS_PERMISSIONS.register.withdraw,
+                await placeOfRegister(by, id),
+                (session) => setRegisterActive(session, by.tenant, id, false),
+              ),
+            reactivate: async (by: CommandContext, id: RegisterId) =>
+              guarded(
+                by,
+                SYS_PERMISSIONS.register.withdraw,
+                await placeOfRegister(by, id),
+                (session) => setRegisterActive(session, by.tenant, id, true),
+              ),
+            assignDevice: async (by: CommandContext, id: RegisterId, device: DeviceId) =>
+              guarded(by, SYS_PERMISSIONS.register.edit, await placeOfRegister(by, id), (session) =>
+                assignDevice(session, by.tenant, id, device),
+              ),
           },
           profile: {
+            // The company's own profile is what every receipt in the group
+            // carries, so it is the tenant-wide place: `decide.ts` admits it
+            // only to somebody whose rights are not confined to one branch.
             revise: (by: CommandContext, company: CompanyId, changes: ProfileRevision) =>
-              run(by, (session) => reviseProfile(session, by.tenant, company, changes)),
+              guarded(by, SYS_PERMISSIONS.businessProfile.edit, undefined, (session) =>
+                reviseProfile(session, by.tenant, company, changes),
+              ),
           },
           numbering: {
             define: (by: CommandContext, scope: SeriesScope, format: string) =>
-              run(by, (session) => defineSeries(session, by.tenant, scope, format)),
+              guarded(
+                by,
+                SYS_PERMISSIONS.numberingSeries.edit,
+                { branch: scope.branch },
+                (session) => defineSeries(session, by.tenant, scope, format),
+              ),
           },
           settings: {
             forBranch: (by: CommandContext, branch: BranchId, key: string, value: string | null) =>
-              run(by, (session) => setBranchSetting(session, by.tenant, branch, key, value)),
+              guarded(by, SYS_PERMISSIONS.branchSetting.edit, { branch }, (session) =>
+                setBranchSetting(session, by.tenant, branch, key, value),
+              ),
             forTenant: (by: CommandContext, key: string, value: string | null) =>
-              run(by, (session) => setTenantSetting(session, by.tenant, key, value)),
+              guarded(by, SYS_PERMISSIONS.branchSetting.edit, undefined, (session) =>
+                setTenantSetting(session, by.tenant, key, value),
+              ),
           },
         } satisfies OrganisationAdministration;
       }),

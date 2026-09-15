@@ -189,7 +189,16 @@ export type OrganisationRefusalCode =
   | 'sys.branch-inactive'
   | 'sys.register-prefix-taken'
   | 'sys.register-prefix-invalid'
-  | 'sys.name-required';
+  | 'sys.name-required'
+  /**
+   * Two of anything under one name, in the one place a person has to tell them
+   * apart. A dropdown of three branches called "الفرع الرئيسي" is a stock
+   * transfer sent to the wrong shop, and the mistake is made at the moment the
+   * list is read rather than at the moment the name is typed.
+   */
+  | 'sys.name-taken'
+  /** The caller does not hold the right this command declares (`SEC-02`). */
+  | 'sys.not-permitted';
 
 export type OrganisationRefusal = Refusal<OrganisationRefusalCode>;
 
@@ -205,12 +214,24 @@ type Outcome<T> = Promise<Result<T, OrganisationRefusal>>;
  * becoming inactive and stays where every document that names it can still find
  * it. The store this module writes through cannot delete either.
  *
- * **Nothing here checks a permission yet.** `SEC` does not exist until `U04.4`,
- * and these commands declare the rights they will be guarded by rather than
- * enforcing them. Until then the only caller is this module's own test: an app
- * that wired this contract to a request before `SEC` arrives would be offering
- * the organisation of the shop to whoever asked. The check belongs on the way
- * in, once there is something to ask.
+ * **Every command here checks the right it declares.** It did not always: these
+ * commands named their rights and enforced none of them, because `SEC` did not
+ * exist until `U04.4` and there was nothing to ask. Once `SEC` shipped there
+ * was, and the gap left `SYS` declaring a matrix an administrator could read in
+ * the role editor while every organisation command ran for whoever called it.
+ *
+ * The question goes through `ModuleContext.authorise` — the platform's seam —
+ * because `SEC` depends on `SYS` and `SYS` may not import it back (`modules.md`
+ * §4). The alternative, leaving the check to each app, is an invariant that
+ * every future app has to remember; this one fails closed in the composition
+ * instead, and an edition wired without an authoriser raises at the first
+ * question rather than answering it.
+ *
+ * `where` is the place the action is taken, so a manager confined to one branch
+ * (`SEC-04`) opens a location in that branch and not in the one next door. A
+ * command with no branch at all — registering a company, revising the business
+ * profile, setting a tenant-wide value — is the tenant-wide place, which only
+ * an unconfined grant reaches.
  */
 export interface OrganisationAdministration {
   readonly companies: {
@@ -354,7 +375,14 @@ export type NumberingRefusalCode =
   | 'sys.register-has-no-device'
   | 'sys.register-outside-branch'
   | 'sys.branch-not-found'
-  | 'sys.branch-inactive';
+  | 'sys.branch-inactive'
+  /**
+   * Revising a format is a right (`SYS_PERMISSIONS.numberingSeries.edit`);
+   * taking the next number is not, and never reaches this refusal — a document
+   * numbers itself, and a right nobody can be refused only clutters the role
+   * editor.
+   */
+  | 'sys.not-permitted';
 
 export type NumberingRefusal = Refusal<NumberingRefusalCode>;
 

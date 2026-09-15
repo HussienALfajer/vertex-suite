@@ -13,7 +13,14 @@ import {
   type SecRefusal,
   type User,
 } from './contract.js';
-import { coveredBy, decideFor, grantsOf, liveGrants, reachFor } from './decide.js';
+import {
+  coveredBy,
+  decideFor,
+  grantsOf,
+  liveGrants,
+  reachFor,
+  stillHeldByAnybody,
+} from './decide.js';
 import {
   identityIn,
   recoveryIn,
@@ -425,10 +432,19 @@ export async function authenticate(
  * Written out rather than generated so that the work done for an unknown handle
  * is the same work, every time, on every machine — a hash computed at startup
  * would still be one branch that a clock can see.
+ *
+ * The key is **exactly the 64 bytes `hashPassword` writes**. One base64url
+ * character short and it decodes to 63, so `verifyPassword` returns on its
+ * length check instead of reaching the constant-time comparison — and the path
+ * taken for an unknown handle would then stop one step earlier than the path
+ * taken for a known one. The scrypt derivation dominates both by a margin no
+ * attacker could measure, so this was never a way in; but "the same work" is
+ * the claim this constant exists to make, and a claim that is only nearly true
+ * is one nobody can check.
  */
 const DECOY =
   'scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA$' +
-  'ZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  'ZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 /**
  * Opens a recovery for a sign-in more than one shop relies on.
@@ -555,13 +571,12 @@ function wouldStrandTheTenant(
   leaving: UserId,
 ): SecRefusal | null {
   const keystone = SEC_PERMISSIONS.role.edit;
-  const holds = (who: UserId): boolean =>
-    liveGrants(session, tenant, who).some((grant) => grant.rights.includes(keystone));
-
-  if (!holds(leaving)) return null;
-
-  const others = usersIn(session, tenant).filter(
-    (one) => one.active && one.id !== leaving && holds(one.id),
+  const holdsIt = liveGrants(session, tenant, leaving).some((grant) =>
+    grant.rights.includes(keystone),
   );
-  return others.length === 0 ? refusal('sec.last-owner', { user: leaving }) : null;
+  if (!holdsIt) return null;
+
+  return stillHeldByAnybody(session, tenant, keystone, { kind: 'user', user: leaving })
+    ? null
+    : refusal('sec.last-owner', { user: leaving });
 }
