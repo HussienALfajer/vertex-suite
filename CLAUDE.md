@@ -45,6 +45,28 @@ A unit is finished when every feature it names has a passing test that names it.
 adding the unit to `DELIVERED` in `tools/spec.mjs`; `pnpm check:coverage` audits the assertion
 immediately and fails if it is not yet true.
 
+## Where code lives
+
+**A unit's home is the lowest layer that holds everything it knows.** Placement is not taste and
+not a folder convention: it is derivable from what a file imports, which is why it is checked
+rather than agreed.
+
+The form that costs a product line the most, and the one `pnpm check:boundaries` refuses: **an app
+may not hold a file that knows nothing about that app.** A file under an app's own `src` that
+reaches into the workspace and never once into its own application is a library component parked
+in an application. Nothing fails — it works, it is tested, and it is invisible until the second
+app needs it, copies it, and the two drift. `modules.md` §1 is the bill: one codebase producing
+per-customer editions cannot ship a component welded inside one application.
+
+It is exemptible, because unlike a module boundary it is a judgement with real exceptions, and the
+exception is written where it is — `// boundary-exempt: altitude — the reason` — with a reason, on
+the same line, so it can never be a shrug.
+
+**A screen never invents a control.** It uses what `packages/ui` publishes; where it needs one that
+does not exist, that component is built **in the same pull request as the screen that needs it** —
+not before, because an API designed for no screen is an API discovered to be wrong at the twentieth
+one, and not inside the app, where nothing that audits the interface layer can see it.
+
 ## Writing here
 
 Match the file you are editing. Comments say **why** — the constraint, the failure being

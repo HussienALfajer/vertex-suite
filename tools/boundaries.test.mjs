@@ -159,3 +159,87 @@ describe('§2 — a module publishes a contract or it has none', () => {
     expect(findBoundaryBreaches({ packages: PACKAGES, files: [] })).toEqual([]);
   });
 });
+
+describe('altitude — an app may not hold a file that knows nothing about the app', () => {
+  const UI = { name: '@vertex/ui', dir: 'packages/ui', exported: ['.'] };
+  const withUi = [...PACKAGES, UI];
+
+  it('refuses a control built only from the design system', () => {
+    // The case this rule exists for, and the one that happened: a theme switch
+    // written inside an app, built from nothing but `@vertex/ui`. It works, it
+    // is tested, and it is invisible until the second app copies it.
+    const found = breaches(
+      'apps/store-node/src/ThemeSwitch.tsx',
+      "import type { ReactNode } from 'react';\nimport { IconButton } from '@vertex/ui';",
+      withUi,
+    );
+    expect(rules(found)).toEqual(['altitude']);
+    expect(found[0].message).toContain('@vertex/ui');
+  });
+
+  it('says nothing about a screen, which names its own app', () => {
+    const found = breaches(
+      'apps/store-node/src/SignIn.tsx',
+      "import { isOk } from '@vertex/kernel';\n" +
+        "import { Button } from '@vertex/ui';\n" +
+        "import { useSession } from './session.js';",
+      withUi,
+    );
+    expect(found).toEqual([]);
+  });
+
+  it('says nothing about a file that imports nothing of this workspace', () => {
+    // A leaf built from React alone leaves no trace of what it knows, so the
+    // rule has nothing to read and does not guess.
+    const found = breaches(
+      'apps/store-node/src/useTick.ts',
+      "import { useState } from 'react';",
+      withUi,
+    );
+    expect(found).toEqual([]);
+  });
+
+  it('says nothing about the same file inside a package', () => {
+    // Packages are deliberate homes for concepts; their placement is a decision
+    // the package boundary already records. This rule is about apps.
+    const found = breaches(
+      'packages/ui/src/components/ThemeSwitch.tsx',
+      "import { IconButton } from '@vertex/ui';",
+      withUi,
+    );
+    expect(found).toEqual([]);
+  });
+
+  it('leaves tests, fixtures and journeys alone', () => {
+    for (const file of [
+      'apps/store-node/src/sign-in.test.tsx',
+      'apps/store-node/src/edition.fixture.ts',
+    ]) {
+      expect(breaches(file, "import { Button } from '@vertex/ui';", withUi)).toEqual([]);
+    }
+  });
+
+  it('says nothing about an app own strings, which are app-specific by content', () => {
+    // A catalogue reaches only the translator and knows this product by the
+    // thousand sentences in it. Exempting it one app at a time would spend a
+    // reasoned exception on something true by definition.
+    const i18n = { name: '@vertex/i18n', dir: 'packages/i18n', exported: ['.'] };
+    const found = breaches(
+      'apps/store-node/src/catalogue.ts',
+      "import { Translator } from '@vertex/i18n';\nexport const catalogue = { 'a.b': 'نص' };",
+      [...PACKAGES, i18n],
+    );
+    expect(found).toEqual([]);
+  });
+
+  it('takes an exemption written in place, and only with a reason', () => {
+    const source = "import { Button } from '@vertex/ui';";
+    const reasoned =
+      '// boundary-exempt: altitude — one fragment of the sign-in screen, never reused\n' + source;
+    expect(breaches('apps/store-node/src/Fragment.tsx', reasoned, withUi)).toEqual([]);
+
+    // A shrug is not an exemption.
+    const bare = '// boundary-exempt: altitude —\n' + source;
+    expect(rules(breaches('apps/store-node/src/Fragment.tsx', bare, withUi))).toEqual(['altitude']);
+  });
+});
