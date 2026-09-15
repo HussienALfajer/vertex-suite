@@ -185,6 +185,33 @@ describe('Seven seeded roles — SEC-01', () => {
     expect(await sec.directory.role(sec.otherSystem, seededAs(ours, 'owner').id)).toBeNull();
   });
 
+  it('takes up the rights of a module the shop buys later, without undoing what it edited', async () => {
+    const owner = sec.as(await aShopWithAnOwner(sec));
+    const cashier = seededAs(await sec.directory.roles(owner), 'cashier');
+    // Something this shop decided for itself, before the edition grew.
+    taken(await sec.admin.roles.revoke(owner, cashier.id, [SYS_PERMISSIONS.register.view]));
+
+    // `modules.md` §4.4: a customer upgrading an edition runs the new module's
+    // migrations against live data. The roles are live data, and a shop that
+    // bought `POS` and found that nobody — the owner included — may sell would
+    // have to be told to tick two hundred boxes by hand.
+    const upgraded = sec.afterBuying('POS', [
+      { id: 'pos.sale.create', seededFor: ['cashier'] },
+      { id: 'pos.sale.delete' },
+    ]);
+    const after = taken(await upgraded.admin.roles.seed(upgraded.system));
+
+    expect(after).toHaveLength(SEEDED_ROLES.length);
+    expect(seededAs(after, 'owner').rights).toEqual(
+      expect.arrayContaining(['pos.sale.create', 'pos.sale.delete']),
+    );
+    expect(seededAs(after, 'cashier').rights).toContain('pos.sale.create');
+    expect(seededAs(after, 'manager').rights).not.toContain('pos.sale.create');
+
+    // And the revocation, which is a decision rather than an omission, stands.
+    expect(seededAs(after, 'cashier').rights).not.toContain(SYS_PERMISSIONS.register.view);
+  });
+
   it('refuses a role with no name, since a role nobody can read is a role nobody can grant', async () => {
     const owner = sec.as(await aShopWithAnOwner(sec));
 

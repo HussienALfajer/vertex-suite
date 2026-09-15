@@ -15,6 +15,7 @@ import {
   RoleAdministration,
   RoleDirectory,
   SEC_PERMISSION_SEEDS,
+  TENANT_WIDE,
   type Listing,
   type NewAssignment,
   type NewRole,
@@ -89,9 +90,9 @@ export function secModule<Session extends RecordSession>(): ModuleDefinition<Ses
             read(by, (session) => decideFor(session, by, declared, right, where)),
           reachOf: (by: CommandContext, right: PermissionId) =>
             read(by, (session) =>
-              by.actor === null
-                ? { kind: 'tenant' as const }
-                : reachFor(session, by.tenant, by.actor, right),
+              // The system reaches everywhere, stated as one unconfined grant
+              // so that a caller has one shape to read rather than two.
+              by.actor === null ? [TENANT_WIDE] : reachFor(session, by.tenant, by.actor, right),
             ),
         } satisfies Authorisation;
       }),
