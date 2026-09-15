@@ -1,8 +1,14 @@
 import type { CompanyId, TenantId } from '@vertex/contracts';
 import { ok, refuse, type Result } from '@vertex/kernel';
 
-import type { BusinessProfile, Company, OrganisationRefusal, ProfileRevision } from './contract.js';
-import { readRecord, writeRecord, type RecordSession } from './records.js';
+import type {
+  BusinessProfile,
+  Company,
+  OrganisationRefusal,
+  ProfileRevision,
+  RecordSession,
+} from './contract.js';
+import { readRecord, writeRecord } from './records.js';
 
 /**
  * The business profile of `SYS-05`.

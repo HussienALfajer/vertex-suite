@@ -10,9 +10,10 @@ import {
   type MemorySession,
   type MemoryStore,
   type Registry,
+  type UnitOfWork,
 } from '@vertex/platform';
 
-import { Organisation, OrganisationAdministration } from './contract.js';
+import { DocumentNumbering, Organisation, OrganisationAdministration } from './contract.js';
 import { sysModule } from './index.js';
 
 /**
@@ -33,6 +34,13 @@ export interface Installed {
   readonly store: MemoryStore;
   readonly read: Organisation;
   readonly admin: OrganisationAdministration;
+  readonly numbering: DocumentNumbering;
+  /**
+   * Numbering joins the caller's transaction, so a test has to be the caller.
+   * This is the same `transactor.run` a sale would use, with nothing in the
+   * middle: what the test passes down is exactly what `POS` will pass down.
+   */
+  inTransaction<T>(work: (uow: UnitOfWork<MemorySession>) => Promise<T>): Promise<T>;
   readonly tenant: Id<'tenant'>;
   /** An ordinary administrator of the tenant. No vendor, no system actor. */
   readonly by: CommandContext;
@@ -71,6 +79,9 @@ export function installSys(): Installed {
     store,
     read: registry.require(Organisation),
     admin: registry.require(OrganisationAdministration),
+    numbering: registry.require(DocumentNumbering),
+    inTransaction: <T>(work: (uow: UnitOfWork<MemorySession>) => Promise<T>): Promise<T> =>
+      transactor.run(commandContext({ tenant, actor: newId<'user'>() }), work),
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),
     otherTenant,

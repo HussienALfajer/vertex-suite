@@ -1,8 +1,8 @@
 import type { BranchId, TenantId } from '@vertex/contracts';
 import { ok, refuse, type Result } from '@vertex/kernel';
 
-import type { OrganisationRefusal } from './contract.js';
-import { readRecord, writeRecord, type RecordSession, type SettingRecord } from './records.js';
+import type { OrganisationRefusal, RecordSession } from './contract.js';
+import { readRecord, writeRecord, type SettingRecord } from './records.js';
 import { branchIn } from './structure.js';
 
 /**

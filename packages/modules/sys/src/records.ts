@@ -1,27 +1,28 @@
 import type { TenantId } from '@vertex/contracts';
 
-import type { Branch, BusinessProfile, Company, Location, Register } from './contract.js';
+import type {
+  Branch,
+  BusinessProfile,
+  Company,
+  IssuedNumber,
+  Location,
+  NumberingSeries,
+  RecordSession,
+  Register,
+} from './contract.js';
 
 /**
- * What `SYS` needs from a store, stated so that `U07` knows what to satisfy.
+ * The key layout, and the one place a stored shape is asserted.
  *
- * The drivers arrive with `U07`; until then this module runs over the memory
- * store the platform ships, and the point of naming the port is that the module
- * depends on a shape rather than on that store. When the real session arrives,
- * this file is what changes.
+ * The store port itself is in the contract, because numbering joins the
+ * caller's transaction and a caller has to be able to name the handle it
+ * passes. What lives here is everything about **how** this module lays its
+ * records out, which nothing outside it has any business knowing.
  *
- * Note what is **missing**: there is no `remove`. `SYS-09` says structural
- * entities are deactivated and never deleted, because stock movements and
- * documents reference them permanently — and the strongest way to say that is
- * to write a module that has no way of deleting anything. A future command that
- * wanted to would have to widen this interface first, in a diff a reviewer
- * reads before the deletion rather than after it.
+ * The drivers arrive with `U07`; until then the module runs over the memory
+ * store the platform ships, and depends on a shape rather than on that store.
+ * When the real session arrives, this file is what changes.
  */
-export interface RecordSession {
-  put(key: string, value: unknown): void;
-  get(key: string): unknown;
-  keys(): readonly string[];
-}
 
 /**
  * A setting's stored form, which is not the value itself.
@@ -42,6 +43,17 @@ export interface SettingRecord {
  * the key that produced it are the same decision — reading a branch key and
  * calling the result a `Company` is not expressible.
  */
+/**
+ * Where a series has got to, for one device generation.
+ *
+ * Separate from the series itself because the two have different lifetimes: the
+ * format is configuration that outlives every machine, and the count belongs to
+ * whichever machine is standing at the till. See `numbering.ts`.
+ */
+export interface CounterRecord {
+  readonly next: number;
+}
+
 export interface StoredShapes {
   readonly company: Company;
   readonly branch: Branch;
@@ -49,6 +61,10 @@ export interface StoredShapes {
   readonly register: Register;
   readonly profile: BusinessProfile;
   readonly setting: SettingRecord;
+  readonly series: NumberingSeries;
+  readonly counter: CounterRecord;
+  /** `SYN-02`: what this document was already numbered, if it was. */
+  readonly issued: IssuedNumber;
 }
 
 export type Collection = keyof StoredShapes;
