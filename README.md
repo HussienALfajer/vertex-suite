@@ -23,7 +23,7 @@ comments reference them.
 ## Layout
 
 ```
-packages/kernel      exact money, quantities and rounding
+packages/kernel      exact money and quantities, identifiers, time, refusals
 packages/…           platform, contracts, ui, i18n, modules, adapters
 apps/…               store-node, register, back-office, count-app
 editions/            which modules and switches ship to a given customer
@@ -62,6 +62,14 @@ clean checkout.
   decimals from parse to storage; the linter rejects the alternatives.
 - **Rounding happens at defined points and records its residual** (`FX-07`). `Math.round` is
   banned in the kernel.
+- **No moment comes from the ambient clock.** Time is taken from a `Clock` the caller was handed,
+  so a register whose machine clock is wrong can be corrected at one seam instead of none.
+  `Date.now()` and a zero-argument `new Date()` fail lint.
+- **Identifiers are generated where the record is.** UUIDv7 from a cryptographic source, on the
+  device that made the record, so a register with no connection still sells and the day's
+  documents still sort. `Math.random` and `crypto.randomUUID` fail lint.
+- **A refusal is a value, a defect is an exception.** A credit limit reached is data that reaches
+  the screen with its code and its figures; a null where there cannot be one throws.
 
 ---
 

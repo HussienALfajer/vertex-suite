@@ -53,10 +53,61 @@ export {
 } from './quantity.js';
 
 export {
+  compareInstants,
+  fixedClock,
+  instant,
+  instantFrom,
+  manualClock,
+  millisBetween,
+  offsetClock,
+  plusMillis,
+  systemClock,
+  toDate,
+  toISOString,
+  type Clock,
+  type Instant,
+  type ManualClock,
+} from './clock.js';
+
+export {
+  compareIds,
+  createIdGenerator,
+  isId,
+  newId,
+  parseId,
+  timeOf,
+  type Id,
+  type IdGenerator,
+  type IdGeneratorOptions,
+} from './id.js';
+
+export {
+  andThen,
+  err,
+  isErr,
+  isOk,
+  mapError,
+  mapOk,
+  ok,
+  orThrow,
+  refusal,
+  refuse,
+  unwrapOr,
+  type Err,
+  type Ok,
+  type Refusal,
+  type RefusalValue,
+  type Result,
+} from './result.js';
+
+export {
   AllocationError,
   CurrencyMismatchError,
+  EntropyUnavailableError,
   InvalidAmountError,
   InvalidCurrencyError,
+  InvalidIdError,
+  InvalidInstantError,
   KernelError,
   UnroundedAmountError,
 } from './errors.js';

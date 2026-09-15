@@ -32,3 +32,18 @@ export class UnroundedAmountError extends KernelError {}
 
 /** An allocation could not be performed as requested. */
 export class AllocationError extends KernelError {}
+
+/** A value could not be read as an identifier this system issues. */
+export class InvalidIdError extends KernelError {}
+
+/**
+ * No cryptographic random source was reachable.
+ *
+ * Fatal rather than degraded. The fallback — a weaker source — is what makes
+ * two registers issue the same identifier for two different sales, which is
+ * discovered weeks later as a document that cannot be reconciled.
+ */
+export class EntropyUnavailableError extends KernelError {}
+
+/** A value could not be read as a moment in time. */
+export class InvalidInstantError extends KernelError {}

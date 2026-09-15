@@ -16,7 +16,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 const ROOT = process.cwd();
-const SCANNED = ['packages/ui/src', 'packages/i18n/src', 'apps'];
+const SCANNED = ['packages/kernel/src', 'packages/ui/src', 'packages/i18n/src', 'apps'];
 const SKIP = new Set(['node_modules', 'dist', '.turbo', 'coverage']);
 
 /** Props whose value reaches a person's eyes. */
