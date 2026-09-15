@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
-import { I18nProvider } from 'react-aria-components';
+import { I18nProvider, RouterProvider } from 'react-aria-components';
 
 import { directionOf, type Translator } from '@vertex/i18n';
 
@@ -26,6 +26,21 @@ export interface VertexProviderProps {
   /** Set from `prefers-reduced-motion` and from the tenant setting (§3.2). */
   readonly reduceMotion?: boolean;
   readonly translator: Translator;
+  /**
+   * How this application changes screens.
+   *
+   * Every link in the design system — `SideNav`, `BreadcrumbTrail`, anything
+   * built on React Aria's `Link` — is an ordinary anchor until something tells
+   * React Aria what routing here means. Without it each one reloads the
+   * document, which on a product whose session is deliberately held in memory
+   * and nowhere else (`SEC-09`, `U23`) signs the person out on their way to the
+   * next screen.
+   *
+   * The application supplies it rather than the design system choosing, because
+   * a router is an application's decision: the back office has a history stack
+   * and the register has no navigation at all.
+   */
+  readonly navigate?: (href: string) => void;
   /** The document element to stamp. Overridable so tests need no real document. */
   readonly root?: HTMLElement | null;
   readonly children: ReactNode;
@@ -45,6 +60,7 @@ export function VertexProvider({
   numerals = 'latn',
   reduceMotion = false,
   translator,
+  navigate,
   root,
   children,
 }: VertexProviderProps): ReactNode {
@@ -88,11 +104,19 @@ export function VertexProvider({
     element.setAttribute('dir', directionOf(locale));
   }, [root, theme, density, reduceMotion, locale]);
 
+  const wired = (
+    <VertexContext.Provider value={value}>
+      <DensityContext.Provider value={density}>{children}</DensityContext.Provider>
+    </VertexContext.Provider>
+  );
+
   return (
     <I18nProvider locale={locale}>
-      <VertexContext.Provider value={value}>
-        <DensityContext.Provider value={density}>{children}</DensityContext.Provider>
-      </VertexContext.Provider>
+      {navigate === undefined ? (
+        wired
+      ) : (
+        <RouterProvider navigate={navigate}>{wired}</RouterProvider>
+      )}
     </I18nProvider>
   );
 }

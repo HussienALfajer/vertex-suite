@@ -1,0 +1,35 @@
+/*
+ * No scrollbar is ever drawn, anywhere.
+ *
+ * The bar itself is browser chrome sitting inside the interface: it lands on
+ * whichever edge the engine prefers, it is a different width and colour on
+ * every platform, and in a right-to-left document Chromium and Gecko do not
+ * even agree which side it belongs on. None of that is a thing this design
+ * system can hold to §7.
+ *
+ * **Scrolling is untouched** — only its indicator is. Wheel, trackpad, touch,
+ * `Page Down`, `Home`/`End` and the arrow keys all still move a region that
+ * overflows, and React Aria still scrolls a focused row into view, because the
+ * rules below change no overflow property. What a person loses is the visual
+ * hint that a region scrolls at all, which is why a screen that can overflow
+ * says so in its own layout (a grid that ends mid-row, a panel with a fade)
+ * rather than by leaving a scrollbar to say it.
+ *
+ * Hand-written rather than emitted alongside the token layers in `../tokens/`:
+ * it names no number `theme.test.ts` holds the document to, so it lives once
+ * here instead of once per app, and reaches every scrollable region — a page,
+ * a `DataTable`, a `Select` list, a `Dialog` body — without any of them asking.
+ */
+
+* {
+  /* Firefox, and the standard property everything else is moving to. */
+  scrollbar-width: none;
+  /* Legacy Edge and IE-era WebView shells, which some register hardware ships. */
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

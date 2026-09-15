@@ -1,13 +1,14 @@
 import { useState, type ReactNode } from 'react';
 
-import { VertexProvider, type ThemeChoice } from '@vertex/ui';
+import { ThemeSwitch, ToastRegion, VertexProvider, type ThemeChoice } from '@vertex/ui';
 
 import { createTranslator } from './catalogue.js';
+import { OrganisationProvider } from './organisation.js';
+import { navigate } from './routing.js';
 import { useSession, SessionProvider } from './session.js';
 import { SignIn } from './SignIn.js';
 import { Shell } from './Shell.js';
 import type { SystemOfRecord } from './system.js';
-import { ThemeSwitch } from '@vertex/ui';
 
 const translator = createTranslator();
 
@@ -20,8 +21,10 @@ export interface AppProps {
  *
  * `VertexProvider` is the whole of the shell's wiring: it derives direction
  * from the locale rather than carrying a flag beside it (`SYS-01`, §9), stamps
- * the three switching axes of §3.2 onto the document, and supplies the
- * translator every string resolves through.
+ * the three switching axes of §3.2 onto the document, supplies the translator
+ * every string resolves through, and — from this unit on — is told what routing
+ * means here, so that a link inside the design system moves between screens
+ * instead of reloading the document and taking the session with it.
  *
  * `comfortable` is the density and it is the default: §6.1 gives forms the
  * comfortable one because an entry error costs far more than a scroll, and the
@@ -36,30 +39,42 @@ export function App({ system }: AppProps): ReactNode {
   const [theme, setTheme] = useState<ThemeChoice>('system');
 
   return (
-    <VertexProvider translator={translator} locale="ar" theme={theme}>
-      <SessionProvider system={system}>
-        <Screen themeSwitch={<ThemeSwitch theme={theme} onChange={setTheme} />} />
-      </SessionProvider>
+    <VertexProvider translator={translator} locale="ar" theme={theme} navigate={navigate}>
+      <ToastRegion>
+        <SessionProvider system={system}>
+          <Screen system={system} themeSwitch={<ThemeSwitch theme={theme} onChange={setTheme} />} />
+        </SessionProvider>
+      </ToastRegion>
     </VertexProvider>
   );
 }
 
 /**
- * Signed in or not, which is the only routing decision this app can make yet.
+ * Signed in or not, which is the routing decision that comes before routing.
  *
- * A router arrives with the second destination, for the reason `Shell` gives
- * about the navigation it does not have.
+ * Every screen behind it reads the shop's own structure, so the provider that
+ * holds it sits here rather than at the root: mounting it before anybody has
+ * signed in would be a read sent to the store node on behalf of nobody, and it
+ * would have to be thrown away and asked again the moment somebody did.
  *
  * The theme control is handed down as an element rather than reached for
  * through a context, because the two screens put it in different places — the
- * shell has a header to hang it in and the sign-in screen has a corner — and
+ * frame has a banner to hang it in and the sign-in screen has a corner — and
  * two callers is not yet a reason to invent a context for one value.
  */
-function Screen({ themeSwitch }: { themeSwitch: ReactNode }): ReactNode {
+function Screen({
+  system,
+  themeSwitch,
+}: {
+  readonly system: SystemOfRecord;
+  readonly themeSwitch: ReactNode;
+}): ReactNode {
   const { session } = useSession();
   return session === null ? (
     <SignIn themeSwitch={themeSwitch} />
   ) : (
-    <Shell themeSwitch={themeSwitch} />
+    <OrganisationProvider system={system}>
+      <Shell themeSwitch={themeSwitch} />
+    </OrganisationProvider>
   );
 }

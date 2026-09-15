@@ -102,6 +102,8 @@ export { decimalPlacesOf, formatExact, type FormattedFigure } from './display/fo
 
 export { Button, IconButton, type ButtonProps, type IconButtonProps } from './components/Button.js';
 export { TextInput, type TextInputProps } from './components/TextInput.js';
+export { TextArea, type TextAreaProps } from './components/TextArea.js';
+export { SearchInput, type SearchInputProps } from './components/SearchInput.js';
 export { Panel, type PanelProps } from './components/Panel.js';
 export { Page, PageHeader, type PageHeaderProps, type PageProps } from './components/Page.js';
 export { Badge, type BadgeProps, type BadgeTone } from './components/Badge.js';
@@ -116,6 +118,7 @@ export {
   type DialogProps,
 } from './components/Dialog.js';
 export {
+  actionsColumnWidth,
   DataTable,
   TableRowAction,
   TableRowActions,
@@ -133,6 +136,7 @@ export {
   type ToastTone,
 } from './components/Toast.js';
 export { ThemeSwitch, nextTheme, type ThemeSwitchProps } from './components/ThemeSwitch.js';
+export { WithTooltip, type WithTooltipProps } from './components/Tooltip.js';
 export {
   BreadcrumbTrail,
   SideNav,

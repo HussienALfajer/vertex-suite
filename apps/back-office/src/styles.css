@@ -12,6 +12,9 @@
 /* Tailwind's view of the semantic layer. */
 @import '@vertex/ui/tailwind.css';
 
+/* A themed scrollbar, everywhere something scrolls. */
+@import '@vertex/ui/scrollbar.css';
+
 /* Tailwind scans the component library as well as this app. */
 @source '../../../packages/ui/src';
 

@@ -14,11 +14,13 @@
     "./palette.css": "./src/tokens/palette.generated.css",
     "./theme.css": "./src/tokens/theme.generated.css",
     "./fonts.css": "./src/tokens/fonts.generated.css",
-    "./tailwind.css": "./src/tokens/tailwind.generated.css"
+    "./tailwind.css": "./src/tokens/tailwind.generated.css",
+    "./scrollbar.css": "./src/styles/scrollbar.css"
   },
   "files": [
     "dist",
-    "src/tokens/*.generated.css"
+    "src/tokens/*.generated.css",
+    "src/styles/*.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

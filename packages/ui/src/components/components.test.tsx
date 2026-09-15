@@ -194,6 +194,38 @@ describe('<Badge>', () => {
   });
 });
 
+describe('a toggle is named by the words beside it — §11', () => {
+  // Both of these shipped with the caption as a sibling `<Label>`, which looked
+  // right and was not: the element React Aria renders for the control **is** the
+  // `<label>` of the hidden input, so a caption outside it named nothing. A
+  // screen reader announced "switch" with no name, and clicking the words did
+  // nothing. Asserted through the accessible name rather than through the
+  // markup, because the arrangement is what was wrong and the name is what a
+  // person actually gets.
+  it('gives a switch the name a person reads next to it', async () => {
+    const user = userEvent.setup();
+    wrap(<Switch>إظهار المسحوب</Switch>);
+
+    const control = screen.getByRole('switch', { name: 'إظهار المسحوب' });
+    expect(control).toBeTruthy();
+
+    // And the words operate it, which is the same fact seen from the pointer.
+    await user.click(screen.getByText('إظهار المسحوب'));
+    expect((control as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('gives a checkbox the name a person reads next to it', async () => {
+    const user = userEvent.setup();
+    wrap(<Checkbox>طباعة إيصال</Checkbox>);
+
+    const control = screen.getByRole('checkbox', { name: 'طباعة إيصال' });
+    expect(control).toBeTruthy();
+
+    await user.click(screen.getByText('طباعة إيصال'));
+    expect((control as HTMLInputElement).checked).toBe(true);
+  });
+});
+
 describe('the pointer says whether a click will do something — §11.3', () => {
   // The browser gives `<a href>` a hand and `<button>` an arrow, so a control
   // library that says nothing ships arrows over every button. This shipped that

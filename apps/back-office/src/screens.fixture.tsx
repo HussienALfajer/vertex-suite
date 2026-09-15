@@ -1,0 +1,97 @@
+import { render, screen } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
+
+import { App } from './App.js';
+import { catalogue } from './catalogue.js';
+import { developmentSystem } from './dev-system.js';
+import { hrefOf, type RouteName } from './routing.js';
+import type { SystemOfRecord } from './system.js';
+
+/**
+ * A shop, signed into, for the screens behind the sign-in to be tested at all.
+ *
+ * It renders the **whole application** rather than a screen in isolation, and
+ * that is the point: what these tests are about is a person opening the back
+ * office and setting up their shop, which runs through the session, the frame,
+ * the router and the port. A screen rendered with its props handed to it would
+ * pass while the four of them disagreed.
+ *
+ * The system of record is `dev-system.ts`, which hosts the **real `SYS`** — so a
+ * test that says a second branch cannot take the first one's name is a test of
+ * the module that will refuse it in a shop, not of a fake written to agree.
+ */
+
+export const PEOPLE = [{ handle: 'owner', password: 'till-morning-1' }];
+
+/** Where the browser is pointed before the application is mounted. */
+export function startAt(route: RouteName, subject?: string): void {
+  globalThis.history.replaceState(null, '', hrefOf(route, subject ?? null));
+}
+
+export interface OpenShop {
+  readonly person: ReturnType<typeof userEvent.setup>;
+  readonly system: SystemOfRecord;
+}
+
+/**
+ * Signs in and waits until the frame is up.
+ *
+ * Every test starts here because every screen behind sign-in does: there is no
+ * way into the back office that skips it, and a fixture that mounted a screen
+ * without a session would be exercising a state the application cannot be in.
+ */
+export async function enterTheShop(
+  system: SystemOfRecord = developmentSystem({ people: PEOPLE }),
+): Promise<OpenShop> {
+  const person = userEvent.setup();
+  render(<App system={system} />);
+
+  await person.type(screen.getByLabelText(catalogue['signIn.handle']), 'owner');
+  await person.type(screen.getByLabelText(catalogue['signIn.password']), 'till-morning-1');
+  await person.click(screen.getByRole('button', { name: catalogue['signIn.submit'] }));
+  await screen.findByRole('button', { name: catalogue['shell.signOut'] });
+
+  return { person, system };
+}
+
+/** The first control with this name, for an action a screen offers in two places. */
+export function firstButton(name: string): HTMLElement {
+  const [control] = screen.getAllByRole('button', { name });
+  if (control === undefined) throw new Error(`No control named "${name}".`);
+  return control;
+}
+
+/** Registers a company through the screens, the way a shopkeeper would. */
+export async function registerCompany(shop: OpenShop, name: string): Promise<void> {
+  await shop.person.click(firstButton(catalogue['companies.register']));
+  await shop.person.type(screen.getByLabelText(catalogue['companies.new.name']), name);
+  await shop.person.click(screen.getByRole('button', { name: catalogue['companies.new.submit'] }));
+  await screen.findByRole('rowheader', { name });
+}
+
+/**
+ * Picks an option out of a `Select`.
+ *
+ * Found through the trigger's **label element** rather than through its
+ * accessible name, because React Aria composes that name as the current value
+ * followed by the label — so two selects on one screen cannot be told apart by
+ * matching either end of it. The label carries an id and the trigger points at
+ * it, which is the association the browser itself uses.
+ */
+export async function chooseOption(shop: OpenShop, label: string, option: string): Promise<void> {
+  const trigger = [...globalThis.document.querySelectorAll('button[aria-labelledby]')].find(
+    (candidate) =>
+      (candidate.getAttribute('aria-labelledby') ?? '')
+        .split(/\s+/)
+        .some((id) => globalThis.document.getElementById(id)?.textContent.trim() === label),
+  );
+  if (trigger === undefined) throw new Error(`No select is labelled "${label}".`);
+
+  await shop.person.click(trigger);
+  await shop.person.click(await screen.findByRole('option', { name: option }));
+}
+
+/** Moves to another screen from the frame's own navigation. */
+export async function goTo(shop: OpenShop, label: string): Promise<void> {
+  await shop.person.click(screen.getByRole('link', { name: label }));
+}

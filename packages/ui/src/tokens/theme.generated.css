@@ -126,8 +126,8 @@
   --vx-h-control-nested: 22px;
   --vx-h-row: 36px;
   --vx-icon: 20px;
-  --vx-radius: 8px;
-  --vx-radius-card: 12px;
+  --vx-radius: 3px;
+  --vx-radius-card: 5px;
   --vx-checkbox: 20px;
   --vx-switch-h: 20px;
   --vx-pad-xs: 6px;
@@ -265,10 +265,10 @@
   /* Sizes */
   --vx-h-control: 24px;
   --vx-h-control-nested: 18px;
-  --vx-h-row: 28px;
+  --vx-h-row: 32px;
   --vx-icon: 16px;
-  --vx-radius: 6px;
-  --vx-radius-card: 10px;
+  --vx-radius: 2px;
+  --vx-radius-card: 4px;
   --vx-checkbox: 16px;
   --vx-switch-h: 16px;
   --vx-pad-xs: 4px;
@@ -305,8 +305,8 @@
   --vx-h-control-nested: 22px;
   --vx-h-row: 36px;
   --vx-icon: 20px;
-  --vx-radius: 8px;
-  --vx-radius-card: 12px;
+  --vx-radius: 3px;
+  --vx-radius-card: 5px;
   --vx-checkbox: 20px;
   --vx-switch-h: 20px;
   --vx-pad-xs: 6px;
@@ -343,8 +343,8 @@
   --vx-h-control-nested: 32px;
   --vx-h-row: 52px;
   --vx-icon: 24px;
-  --vx-radius: 10px;
-  --vx-radius-card: 14px;
+  --vx-radius: 4px;
+  --vx-radius-card: 6px;
   --vx-checkbox: 28px;
   --vx-switch-h: 28px;
   --vx-pad-xs: 8px;
