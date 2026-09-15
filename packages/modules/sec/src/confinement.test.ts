@@ -176,11 +176,9 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
     // rather than adding a second — SYN-02 replays commands, and two rows for
     // one grant would leave a withdrawal that withdraws half of it.
     expect(await sec.directory.assignmentsOf(owner, user)).toHaveLength(1);
-    expect(await sec.auth.reachOf(sec.as(user), SYS_PERMISSIONS.branch.view)).toEqual({
-      kind: 'branches',
-      branches: [homs],
-      locations: [],
-    });
+    expect(await sec.auth.reachOf(sec.as(user), SYS_PERMISSIONS.branch.view)).toEqual([
+      { kind: 'branches', branches: [homs], locations: [] },
+    ]);
 
     const alsoInAleppo = taken(
       await sec.admin.roles.define(owner, {
@@ -196,12 +194,96 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
       }),
     );
 
+    // One grant per role rather than one merged answer: a person who works
+    // everywhere in one branch and in a single store room of another has no
+    // single pair of lists that says so, and merging them claims a reach the
+    // decision itself refuses.
     const reach = await sec.auth.reachOf(sec.as(user), SYS_PERMISSIONS.branch.view);
-    expect(reach.kind).toBe('branches');
-    expect(reach.kind === 'branches' ? [...reach.branches].sort() : []).toEqual(
-      [aleppo, homs].sort(),
+    expect(
+      reach.flatMap((one) => (one.kind === 'branches' ? [...one.branches] : [])).sort(),
+    ).toEqual([aleppo, homs].sort());
+    expect(await sec.auth.reachOf(owner, SYS_PERMISSIONS.branch.view)).toEqual([TENANT_WIDE]);
+  });
+
+  it('does not lift a narrowing in one branch onto another branch entirely', async () => {
+    const user = sec.someone();
+    const right = SYS_PERMISSIONS.location.edit;
+    const inTheStoreRoom = taken(
+      await sec.admin.roles.define(owner, { name: 'store keeper', rights: [right] }),
     );
-    expect(await sec.auth.reachOf(owner, SYS_PERMISSIONS.branch.view)).toEqual(TENANT_WIDE);
+    const allOfHoms = taken(
+      await sec.admin.roles.define(owner, { name: 'homs keeper', rights: [right] }),
+    );
+
+    taken(
+      await sec.admin.assignments.assign(owner, {
+        user,
+        role: inTheStoreRoom.id,
+        confinement: { kind: 'branches', branches: [aleppo], locations: [storeRoom] },
+      }),
+    );
+    taken(
+      await sec.admin.assignments.assign(owner, {
+        user,
+        role: allOfHoms.id,
+        confinement: { kind: 'branches', branches: [homs], locations: [] },
+      }),
+    );
+
+    const them = sec.as(user);
+    expect(await sec.auth.may(them, right, { branch: aleppo, location: storeRoom })).toBe(true);
+    expect(await sec.auth.may(them, right, { branch: aleppo, location: shopFloor })).toBe(false);
+
+    // What they may hand on has to agree with what they may do. The staffing
+    // right is given tenant-wide on purpose, so that nothing but the merged
+    // reach of `right` itself can be what refuses: merged into one pair of
+    // lists it reads "both branches, no narrowing", and this assignment —
+    // Aleppo's shop floor, where they may not work — goes through.
+    const staffing = taken(
+      await sec.admin.roles.define(owner, {
+        name: 'staffing',
+        rights: [SEC_PERMISSIONS.assignment.create],
+      }),
+    );
+    taken(
+      await sec.admin.assignments.assign(owner, {
+        user,
+        role: staffing.id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+    const till = taken(await sec.admin.roles.define(owner, { name: 'till', rights: [right] }));
+    expect(
+      refusalOf(
+        await sec.admin.assignments.assign(them, {
+          user: sec.someone(),
+          role: till.id,
+          confinement: { kind: 'branches', branches: [aleppo], locations: [shopFloor] },
+        }),
+      ),
+    ).toBe('sec.right-not-held');
+  });
+
+  it('keeps what a confinement names, not the list the caller passed in', async () => {
+    const role = taken(
+      await sec.admin.roles.define(owner, { name: 'r', rights: [SYS_PERMISSIONS.branch.view] }),
+    );
+    const user = sec.someone();
+    const branches = [aleppo];
+    taken(
+      await sec.admin.assignments.assign(owner, {
+        user,
+        role: role.id,
+        confinement: { kind: 'branches', branches, locations: [] },
+      }),
+    );
+
+    // The store keeps what it is given, and what it was given here came from a
+    // caller who still holds it. Widening a committed grant must take a command.
+    branches.push(homs);
+    expect(await sec.auth.may(sec.as(user), SYS_PERMISSIONS.branch.view, { branch: homs })).toBe(
+      false,
+    );
   });
 
   it('refuses a confinement that names nowhere, or somewhere that is not there', async () => {

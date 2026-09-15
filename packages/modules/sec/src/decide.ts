@@ -1,14 +1,7 @@
-import type { BranchId, LocationId, PermissionId, TenantId, UserId } from '@vertex/contracts';
+import type { PermissionId, TenantId, UserId } from '@vertex/contracts';
 import type { CommandContext } from '@vertex/platform';
 
-import {
-  TENANT_WIDE,
-  type Assignment,
-  type Confinement,
-  type Decision,
-  type RecordSession,
-  type Where,
-} from './contract.js';
+import type { Assignment, Confinement, Decision, RecordSession, Where } from './contract.js';
 import { assignmentsIn, rolesIn } from './records.js';
 
 /**
@@ -26,8 +19,6 @@ import { assignmentsIn, rolesIn } from './records.js';
  * questions with two owners, and conflating them would make every permission
  * check a second round trip that fails differently.
  */
-
-const NOWHERE: Confinement = Object.freeze({ kind: 'branches', branches: [], locations: [] });
 
 /**
  * Whether a confinement admits an action taken here.
@@ -55,55 +46,55 @@ export function admits(confinement: Confinement, where: Where | undefined): bool
 }
 
 /**
- * Whether `mine` reaches everywhere `theirs` does.
+ * Whether the grants somebody holds reach everywhere a confinement does.
  *
- * What stops an administrator handing out more than they were given. It is
- * deliberately a comparison of two confinements rather than a series of
- * questions about places: the places inside a confinement are not enumerable —
- * "every location of Aleppo" includes the one that opens next month — so
- * checking place by place would silently pass a grant that outlives the check.
+ * A list of grants rather than one merged confinement, and that is the whole
+ * point. Merging them loses the thing that matters: somebody who may work in
+ * every location of Homs and only in the store room of Aleppo cannot be
+ * described by one set of branches and one set of locations, and the merged
+ * answer — both branches, no location narrowing — hands out Aleppo's shop
+ * floor to a person the decision itself refuses there.
+ *
+ * It is still a comparison of shapes rather than of places, because the places
+ * inside a confinement are not enumerable: "every location of Aleppo" includes
+ * the one that opens next month, so checking place by place would pass a grant
+ * that outlives the check.
+ *
+ * Where the shapes cannot be told apart it refuses. A confinement's locations
+ * are not attributed to particular branches, so a grant narrowed in one branch
+ * is treated as narrowing the question in every branch of that confinement.
+ * That refuses a few assignments somebody could legitimately have made; the
+ * opposite error hands out a shop.
  */
-export function covers(mine: Confinement, theirs: Confinement): boolean {
-  if (mine.kind === 'tenant') return true;
+export function coveredBy(mine: readonly Confinement[], theirs: Confinement): boolean {
+  if (mine.some((one) => one.kind === 'tenant')) return true;
   if (theirs.kind === 'tenant') return false;
-  if (!theirs.branches.every((branch) => mine.branches.includes(branch))) return false;
-  if (mine.locations.length === 0) return true;
-  if (theirs.locations.length === 0) return false;
-  return theirs.locations.every((location) => mine.locations.includes(location));
+  // Vacuously true is not an answer a guard may give. A confinement that
+  // reaches nowhere is not something to hand out, and "everything covers
+  // nothing" is exactly how an empty list slips past a check.
+  if (theirs.branches.length === 0) return false;
+
+  return theirs.branches.every((branch) => {
+    const here = mine.filter((one) => one.kind === 'branches' && one.branches.includes(branch));
+    if (here.length === 0) return false;
+    // Held across the whole branch by at least one grant: nothing to narrow.
+    if (here.some((one) => one.kind === 'branches' && one.locations.length === 0)) return true;
+
+    const reachable = new Set(
+      here.flatMap((one) => (one.kind === 'branches' ? [...one.locations] : [])),
+    );
+    if (theirs.locations.length === 0) return false;
+    return theirs.locations.every((location) => reachable.has(location));
+  });
 }
 
 /**
- * A reach that admits nothing at all: somebody who does not hold the right
- * anywhere. Distinct from a narrow reach, and the two produce different
- * refusals, because "you do not do this" and "not in that branch" are different
- * things to be told.
+ * Somebody who does not hold the right anywhere. Distinct from a narrow reach,
+ * and the two produce different refusals, because "you do not do this" and "not
+ * in that branch" are different things to be told.
  */
-export function reachesNothing(confinement: Confinement): boolean {
-  return confinement.kind === 'branches' && confinement.branches.length === 0;
-}
-
-export function union(confinements: readonly Confinement[]): Confinement {
-  if (confinements.some((one) => one.kind === 'tenant')) return TENANT_WIDE;
-
-  const branches = new Set<BranchId>();
-  const locations = new Set<LocationId>();
-  // A confinement that names no location already reaches every location of its
-  // branches, so a union with a narrowed one is not the union of their two
-  // lists — it is no list at all. Keeping both would claim a reach narrower
-  // than the wider of the two grants already gives.
-  let anyUnnarrowed = false;
-  for (const one of confinements) {
-    if (one.kind !== 'branches') continue;
-    for (const branch of one.branches) branches.add(branch);
-    if (one.locations.length === 0) anyUnnarrowed = true;
-    else for (const location of one.locations) locations.add(location);
-  }
-
-  return Object.freeze({
-    kind: 'branches' as const,
-    branches: Object.freeze([...branches]),
-    locations: Object.freeze(anyUnnarrowed ? [] : [...locations]),
-  });
+export function reachesNothing(grants: readonly Confinement[]): boolean {
+  return grants.length === 0;
 }
 
 /** The assignments of one user that are live, with the roles behind them live too. */
@@ -123,23 +114,23 @@ export function liveGrants(
 }
 
 /**
- * Everywhere a user holds one right, gathered across every role they are in.
+ * Every grant that gives a user one right, one per assignment that carries it.
  *
- * `NOWHERE` when they hold it in none — a confinement that admits nothing,
- * which `covers` then refuses to let them hand on. An absent answer would have
- * had to be special-cased at each of the three call sites, and one of them
- * would have got it wrong.
+ * Not merged into a single confinement, for the reason `coveredBy` gives: two
+ * grants of different shapes have no single shape, and the merged one always
+ * errs the dangerous way.
  */
 export function reachFor(
   session: RecordSession,
   tenant: TenantId,
   user: UserId,
   right: PermissionId,
-): Confinement {
-  const held = liveGrants(session, tenant, user)
-    .filter((grant) => grant.rights.includes(right))
-    .map((grant) => grant.assignment.confinement);
-  return held.length === 0 ? NOWHERE : union(held);
+): readonly Confinement[] {
+  return Object.freeze(
+    liveGrants(session, tenant, user)
+      .filter((grant) => grant.rights.includes(right))
+      .map((grant) => grant.assignment.confinement),
+  );
 }
 
 /**

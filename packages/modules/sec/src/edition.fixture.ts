@@ -1,4 +1,4 @@
-import type { BranchId, LocationId, UserId } from '@vertex/contracts';
+import type { BranchId, CompanyId, LocationId, SeededRole, UserId } from '@vertex/contracts';
 import { newId, orThrow, systemClock, type Id, type Refusal, type Result } from '@vertex/kernel';
 import {
   commandContext,
@@ -13,6 +13,7 @@ import {
   type CommandContext,
   type MemorySession,
   type MemoryStore,
+  type ModuleCode,
   type ModuleDefinition,
   type Registry,
 } from '@vertex/platform';
@@ -70,6 +71,22 @@ export interface Installed {
   openBranch(name: string, tenant?: Id<'tenant'>): BranchId;
   openLocation(branch: BranchId, name: string, kind?: LocationKind): LocationId;
   shutBranch(branch: BranchId): void;
+
+  /**
+   * The same shop, its data untouched, running an edition that has since grown
+   * a module (`modules.md` §4.4: a customer upgrading an edition runs the new
+   * module's migrations against live data).
+   *
+   * It is the one thing a single composition cannot show, and the case that
+   * decides whether seeding is a thing done once or a reconciliation.
+   */
+  afterBuying(code: ModuleCode, rights: readonly SeededRight[]): Installed;
+}
+
+/** A right a later module declares, and who it says should start out with it. */
+export interface SeededRight {
+  readonly id: string;
+  readonly seededFor?: readonly SeededRole[] | undefined;
 }
 
 /** What `SEC` is entitled to know about a place: that it is there, and whose. */
@@ -124,17 +141,34 @@ function organisationStandIn(places: Places): ModuleDefinition<MemorySession> {
 
 export function installSec(): Installed {
   const places: Places = { branches: new Map(), locations: new Map() };
-  const catalogue = [organisationStandIn(places), secModule<MemorySession>()];
-  const plan = orThrow(composeEdition(catalogue, { modules: ['SYS', 'SEC'] }), (refusal) => {
-    return new Error(`The edition would not compose: ${refusal.code}`);
-  });
+  const store = createMemoryStore();
+  const tenant = newId<'tenant'>();
+  const otherTenant = newId<'tenant'>();
+  const company = newId<'company'>();
+
+  return bring(places, store, tenant, otherTenant, company, []);
+}
+
+/** One edition, brought up over whatever this shop already has in its store. */
+function bring(
+  places: Places,
+  store: MemoryStore,
+  tenant: Id<'tenant'>,
+  otherTenant: Id<'tenant'>,
+  company: CompanyId,
+  bought: readonly ModuleDefinition<MemorySession>[],
+): Installed {
+  const catalogue = [organisationStandIn(places), secModule<MemorySession>(), ...bought];
+  const plan = orThrow(
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', ...bought.map((one) => one.code)] }),
+    (refusal) => new Error(`The edition would not compose: ${refusal.code}`),
+  );
 
   const bus = createEventBus({
     onHandlerFailure: (failure) => {
       throw new Error(`A subscriber failed: ${String(failure.cause)}`);
     },
   });
-  const store = createMemoryStore();
   const transactor = createTransactor({
     driver: store.driver,
     bus,
@@ -144,10 +178,6 @@ export function installSec(): Installed {
     },
   });
   const registry = createRegistry({ catalogue, plan, bus, transactor, clock: systemClock });
-
-  const tenant = newId<'tenant'>();
-  const otherTenant = newId<'tenant'>();
-  const company = newId<'company'>();
 
   return {
     registry,
@@ -191,6 +221,19 @@ export function installSec(): Installed {
       const of = places.branches.get(branch);
       if (of === undefined) throw new Error('That branch was never opened.');
       places.branches.set(branch, { ...of, active: false });
+    },
+
+    afterBuying(code: ModuleCode, rights: readonly SeededRight[]): Installed {
+      const bought = defineModule<MemorySession>({
+        code,
+        labelKey: `module.${code.toLowerCase()}`,
+        permissions: rights.map(({ id, seededFor }) => ({
+          id,
+          labelKey: `permission.${id}`,
+          seededFor: seededFor ?? [],
+        })),
+      });
+      return bring(places, store, tenant, otherTenant, company, [bought]);
     },
   };
 }

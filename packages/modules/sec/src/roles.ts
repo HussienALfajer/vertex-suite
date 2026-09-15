@@ -92,6 +92,10 @@ function grantable(
   return null;
 }
 
+function sameRights(one: readonly PermissionId[], two: readonly PermissionId[]): boolean {
+  return one.length === two.length && one.every((right) => two.includes(right));
+}
+
 function without<T>(values: readonly T[], removed: readonly T[]): readonly T[] {
   return values.filter((one) => !removed.includes(one));
 }
@@ -116,24 +120,41 @@ export function seedRoles(
   );
 
   const seeded = SEEDED_ROLES.map((key) => {
-    // Already there: left exactly as it is. The shipped rights are a starting
-    // point and never an argument — a second seeding that re-imposed them would
-    // silently undo every edit a shop had made, and the shop would find out at
-    // a till.
+    const shipped = seededRights(declarations, key);
     const already = existing.get(key);
-    if (already !== undefined) return already;
 
-    const role: Role = {
-      id: newId<'role'>(),
-      tenant: by.tenant,
-      seeded: key,
-      // Displayed through the terminology layer until somebody renames it,
-      // which is what design-system.md §12 requires of a string on a screen.
-      name: null,
-      rights: seededRights(declarations, key),
-      active: true,
-    };
-    return writeRecord(session, 'role', by.tenant, [role.id], role);
+    if (already === undefined) {
+      const role: Role = {
+        id: newId<'role'>(),
+        tenant: by.tenant,
+        seeded: key,
+        // Displayed through the terminology layer until somebody renames it,
+        // which is what design-system.md §12 requires of a string on a screen.
+        name: null,
+        rights: shipped,
+        seededWith: shipped,
+        active: true,
+      };
+      return writeRecord(session, 'role', by.tenant, [role.id], role);
+    }
+
+    // Already there. The shipped rights are a starting point and never an
+    // argument — re-imposing them would silently undo every edit a shop had
+    // made, and the shop would find out at a till. But an edition that has
+    // grown since has rights this role has never been offered, and leaving
+    // those out means a customer who buys `POS` finds that nobody may sell.
+    //
+    // So only what is genuinely **new** is added: a right the defaults have
+    // never offered this role before. One an administrator took away is in
+    // `seededWith` and stays gone.
+    const added = shipped.filter((right) => !already.seededWith.includes(right));
+    if (added.length === 0 && sameRights(already.seededWith, shipped)) return already;
+
+    return writeRecord(session, 'role', by.tenant, [already.id], {
+      ...already,
+      rights: Object.freeze(withAll(already.rights, added)),
+      seededWith: shipped,
+    });
   });
 
   return ok(Object.freeze(seeded));
@@ -161,6 +182,7 @@ export function defineRole(
     seeded: null,
     name,
     rights: Object.freeze([...rights]),
+    seededWith: Object.freeze([]),
     active: true,
   };
   return ok(writeRecord(session, 'role', by.tenant, [role.id], role));

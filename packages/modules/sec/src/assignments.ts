@@ -12,7 +12,7 @@ import {
   type RoleId,
   type SecRefusal,
 } from './contract.js';
-import { covers, reachesNothing, reachFor } from './decide.js';
+import { coveredBy, reachesNothing, reachFor } from './decide.js';
 import { assignmentIn, assignmentsIn, roleIn, rolesIn, writeAssignment } from './records.js';
 
 /**
@@ -84,6 +84,16 @@ export async function placesNamed(
   return null;
 }
 
+/** A confinement of this module's own, holding nothing the caller can still reach. */
+function copyOf(confinement: Confinement): Confinement {
+  if (confinement.kind === 'tenant') return Object.freeze({ kind: 'tenant' as const });
+  return Object.freeze({
+    kind: 'branches' as const,
+    branches: Object.freeze([...confinement.branches]),
+    locations: Object.freeze([...confinement.locations]),
+  });
+}
+
 /** Everything the assigner would be handing over, right by right. */
 function withinTheirReach(
   session: RecordSession,
@@ -94,8 +104,7 @@ function withinTheirReach(
   if (by.actor === null) return null;
 
   for (const right of rights) {
-    const reach = reachFor(session, by.tenant, by.actor, right);
-    if (!covers(reach, confinement)) {
+    if (!coveredBy(reachFor(session, by.tenant, by.actor, right), confinement)) {
       return refusal('sec.right-not-held', { right });
     }
   }
@@ -120,7 +129,7 @@ function mayStaff(
 
   const reach = reachFor(session, by.tenant, by.actor, right);
   if (reachesNothing(reach)) return refusal('sec.not-permitted', { right });
-  if (!covers(reach, confinement)) return refusal('sec.confinement-exceeds-own', { right });
+  if (!coveredBy(reach, confinement)) return refusal('sec.confinement-exceeds-own', { right });
   return null;
 }
 
@@ -129,6 +138,15 @@ export function assignRole(
   by: CommandContext,
   input: NewAssignment,
 ): Outcome<Assignment> {
+  // Checked here as well as in `placesNamed`, which runs first and has already
+  // refused this. The two are in different files and only one of them is on the
+  // path of every future caller; a confinement that reaches nowhere is not an
+  // assignment anybody means to make, and it is the shape most likely to slip
+  // past a guard written elsewhere.
+  if (input.confinement.kind === 'branches' && input.confinement.branches.length === 0) {
+    return refuse('sec.confinement-empty');
+  }
+
   const permitted = mayStaff(session, by, SEC_PERMISSIONS.assignment.create, input.confinement);
   if (permitted !== null) return err(permitted);
 
@@ -143,7 +161,10 @@ export function assignRole(
     tenant: by.tenant,
     user: input.user,
     role: role.id,
-    confinement: Object.freeze(input.confinement),
+    // Copied, not merely frozen. The arrays came from the caller, and the store
+    // keeps what it is given: an array the caller went on to push onto would
+    // widen a committed grant with no command having run.
+    confinement: copyOf(input.confinement),
     active: true,
   };
   return ok(writeAssignment(session, by.tenant, assignment));

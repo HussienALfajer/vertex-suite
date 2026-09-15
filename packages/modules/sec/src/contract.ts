@@ -65,6 +65,20 @@ export interface Role extends TenantOwned {
   readonly name: string | null;
   readonly rights: readonly PermissionId[];
   /**
+   * What the shipped defaults last offered this role, and the reason seeding
+   * can be run twice without being either useless or destructive.
+   *
+   * It is the difference between a right that is **new** — declared by a module
+   * the shop enabled after it was set up (`modules.md` §4.4) — and one an
+   * administrator deliberately took away. Without it, seeding either re-imposes
+   * the defaults over an edited role or never notices that the edition grew,
+   * and the second is how a shop upgrades to `POS` and finds that nobody, the
+   * owner included, may sell anything.
+   *
+   * Empty for a role a tenant invented: the defaults never offered it anything.
+   */
+  readonly seededWith: readonly PermissionId[];
+  /**
    * Withdrawn rather than deleted, and not only because the store cannot
    * delete: `SEC-06` will ask a year from now which rights a user held on the
    * day of a particular sale, and a row that was removed answers nothing.
@@ -158,14 +172,20 @@ export interface Authorisation {
   /** The same question with its reason, for a screen that has to explain itself. */
   decide(by: CommandContext, right: PermissionId, where?: Where): Promise<Decision>;
   /**
-   * Everywhere this actor holds a particular right, gathered across every role
-   * they are in.
+   * Every grant of one right this actor holds, one per role they are in.
    *
    * What a listing needs: `SEC-04` limits what a user may see as well as what
    * they may do, and a screen that asked `may` once per branch would ask a
    * hundred questions to draw one page.
+   *
+   * A list and not one merged confinement, because there is no such thing. A
+   * person who works in every location of Homs and only in the store room of
+   * Aleppo has no single pair of lists that says so, and the merged answer —
+   * both branches, no narrowing — claims a reach `may` itself refuses. Reading
+   * the branches off the list is exact; reading the locations is not, and a
+   * screen that needs them must ask per branch.
    */
-  reachOf(by: CommandContext, right: PermissionId): Promise<Confinement>;
+  reachOf(by: CommandContext, right: PermissionId): Promise<readonly Confinement[]>;
 }
 
 /**
