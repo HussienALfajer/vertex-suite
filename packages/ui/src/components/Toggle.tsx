@@ -36,14 +36,14 @@ export function Checkbox({ children, className, ...props }: CheckboxProps): Reac
       {...props}
       className={clsx(
         'group flex items-center gap-[var(--vx-gap-sm)]',
-        'text-body text-fg cursor-default',
+        'text-body text-fg cursor-pointer',
         'data-[disabled]:text-fg-disabled data-[disabled]:cursor-not-allowed',
         className,
       )}
     >
       <CheckboxButton
         className={clsx(
-          'size-[var(--vx-checkbox)] shrink-0 rounded-[calc(var(--vx-radius)/2)]',
+          'size-[var(--vx-checkbox)] shrink-0 cursor-pointer rounded-[calc(var(--vx-radius)/2)]',
           'flex items-center justify-center border transition-colors',
           'duration-[var(--vx-dur-snap)] ease-out outline-none',
           'data-[selected]:bg-fill-primary data-[selected]:border-transparent',
@@ -69,7 +69,7 @@ export function Checkbox({ children, className, ...props }: CheckboxProps): Reac
           ) : null
         }
       </CheckboxButton>
-      <Label className="cursor-default">{children}</Label>
+      <Label className="cursor-pointer">{children}</Label>
     </CheckboxField>
   );
 }
@@ -95,14 +95,14 @@ export function Switch({ children, className, ...props }: SwitchProps): ReactNod
       {...props}
       className={clsx(
         'group flex items-center gap-[var(--vx-gap-sm)]',
-        'text-body text-fg cursor-default',
+        'text-body text-fg cursor-pointer',
         'data-[disabled]:text-fg-disabled data-[disabled]:cursor-not-allowed',
         className,
       )}
     >
       <SwitchButton
         className={clsx(
-          'h-[var(--vx-switch-h)] w-[calc(var(--vx-switch-h)*1.75)] shrink-0',
+          'h-[var(--vx-switch-h)] w-[calc(var(--vx-switch-h)*1.75)] shrink-0 cursor-pointer',
           'rounded-pill flex items-center p-[2px] transition-colors',
           'duration-[var(--vx-dur-snap)] ease-out outline-none',
           // §4.7. Not `fill-secondary`: in the light theme that resolves to
@@ -120,7 +120,7 @@ export function Switch({ children, className, ...props }: SwitchProps): ReactNod
           )}
         />
       </SwitchButton>
-      <Label className="cursor-default">{children}</Label>
+      <Label className="cursor-pointer">{children}</Label>
     </SwitchField>
   );
 }

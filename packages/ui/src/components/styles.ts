@@ -30,7 +30,7 @@ export const focusRingDanger =
 /** Every control is the density's control height, and transitions at snap speed. */
 export const controlBase =
   'inline-flex items-center justify-center whitespace-nowrap select-none ' +
-  'h-[var(--vx-h-control)] rounded text-body font-body-medium ' +
+  'h-[var(--vx-h-control)] rounded text-body font-body-medium cursor-pointer ' +
   'transition-[background-color,box-shadow,color] duration-[var(--vx-dur-snap)] ease-out ' +
   'disabled:cursor-not-allowed disabled:text-fg-disabled';
 

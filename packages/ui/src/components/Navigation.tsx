@@ -47,7 +47,7 @@ export function SideNav({ label, items, currentId, className }: SideNavProps): R
             className={clsx(
               'flex items-center gap-[var(--vx-gap-sm)] rounded',
               'h-[var(--vx-h-control)] px-[var(--vx-pad-md)]',
-              'text-body no-underline outline-none',
+              'text-body cursor-pointer no-underline outline-none',
               '[&_svg]:size-[var(--vx-icon)] [&_svg]:shrink-0',
               isCurrent
                 ? 'bg-fill-ghost-hover text-fg font-body-medium'
@@ -106,7 +106,7 @@ export function BreadcrumbTrail({ label, items, className }: BreadcrumbTrailProp
             <Link
               href={item.href}
               className={clsx(
-                'text-footnote text-fg-secondary hover:text-fg rounded underline-offset-2',
+                'text-footnote text-fg-secondary hover:text-fg cursor-pointer rounded underline-offset-2',
                 'outline-none hover:underline',
                 focusRing,
               )}

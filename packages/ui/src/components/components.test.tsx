@@ -9,6 +9,7 @@ import { DensityScope } from '../providers/DensityScope.js';
 import { VertexProvider } from '../providers/VertexProvider.js';
 import { Badge } from './Badge.js';
 import { Button, IconButton } from './Button.js';
+import { Checkbox, Switch } from './Toggle.js';
 import { Page, PageHeader } from './Page.js';
 import { Panel } from './Panel.js';
 import { TextInput } from './TextInput.js';
@@ -174,6 +175,55 @@ describe('<Badge>', () => {
       expect(className, tone).toContain(`text-on-tint-${tone}`);
       unmount();
     }
+  });
+});
+
+describe('the pointer says whether a click will do something — §11.3', () => {
+  // The browser gives `<a href>` a hand and `<button>` an arrow, so a control
+  // library that says nothing ships arrows over every button. This shipped that
+  // way until someone put a mouse on it.
+  const controls = [
+    ['Button', <Button key="b">س</Button>, 'button'],
+    [
+      'IconButton',
+      <IconButton key="i" aria-label="س">
+        <svg />
+      </IconButton>,
+      'button',
+    ],
+    ['Checkbox', <Checkbox key="c">س</Checkbox>, 'label'],
+    ['Switch', <Switch key="s">س</Switch>, 'label'],
+  ] as const;
+
+  for (const [name, element, selector] of controls) {
+    it(`${name} offers a hand`, () => {
+      const { container, unmount } = render(
+        <VertexProvider translator={translator} root={null}>
+          {element}
+        </VertexProvider>,
+      );
+      const control = container.querySelector(selector);
+      expect(control?.className, name).toContain('cursor-pointer');
+      unmount();
+    });
+  }
+
+  it('a disabled control does not promise a click that will not happen', () => {
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <Button isDisabled>س</Button>
+      </VertexProvider>,
+    );
+    expect(container.querySelector('button')?.className).toContain('disabled:cursor-not-allowed');
+  });
+
+  it('a text field keeps the text cursor, because typing is not an action', () => {
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <TextInput label="س" />
+      </VertexProvider>,
+    );
+    expect(container.querySelector('input')?.className ?? '').not.toContain('cursor-pointer');
   });
 });
 

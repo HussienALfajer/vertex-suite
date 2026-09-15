@@ -502,6 +502,25 @@ The register has **no pointer at all** in normal operation. Its shortcut map is 
 - **No destructive action on a single unmodified key.** Voiding a line, voiding a sale and opening the drawer each require a modifier or a confirmation, because a cashier's hand rests on the keyboard.
 - **Focus never leaves the scan field implicitly.** Anything that moves focus away returns it when it finishes, so the next scan lands where it belongs.
 
+### 11.3 The pointer
+
+The register has no pointer, but the back office is worked with one all day, and the cursor is the
+only affordance a pointer user gets before committing to a click.
+
+- **Anything that acts on a click shows `cursor: pointer`.** Buttons, icon buttons, the trigger and
+  the options of a select, a checkbox, a switch, a navigation link, a row action.
+- **A disabled control shows `cursor: not-allowed`**, never `pointer`. The cursor says whether the
+  click will do something, so a disabled control must not promise that it will.
+- **Text keeps the text cursor.** An input, a textarea and selectable prose are not actions.
+- **Nothing else changes the cursor.** A panel, a row that is not itself clickable, a badge — these
+  are not controls, and a hand over them teaches the user that the hand means nothing.
+
+This is stated because the browser does not do it: `<a href>` carries a hand by default and
+`<button>` does not, so a control library that says nothing ships arrows over every button. The
+argument that a hand should mean "this navigates" is a real one and it is how a native desktop
+application behaves — but the people using this software learned what a hand means on the web, and
+a till is not the place to teach them otherwise.
+
 ---
 
 ## 12. Displaying numbers, money, quantities and dates

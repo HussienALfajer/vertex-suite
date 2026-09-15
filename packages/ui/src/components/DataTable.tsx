@@ -108,6 +108,9 @@ export function DataTable<T extends { id: Key }>({
           <Row
             id={row.id}
             className={clsx(
+              // §11.3: the row is not itself an action — only the controls
+              // inside it are — so it keeps the arrow. A hand over
+              // everything teaches the user that the hand means nothing.
               'group cursor-default outline-none',
               'data-[hovered]:bg-fill-ghost-hover',
               'data-[selected]:bg-tint-accent',

@@ -57,7 +57,7 @@ export function Select({
         className={clsx(
           'h-[var(--vx-h-control)] w-full rounded px-[var(--vx-pad-md)]',
           'flex items-center justify-between gap-[var(--vx-gap-sm)]',
-          'bg-fill-field text-fg text-body text-start',
+          'bg-fill-field text-fg text-body cursor-pointer text-start',
           'border border-line-strong',
           'data-[invalid]:border-line-danger',
           'disabled:text-fg-disabled disabled:cursor-not-allowed',
@@ -103,10 +103,10 @@ export function Select({
               {...(option.isDisabled === true ? { isDisabled: true } : {})}
               className={clsx(
                 'flex h-[var(--vx-h-control)] items-center rounded px-[var(--vx-pad-md)]',
-                'text-body text-fg cursor-default outline-none',
+                'text-body text-fg cursor-pointer outline-none',
                 'data-[focused]:bg-fill-ghost-hover',
                 'data-[selected]:font-body-medium',
-                'data-[disabled]:text-fg-disabled',
+                'data-[disabled]:text-fg-disabled data-[disabled]:cursor-not-allowed',
               )}
             >
               {option.label}
