@@ -59,7 +59,7 @@ export function DateTime({
     >
       <span dir="ltr">{text}</span>
       {provisional ? (
-        <span className="rounded-pill bg-tint-warning text-on-tint-warning px-[0.5em] text-caption">
+        <span className="rounded bg-tint-warning text-on-tint-warning px-[0.5em] text-caption">
           {translator.format('date.provisional')}
         </span>
       ) : null}

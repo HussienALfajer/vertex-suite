@@ -10,44 +10,49 @@ import { NEUTRAL_STOPS, type AccentName } from './spec.js';
  * generator against itself — that would only prove the generator is
  * deterministic. It is the generator against **the document**, so that changing
  * an input in `spec.ts` without publishing the consequence fails the build.
+ *
+ * As of this revision the document publishes a ramp taken literally from a
+ * third-party design system rather than one solved from `NEUTRAL_LIGHTNESS`/
+ * `NEUTRAL_CHROMA` (`spec.ts`'s `NEUTRAL_RAMP_HEX`, which this restates) — see
+ * that constant's comment for what was decided and how to revert it.
  */
 
 const PUBLISHED_NEUTRAL: Readonly<Record<number, string>> = {
   0: '#ffffff',
-  10: '#fcfcfa',
+  10: '#fcfcfb',
   20: '#f9f9f7',
-  30: '#f6f5f3',
-  40: '#f3f2ef',
+  30: '#f6f6f4',
+  40: '#f3f3f0',
   50: '#f0efec',
   60: '#edece8',
-  70: '#eae9e5',
-  80: '#e7e6e2',
-  90: '#e4e3de',
-  100: '#e1e0db',
-  150: '#d2d0ca',
-  200: '#c3c1b9',
-  250: '#b4b2aa',
-  300: '#a6a49b',
+  70: '#eae9e4',
+  80: '#e7e6e1',
+  90: '#e4e3dd',
+  100: '#e1e0d9',
+  150: '#d2d1c7',
+  200: '#c3c2b7',
+  250: '#b4b3a8',
+  300: '#a5a49a',
   350: '#97958d',
-  400: '#89877f',
-  450: '#7b7972',
-  500: '#6d6b65',
-  550: '#605e58',
-  600: '#52514c',
-  650: '#45443f',
-  700: '#383733',
-  750: '#2c2b28',
-  800: '#21201d',
-  810: '#1e1e1b',
-  820: '#1c1c19',
-  830: '#1a1917',
-  840: '#181715',
-  850: '#161513',
-  860: '#141311',
-  870: '#12110f',
-  880: '#100f0d',
-  890: '#0e0d0b',
-  900: '#0c0b09',
+  400: '#898781',
+  450: '#7b7974',
+  500: '#6d6b67',
+  550: '#5f5e5a',
+  600: '#52514e',
+  650: '#454442',
+  700: '#383835',
+  750: '#2c2c2a',
+  800: '#20201f',
+  810: '#1e1e1d',
+  820: '#1c1c1b',
+  830: '#1a1a19',
+  840: '#181817',
+  850: '#151515',
+  860: '#131313',
+  870: '#111111',
+  880: '#0f0f0f',
+  890: '#0d0d0d',
+  900: '#0b0b0b',
 };
 
 interface PublishedAccent {
@@ -59,46 +64,55 @@ interface PublishedAccent {
   readonly border: readonly [light: string, dark: string];
 }
 
+/**
+ * As of this revision, taken literally from the same third-party system as
+ * `PUBLISHED_NEUTRAL` (`spec.ts`'s `ACCENT_PALETTE_HEX`) rather than solved
+ * against the neutral ramp for `CONTRAST_TARGET`. `onBg` equals `text` in
+ * every row: a role's tinted background is read with the same ink that names
+ * the role everywhere else, which is that system's own choice.
+ */
 const PUBLISHED_ACCENTS: Readonly<Record<AccentName, PublishedAccent>> = {
   blue: {
-    fill: '#1678c9',
-    fillHover: '#0069b5',
-    text: ['#1376c7', '#2784d5'],
-    bg: ['#d7eaff', '#092540'],
-    onBg: ['#0069b7', '#3690e2'],
-    border: ['#9ac9fa', '#1d456b'],
+    fill: '#2a78d6',
+    fillHover: '#3987e5',
+    text: ['#184f95', '#6da7ec'],
+    bg: ['#cde2fb', '#032042'],
+    onBg: ['#184f95', '#6da7ec'],
+    border: ['#86b6ef', '#0d366b'],
   },
   green: {
-    fill: '#02873d',
-    fillHover: '#007734',
-    text: ['#00853c', '#1d9347'],
-    bg: ['#cff3d5', '#092c13'],
-    onBg: ['#007936', '#31a154'],
-    border: ['#9dd4a7', '#1d4e2b'],
+    fill: '#009300',
+    fillHover: '#0ca30c',
+    text: ['#006300', '#0ca30c'],
+    bg: ['#caeac7', '#11260f'],
+    onBg: ['#006300', '#0ca30c'],
+    border: ['#73cb6d', '#074506'],
   },
   red: {
-    fill: '#ca4941',
-    fillHover: '#b93933',
-    text: ['#c84740', '#d7564c'],
-    bg: ['#ffe0db', '#3c1714'],
-    onBg: ['#b83933', '#e36156'],
-    border: ['#f7afa6', '#66302a'],
+    fill: '#d03b3b',
+    fillHover: '#e34948',
+    text: ['#8e2626', '#ec7e7e'],
+    bg: ['#fad6d6', '#3c0e0e'],
+    onBg: ['#8e2626', '#ec7e7e'],
+    border: ['#f09595', '#641919'],
   },
   amber: {
-    fill: '#9f6a00',
-    fillHover: '#8c5d00',
-    text: ['#9c6900', '#ad7500'],
-    bg: ['#fee3c0', '#331f00'],
-    onBg: ['#8c5d00', '#bc7f00'],
-    border: ['#e5bd86', '#5b3b00'],
+    // The one role whose fill/hover break the 450-then-400 pattern the other
+    // four keep — see `ACCENT_PALETTE_HEX`'s own comment for why.
+    fill: '#fab219',
+    fillHover: '#eda100',
+    text: ['#734500', '#db9300'],
+    bg: ['#f9dca4', '#311a00'],
+    onBg: ['#734500', '#db9300'],
+    border: ['#eda100', '#512e00'],
   },
   teal: {
-    fill: '#008283',
-    fillHover: '#007273',
-    text: ['#008081', '#008f8f'],
-    bg: ['#bef4f3', '#002b2b'],
-    onBg: ['#007475', '#009e9e'],
-    border: ['#7ed6d5', '#004d4d'],
+    fill: '#138e65',
+    fillHover: '#199e70',
+    text: ['#065f49', '#3bbd8c'],
+    bg: ['#bfebdb', '#022720'],
+    onBg: ['#065f49', '#3bbd8c'],
+    border: ['#5acba0', '#034235'],
   },
 };
 

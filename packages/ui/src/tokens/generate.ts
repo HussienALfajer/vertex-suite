@@ -1,22 +1,13 @@
-import { contrastRatio } from './contrast.js';
-import { interpolate } from './interpolate.js';
-import { oklch, toHex } from './oklch.js';
 import {
-  ACCENTS,
-  ACCENT_LIGHTNESS_RANGE,
+  ACCENT_PALETTE_HEX,
   CHART_CHROMA,
   CHART_LIGHTNESS,
   CHART_SERIES,
-  CONTRAST_TARGET,
-  HOVER_LIGHTNESS_STEP,
-  NEUTRAL_CHROMA,
-  NEUTRAL_HUE,
-  NEUTRAL_LIGHTNESS,
-  NEUTRAL_ROLES,
+  NEUTRAL_RAMP_HEX,
   NEUTRAL_STOPS,
-  TINTS,
   type AccentName,
 } from './spec.js';
+import { oklch, toHex } from './oklch.js';
 
 /** A value that differs between the two themes. */
 export interface Themed {
@@ -48,91 +39,61 @@ export interface Palette {
 /**
  * The 35-step neutral ramp.
  *
- * Stop 0 is forced to pure white: the generated value rounds to it anyway, and
- * pinning it removes any doubt that the page ground is exactly `#ffffff`.
+ * Reads `NEUTRAL_RAMP_HEX` literally rather than solving one from
+ * `NEUTRAL_LIGHTNESS`/`NEUTRAL_CHROMA` — see that constant's own comment for
+ * why. An algorithmically solved ramp is still one call away, should the
+ * palette ever need to move again without another import to anchor it to:
+ *
+ * ```
+ * const lightness = interpolate(stop, NEUTRAL_LIGHTNESS);
+ * const chroma = interpolate(lightness, NEUTRAL_CHROMA);
+ * ramp.set(stop, toHex(oklch(lightness, chroma, NEUTRAL_HUE)));
+ * ```
  */
 export function generateNeutralRamp(): Map<number, string> {
   const ramp = new Map<number, string>();
   for (const stop of NEUTRAL_STOPS) {
-    if (stop === 0) {
-      ramp.set(stop, '#ffffff');
-      continue;
+    const hex = NEUTRAL_RAMP_HEX[stop];
+    if (hex === undefined) {
+      throw new Error(`NEUTRAL_RAMP_HEX has no stop ${String(stop)}.`);
     }
-    const lightness = interpolate(stop, NEUTRAL_LIGHTNESS);
-    const chroma = interpolate(lightness, NEUTRAL_CHROMA);
-    ramp.set(stop, toHex(oklch(lightness, chroma, NEUTRAL_HUE)));
+    ramp.set(stop, hex);
   }
   return ramp;
 }
 
 /**
- * The lightness at which a hue first meets the contrast target against a given
- * background — the *boundary*, not an extreme.
+ * The six tokens for every accent hue, in both themes.
  *
- * Against a light ground the colour must darken, and the answer is the lightest
- * value that still passes; against a dark ground it must lighten, and the
- * answer is the darkest that still passes. Either way the colour departs from
- * the background only as far as the requirement forces it to, which is what
- * keeps the accents vivid instead of uniformly muddy.
+ * Reads `ACCENT_PALETTE_HEX` literally instead of solving fill, text and
+ * border lightness against the neutral ramp for `CONTRAST_TARGET` — see that
+ * constant's own comment in `spec.ts`. `neutral` is accepted and ignored: a
+ * solved version would need it as the background to solve `text` and `onBg`
+ * against; this one does not solve anything.
+ *
+ * `onBg` is the same value as `text`: a role's tinted background is read with
+ * exactly the ink that names the role elsewhere, which is the source
+ * system's own choice and not a coincidence of this table.
  */
-function solveLightness(
-  chroma: number,
-  hue: number,
-  background: string,
-  move: 'darken' | 'lighten',
-): number {
-  let low: number = ACCENT_LIGHTNESS_RANGE.min;
-  let high: number = ACCENT_LIGHTNESS_RANGE.max;
-  for (let i = 0; i < 80; i += 1) {
-    const mid = (low + high) / 2;
-    const passes = contrastRatio(toHex(oklch(mid, chroma, hue)), background) >= CONTRAST_TARGET;
-    if (move === 'darken') {
-      if (passes) low = mid;
-      else high = mid;
-    } else if (passes) {
-      high = mid;
-    } else {
-      low = mid;
-    }
-  }
-  return move === 'darken' ? low : high;
-}
-
-/** The six tokens for every accent hue, in both themes. */
 export function generateAccents(
+  // `neutral` is accepted and ignored, kept for interface parity with an
+  // algorithmically solved palette — still reachable by reintroducing the
+  // solver this replaced, which needs it as the background to solve against.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   neutral: ReadonlyMap<number, string>,
 ): Map<AccentName, AccentTokens> {
-  const surface1Light = required(neutral, NEUTRAL_ROLES.surface1.light);
-  const surface1Dark = required(neutral, NEUTRAL_ROLES.surface1.dark);
-
   const accents = new Map<AccentName, AccentTokens>();
-  for (const [name, { hue, chroma }] of Object.entries(ACCENTS) as [
+  for (const [name, hue] of Object.entries(ACCENT_PALETTE_HEX) as [
     AccentName,
-    (typeof ACCENTS)[AccentName],
+    (typeof ACCENT_PALETTE_HEX)[AccentName],
   ][]) {
-    const fillLightness = solveLightness(chroma, hue, '#ffffff', 'darken');
-
-    const bg: Themed = {
-      light: toHex(oklch(TINTS.bg.light.lightness, TINTS.bg.light.chroma, hue)),
-      dark: toHex(oklch(TINTS.bg.dark.lightness, TINTS.bg.dark.chroma, hue)),
-    };
-
     accents.set(name, {
-      fill: toHex(oklch(fillLightness, chroma, hue)),
-      fillHover: toHex(oklch(fillLightness - HOVER_LIGHTNESS_STEP, chroma, hue)),
-      text: {
-        light: toHex(oklch(solveLightness(chroma, hue, surface1Light, 'darken'), chroma, hue)),
-        dark: toHex(oklch(solveLightness(chroma, hue, surface1Dark, 'lighten'), chroma, hue)),
-      },
-      bg,
-      onBg: {
-        light: toHex(oklch(solveLightness(chroma, hue, bg.light, 'darken'), chroma, hue)),
-        dark: toHex(oklch(solveLightness(chroma, hue, bg.dark, 'lighten'), chroma, hue)),
-      },
-      border: {
-        light: toHex(oklch(TINTS.border.light.lightness, TINTS.border.light.chroma, hue)),
-        dark: toHex(oklch(TINTS.border.dark.lightness, TINTS.border.dark.chroma, hue)),
-      },
+      fill: hue.fill,
+      fillHover: hue.fillHover,
+      text: hue.text,
+      bg: hue.bg,
+      onBg: hue.text,
+      border: hue.border,
     });
   }
   return accents;

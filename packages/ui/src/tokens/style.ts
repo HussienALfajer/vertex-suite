@@ -44,7 +44,10 @@ export const FOCUS_RING = '0 0 0 2px var(--vx-surface-1), 0 0 0 4px var(--vx-fil
 /** On a danger control the ring takes the danger hue, so the user sees what is about to happen. */
 export const FOCUS_RING_DANGER = '0 0 0 2px var(--vx-surface-1), 0 0 0 4px var(--vx-fill-danger)';
 
-/** Pills are reserved for badges and status chips: a pill-shaped button reads as a chip. */
+// Reserved for the switch track alone — badges and status chips round like
+// every other control (`rounded`, not `rounded-pill`; see `Badge.tsx`). A
+// capsule track is a functional shape a switch needs, not a decorative one a
+// chip keeps for its own sake.
 export const RADIUS_PILL = '9999px';
 
 /**
