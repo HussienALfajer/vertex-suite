@@ -21,7 +21,10 @@ export interface SelectOption {
   readonly isDisabled?: boolean;
 }
 
-export interface SelectProps extends Omit<AriaSelectProps<SelectOption>, 'className' | 'children'> {
+export interface SelectProps extends Omit<
+  AriaSelectProps<SelectOption>,
+  'className' | 'children' | 'validationBehavior'
+> {
   readonly label: string;
   readonly options: readonly SelectOption[];
   readonly description?: string;
@@ -36,6 +39,11 @@ export interface SelectProps extends Omit<AriaSelectProps<SelectOption>, 'classN
  * The popover is `surface-3` and separates from a `surface-2` panel by shadow
  * as much as by colour — in the light theme those two surfaces are the same
  * white by design (§4.4), so elevation is what does the work.
+ *
+ * Validation is `aria` and the prop is not offered, for the reason `TextInput`
+ * gives: the browser writes its own validation message in its own language, and
+ * a string this repository cannot translate is a string that must never reach a
+ * screen (§12).
  */
 export function Select({
   label,
@@ -49,6 +57,7 @@ export function Select({
   return (
     <AriaSelect
       {...props}
+      validationBehavior="aria"
       className={clsx('flex flex-col gap-[var(--vx-gap-xs)]', className)}
       {...(errorMessage === undefined ? {} : { isInvalid: true })}
     >

@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+
+/* The bundled faces (§5.1). Local files; nothing is fetched at run time. */
+@import '@vertex/ui/fonts.css';
+
+/* Layer 1 of §3.1: the generated primitives. */
+@import '@vertex/ui/palette.css';
+
+/* Layers 2 and 3: the alias and semantic tokens a screen may name. */
+@import '@vertex/ui/theme.css';
+
+/* Tailwind's view of the semantic layer. */
+@import '@vertex/ui/tailwind.css';
+
+/* Tailwind scans the component library as well as this app. */
+@source '../../../packages/ui/src';
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--vx-surface-0);
+  color: var(--vx-text-primary);
+  font-family: var(--vx-font-sans);
+  font-size: var(--vx-font-size-body);
+  line-height: var(--vx-line-height-body);
+}

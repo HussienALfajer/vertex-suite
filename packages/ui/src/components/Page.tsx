@@ -38,6 +38,12 @@ export function Page({ children, className }: PageProps): ReactNode {
 export interface PageHeaderProps {
   readonly title: string;
   readonly description?: string;
+  /**
+   * A mark beside the title. Decorative by construction: whatever it is sits
+   * next to a heading that already names the page, so a second announcement of
+   * the same thing is noise to somebody listening rather than looking.
+   */
+  readonly icon?: ReactNode;
   readonly actions?: ReactNode;
   readonly className?: string;
 }
@@ -49,14 +55,23 @@ export interface PageHeaderProps {
  * titles, so that the heaviest thing on screen is always the answer to "where
  * am I".
  */
-export function PageHeader({ title, description, actions, className }: PageHeaderProps): ReactNode {
+export function PageHeader({
+  title,
+  description,
+  icon,
+  actions,
+  className,
+}: PageHeaderProps): ReactNode {
   return (
     <header className={clsx('flex items-start justify-between gap-[var(--vx-gap-lg)]', className)}>
-      <div className="flex flex-col gap-[var(--vx-gap-xs)]">
-        <h1 className="text-page font-body-bold text-fg">{title}</h1>
-        {description === undefined ? null : (
-          <p className="text-body text-fg-secondary max-w-[70ch]">{description}</p>
-        )}
+      <div className="flex items-start gap-[var(--vx-gap-md)]">
+        {icon === undefined ? null : <div className="mt-[2px] shrink-0">{icon}</div>}
+        <div className="flex flex-col gap-[var(--vx-gap-xs)]">
+          <h1 className="text-page font-body-bold text-fg">{title}</h1>
+          {description === undefined ? null : (
+            <p className="text-body text-fg-secondary max-w-[70ch]">{description}</p>
+          )}
+        </div>
       </div>
       {actions === undefined ? null : (
         <div className="flex shrink-0 items-center gap-[var(--vx-gap-sm)]">{actions}</div>

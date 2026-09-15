@@ -71,6 +71,9 @@ export {
   type BrandResolution,
 } from './tokens/brand.js';
 
+/** The product's own mark, which is not the tenant's brand — see §4.5. */
+export { ProductMark, type ProductMarkProps, type ProductMarkTone } from './brand/ProductMark.js';
+
 export { VertexProvider, type VertexProviderProps } from './providers/VertexProvider.js';
 export { DensityScope, densityAtLeast, type DensityScopeProps } from './providers/DensityScope.js';
 export {

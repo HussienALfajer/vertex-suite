@@ -63,8 +63,15 @@ jobs:
       # confusing browser failure.
       - run: pnpm build
 
+      # Every app that has journeys, rather than a named one: an app added
+      # without its browser is an app whose journeys are skipped in the one
+      # place nobody is watching.
+      #
+      # One at a time, because `--with-deps` shells out to apt and two of those
+      # at once fight over the dpkg lock — which fails the job with a code that
+      # says nothing about browsers at all.
       - name: Install the browser the journeys run in
-        run: pnpm --filter @vertex/sandbox exec playwright install --with-deps chromium
+        run: pnpm --filter "./apps/*" --workspace-concurrency=1 exec playwright install --with-deps chromium
 
       # §13: keyboard-only, light and dark. A focus ring that is invisible in
       # one theme is a focus ring that does not exist for half the day.
@@ -74,5 +81,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.os }}
-          path: apps/sandbox/test-results/
+          path: apps/*/test-results/
           retention-days: 7
