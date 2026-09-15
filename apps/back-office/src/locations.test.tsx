@@ -2,15 +2,18 @@ import { cleanup, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogue } from './catalogue.js';
+import { developmentSystem } from './dev-system.js';
 import {
   chooseOption,
   enterTheShop,
   firstButton,
   goTo,
   registerCompany,
+  PEOPLE,
   startAt,
   type OpenShop,
 } from './screens.fixture.js';
+import type { SystemOfRecord } from './system.js';
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -77,6 +80,51 @@ describe('Stock locations — SYS-09', () => {
     });
     await openLocation(shop, 'صالة حمص');
     expect(await screen.findByRole('rowheader', { name: 'صالة حمص' })).toBeTruthy();
+  });
+
+  it('never shows one branch’s locations under the name of another', async () => {
+    // The moment between choosing a branch and its answer arriving is the whole
+    // of this test. A held read stands in for the transport `U07` puts under
+    // the port: over a memory store the gap is a microtask, and over a shop
+    // network it is as long as the request takes.
+    let release: (() => void) | undefined;
+    let held: Promise<void> | null = null;
+
+    const real = developmentSystem({ people: PEOPLE });
+    const gated: SystemOfRecord = {
+      signIn: real.signIn.bind(real),
+      organisation: {
+        ...real.organisation,
+        locations: {
+          ...real.organisation.locations,
+          list: async (branch, listing) => {
+            const answer = await real.organisation.locations.list(branch, listing);
+            if (held !== null) await held;
+            return answer;
+          },
+        },
+      },
+    };
+
+    const shop = await enterTheShop(gated);
+    await registerCompany(shop, 'مؤسسة الشام');
+    await goTo(shop, catalogue['nav.branches']);
+    for (const branch of ['حلب', 'حمص']) await openBranch(shop, branch);
+    await goTo(shop, catalogue['nav.locations']);
+    await openLocation(shop, 'صالة حلب');
+    await screen.findByRole('rowheader', { name: 'صالة حلب' });
+
+    held = new Promise<void>((settle) => {
+      release = settle;
+    });
+    await chooseOption(shop, catalogue['locations.branch'], 'حمص');
+
+    // Aleppo's shop floor is not in Homs, and the screen now says Homs.
+    expect(screen.queryByRole('rowheader', { name: 'صالة حلب' })).toBeNull();
+
+    held = null;
+    release?.();
+    expect(await screen.findByText(catalogue['locations.empty'])).toBeTruthy();
   });
 
   it('sends somebody to open a branch first', async () => {

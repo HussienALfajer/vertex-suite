@@ -60,7 +60,7 @@ export function Branches(): ReactNode {
   const toast = useToast();
   const goTo = useNavigateTo();
   const route = useRoute();
-  const { companies, branches, isLoading, run } = useOrganisation();
+  const { companies, branches, isLoading, unreachable, run } = useOrganisation();
   const messageFor = useDeliveryMessage();
 
   const [query, setQuery] = useState('');
@@ -176,6 +176,21 @@ export function Branches(): ReactNode {
     ...companies.map((one) => ({ id: one.id, label: one.name })),
   ];
 
+  // The same three states as the companies screen, and for the same reason:
+  // an empty shop invites, a shop that could not be read explains, and the two
+  // must not be shown as each other.
+  if (companies.length === 0 && unreachable) {
+    return (
+      <>
+        <PageHeader
+          title={translator.format('branches.title')}
+          description={translator.format('branches.description')}
+        />
+        <StaleBanner />
+      </>
+    );
+  }
+
   if (companies.length === 0 && !isLoading) {
     return (
       <>
@@ -222,7 +237,7 @@ export function Branches(): ReactNode {
 
       <StaleBanner />
 
-      {branches.length === 0 && !isLoading ? (
+      {branches.length === 0 && unreachable ? null : branches.length === 0 && !isLoading ? (
         <EmptyState
           message={translator.format('branches.empty')}
           description={translator.format('branches.empty.explanation')}
@@ -353,6 +368,11 @@ function NewBranchDialog({
     name: false,
   });
 
+  // **Opening it is the only thing that fills it in**, and the dependency list
+  // says so by naming nothing else. `companies` is a fresh array after every
+  // reload — and a reload follows every successful command — so listing it here
+  // cleared a half-typed branch name the moment anything else in the
+  // application refreshed the structure underneath the dialog.
   useEffect(() => {
     if (!isOpen) return;
     // A shop with one company never answers this question; a shop that filtered
@@ -362,7 +382,7 @@ function NewBranchDialog({
     setRefused(null);
     setMissing({ company: false, name: false });
     setIsWorking(false);
-  }, [isOpen, only, preferred, companies]);
+  }, [isOpen]);
 
   async function attempt(): Promise<void> {
     if (isWorking) return;

@@ -177,6 +177,12 @@ describe('Companies — SYS-09', () => {
     // A refusal means the shop said no; this means nobody was asked, and the
     // two must not look alike on a screen somebody acts on.
     expect(await screen.findByText(catalogue['data.unreachable'])).toBeTruthy();
+
+    // And it must not say the shop has no companies. An empty shop and a shop
+    // that could not be read are indistinguishable from here and call for
+    // opposite reactions — one is an invitation to set the shop up, the other
+    // is a reason to check the connection.
+    expect(screen.queryByText(catalogue['companies.empty'])).toBeNull();
   });
 });
 

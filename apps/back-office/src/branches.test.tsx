@@ -2,15 +2,18 @@ import { cleanup, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogue } from './catalogue.js';
+import { developmentSystem } from './dev-system.js';
 import {
   chooseOption,
   enterTheShop,
   firstButton,
   goTo,
   registerCompany,
+  PEOPLE,
   startAt,
   type OpenShop,
 } from './screens.fixture.js';
+import type { SystemOfRecord } from './system.js';
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -106,6 +109,41 @@ describe('Branches — SYS-09', () => {
     await shop.person.click(screen.getByRole('button', { name: catalogue['branches.locations'] }));
 
     expect(await screen.findByText(catalogue['locations.empty'])).toBeTruthy();
+  });
+
+  it('keeps a half-typed name when the structure refreshes underneath the dialog', async () => {
+    // Every successful command re-reads the shop, and that read arrives some
+    // time later. Somebody who opens the dialog again in the meantime is typing
+    // over a list that is about to be replaced — and the dialog used to clear
+    // itself when it was, because the replacement was a new array.
+    const real = developmentSystem({ people: PEOPLE });
+    const slow: SystemOfRecord = {
+      signIn: real.signIn.bind(real),
+      organisation: {
+        ...real.organisation,
+        companies: {
+          ...real.organisation.companies,
+          list: async (listing) => {
+            const answer = await real.organisation.companies.list(listing);
+            await new Promise((settle) => globalThis.setTimeout(settle, 400));
+            return answer;
+          },
+        },
+      },
+    };
+
+    const shop = await enterTheShop(slow);
+    await registerCompany(shop, 'مؤسسة الشام');
+    await goTo(shop, catalogue['nav.branches']);
+    await openBranch(shop, 'حلب');
+
+    await shop.person.click(firstButton(catalogue['branches.open']));
+    await shop.person.type(screen.getByLabelText(catalogue['branches.new.name']), 'حمص');
+    await new Promise((settle) => globalThis.setTimeout(settle, 700));
+
+    expect(screen.getByLabelText<HTMLInputElement>(catalogue['branches.new.name']).value).toBe(
+      'حمص',
+    );
   });
 
   it('withdraws a branch from use and puts it back', async () => {

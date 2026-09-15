@@ -67,7 +67,7 @@ export function Locations(): ReactNode {
   const toast = useToast();
   const goTo = useNavigateTo();
   const route = useRoute();
-  const { branches, isLoading, run, ofRecord } = useOrganisation();
+  const { branches, isLoading, unreachable, run, ofRecord } = useOrganisation();
   const messageFor = useDeliveryMessage();
 
   const [query, setQuery] = useState('');
@@ -184,6 +184,19 @@ export function Locations(): ReactNode {
     },
   ];
 
+  // The same three states as the companies screen, and for the same reason.
+  if (branches.length === 0 && unreachable) {
+    return (
+      <>
+        <PageHeader
+          title={translator.format('locations.title')}
+          description={translator.format('locations.description')}
+        />
+        <StaleBanner />
+      </>
+    );
+  }
+
   if (branches.length === 0 && !isLoading) {
     return (
       <>
@@ -254,7 +267,8 @@ export function Locations(): ReactNode {
         />
       </ListingBar>
 
-      {(locations.value ?? []).length === 0 && !locations.isLoading ? (
+      {locations.unreachable ? null : (locations.value ?? []).length === 0 &&
+        !locations.isLoading ? (
         <EmptyState
           message={translator.format('locations.empty')}
           description={translator.format('locations.empty.explanation')}

@@ -52,7 +52,7 @@ export function Companies(): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
   const goTo = useNavigateTo();
-  const { companies, branches, isLoading, run } = useOrganisation();
+  const { companies, branches, isLoading, unreachable, run } = useOrganisation();
   const messageFor = useDeliveryMessage();
 
   const [query, setQuery] = useState('');
@@ -190,7 +190,11 @@ export function Companies(): ReactNode {
 
       <StaleBanner />
 
-      {companies.length === 0 && !isLoading ? (
+      {/* An empty shop and a shop that could not be read look identical from
+          here and call for opposite reactions, so the invitation to register
+          the first company is only offered when the list is known to be
+          empty. Otherwise the banner above says what actually happened. */}
+      {companies.length === 0 && !isLoading && !unreachable ? (
         <EmptyState
           message={translator.format('companies.empty')}
           description={translator.format('companies.empty.explanation')}

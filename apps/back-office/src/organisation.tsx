@@ -210,15 +210,19 @@ export interface Loaded<T> {
  * `BranchId` back, so nothing here has to be cast into the shape the contract
  * asks for.
  *
- * A read that is overtaken is discarded rather than applied. Switching branches
- * twice quickly would otherwise settle on whichever answer was slower, and show
- * one branch's locations under another branch's name.
+ * A read that is overtaken is discarded rather than applied, and **what is held
+ * is held with the subject it answers for**. Both matter and they are different
+ * failures: without the first, switching branches twice quickly settles on
+ * whichever answer was slower; without the second, the moment between choosing
+ * a branch and its answer arriving shows the previous branch's locations under
+ * the new branch's name — briefly over a memory store, and for as long as the
+ * request takes once `U07` puts a transport underneath.
  */
 export function useLoaded<Subject extends string, T>(
   subject: Subject | null,
   read: (subject: Subject) => Promise<T>,
 ): Loaded<T> {
-  const [value, setValue] = useState<T | null>(null);
+  const [held, setHeld] = useState<{ subject: Subject; data: T } | null>(null);
   const [isLoading, setIsLoading] = useState(subject !== null);
   const [unreachable, setUnreachable] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -231,7 +235,7 @@ export function useLoaded<Subject extends string, T>(
 
   useEffect(() => {
     if (subject === null) {
-      setValue(null);
+      setHeld(null);
       setIsLoading(false);
       setUnreachable(false);
       return undefined;
@@ -245,11 +249,11 @@ export function useLoaded<Subject extends string, T>(
       try {
         const answer = await current.current(subject);
         if (mine !== latest.current) return;
-        setValue(answer);
+        setHeld({ subject, data: answer });
         setUnreachable(false);
       } catch {
         if (mine !== latest.current) return;
-        setValue(null);
+        setHeld(null);
         setUnreachable(true);
       } finally {
         if (mine === latest.current) setIsLoading(false);
@@ -268,6 +272,9 @@ export function useLoaded<Subject extends string, T>(
     setGeneration((was) => was + 1);
   }, []);
 
+  // The answer is handed out only for the subject it is an answer to, so a
+  // caller never renders one record's contents under another record's name.
+  const value = held !== null && held.subject === subject ? held.data : null;
   return { value, isLoading, unreachable, reload };
 }
 
