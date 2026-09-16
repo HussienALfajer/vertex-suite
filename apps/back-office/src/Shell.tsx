@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Button, Page, SideNav, useTranslator, VertexLogo, type NavItem } from '@vertex/ui';
 
+import { ChangePasswordDialog } from './ChangePasswordDialog.js';
 import { useOrganisation } from './organisation.js';
 import { hrefOf, useRoute, type RouteName } from './routing.js';
 import { BusinessProfile } from './screens/BusinessProfile.js';
@@ -10,6 +11,8 @@ import { Companies } from './screens/Companies.js';
 import { Locations } from './screens/Locations.js';
 import { Numbering } from './screens/Numbering.js';
 import { Registers } from './screens/Registers.js';
+import { Roles } from './screens/Roles.js';
+import { Users } from './screens/Users.js';
 import { useSession } from './session.js';
 
 /**
@@ -31,6 +34,7 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
   const { session, signOut } = useSession();
   const { businessName } = useOrganisation();
   const route = useRoute();
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const items: readonly NavItem[] = [
     {
@@ -69,6 +73,18 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       href: hrefOf('numbering'),
       icon: <NumberingIcon />,
     },
+    {
+      id: 'users',
+      label: translator.format('nav.users'),
+      href: hrefOf('users'),
+      icon: <UsersIcon />,
+    },
+    {
+      id: 'roles',
+      label: translator.format('nav.roles'),
+      href: hrefOf('roles'),
+      icon: <RolesIcon />,
+    },
   ];
 
   return (
@@ -90,6 +106,13 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
           </div>
           <div className="flex shrink-0 items-center gap-[var(--vx-gap-sm)]">
             {themeSwitch}
+            <Button
+              onPress={() => {
+                setIsChangingPassword(true);
+              }}
+            >
+              {translator.format('shell.account.action')}
+            </Button>
             <Button onPress={signOut}>{translator.format('shell.signOut')}</Button>
           </div>
         </header>
@@ -104,6 +127,7 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       }
     >
       <Screen name={route.name} />
+      <ChangePasswordDialog isOpen={isChangingPassword} onOpenChange={setIsChangingPassword} />
     </Page>
   );
 }
@@ -129,6 +153,10 @@ function Screen({ name }: { readonly name: RouteName }): ReactNode {
       return <Registers />;
     case 'numbering':
       return <Numbering />;
+    case 'users':
+      return <Users />;
+    case 'roles':
+      return <Roles />;
   }
 }
 
@@ -194,6 +222,31 @@ function NumberingIcon(): ReactNode {
     <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
       <rect x="2.5" y="5" width="15" height="10" rx="1.5" />
       <path d="M6 8v4M9 8v4M12 8v4M15 8v4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Two people: who works here, not any one of them. */
+function UsersIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <circle cx="7.5" cy="6.5" r="2.5" />
+      <path d="M2.5 17v-1a5 5 0 015-5h0a5 5 0 015 5v1" strokeLinejoin="round" />
+      <path
+        d="M13 6.75a2.5 2.5 0 010 4.9M15.5 17v-1a4.98 4.98 0 00-2.5-4.33"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** A badge on a ribbon: what a role is, not who holds it. */
+function RolesIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <circle cx="10" cy="7" r="4" />
+      <path d="M7.5 10.3L6 17.5l4-2 4 2-1.5-7.2" strokeLinejoin="round" />
     </svg>
   );
 }

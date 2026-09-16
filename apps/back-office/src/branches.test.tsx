@@ -119,6 +119,7 @@ describe('Branches — SYS-09', () => {
     const real = developmentSystem({ people: PEOPLE });
     const slow: SystemOfRecord = {
       signIn: real.signIn.bind(real),
+      changeOwnPassword: real.changeOwnPassword.bind(real),
       organisation: {
         ...real.organisation,
         companies: {
@@ -130,6 +131,7 @@ describe('Branches — SYS-09', () => {
           },
         },
       },
+      users: real.users,
     };
 
     const shop = await enterTheShop(slow);

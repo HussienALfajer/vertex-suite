@@ -93,6 +93,7 @@ describe('Stock locations — SYS-09', () => {
     const real = developmentSystem({ people: PEOPLE });
     const gated: SystemOfRecord = {
       signIn: real.signIn.bind(real),
+      changeOwnPassword: real.changeOwnPassword.bind(real),
       organisation: {
         ...real.organisation,
         locations: {
@@ -104,6 +105,7 @@ describe('Stock locations — SYS-09', () => {
           },
         },
       },
+      users: real.users,
     };
 
     const shop = await enterTheShop(gated);

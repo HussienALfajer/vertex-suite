@@ -15,6 +15,7 @@
     "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@vertex/contracts": "workspace:*",
     "@vertex/i18n": "workspace:*",
     "@vertex/kernel": "workspace:*",
     "@vertex/platform": "workspace:*",

@@ -1,5 +1,14 @@
 import type { Result } from '@vertex/kernel';
-import type { Authenticated, SecRefusal } from '@vertex/sec/contract';
+import type {
+  Assignment,
+  Authenticated,
+  NewAssignment,
+  NewRole,
+  NewUser,
+  Role,
+  SecRefusal,
+  User,
+} from '@vertex/sec/contract';
 import type {
   Branch,
   BusinessProfile,
@@ -59,6 +68,9 @@ type CompanyId = Company['id'];
 type BranchId = Branch['id'];
 type LocationId = Location['id'];
 type RegisterId = Register['id'];
+type UserId = User['id'];
+type RoleId = Role['id'];
+type PermissionId = Role['rights'][number];
 
 type Outcome<T> = Promise<Result<T, OrganisationRefusal>>;
 /**
@@ -70,6 +82,8 @@ type Outcome<T> = Promise<Result<T, OrganisationRefusal>>;
  * would let a screen claim to handle one it has never heard of.
  */
 type Numbered<T> = Promise<Result<T, NumberingRefusal>>;
+/** `SEC` refuses in its own vocabulary too, and for the same reason. */
+type Secured<T> = Promise<Result<T, SecRefusal>>;
 
 /**
  * `SYS-09` and `SYS-05` as a screen uses them.
@@ -172,6 +186,66 @@ export interface OrganisationOfRecord {
   };
 }
 
+/**
+ * A right a module has declared, as the role editor needs it: the identifier
+ * a grant names, and whether granting it is sensitive (`SEC-05`).
+ *
+ * Not `PermissionDeclaration` itself — that is `@vertex/platform`'s own shape,
+ * carrying a `labelKey` this application never reads. This screen names every
+ * right through `nameOfPermission` (`catalogue.ts`), keyed on the identifier
+ * alone, so the same right is worded identically wherever it appears: in a
+ * refusal, in a role's own row here. A second source of words for the same
+ * right is exactly the drift that convention exists to prevent.
+ */
+export interface DeclaredRight {
+  readonly id: PermissionId;
+  readonly sensitive: boolean;
+}
+
+/**
+ * `SEC-09`, `SEC-01`, `SEC-02` and `SEC-04` as the users and roles screens use
+ * them.
+ *
+ * It is `UserDirectory`, `UserAdministration`, `RoleDirectory` and
+ * `RoleAdministration` with the same thing taken out as `OrganisationOfRecord`:
+ * the `CommandContext`. Everything that remains is `SEC`'s own vocabulary.
+ *
+ * `SEC` cannot be composed in this browser at all (`dev-system.ts` says why:
+ * password hashing needs a runtime no browser has), so unlike `organisation`
+ * above — the real `SYS` hosted here — this port is answered by a development
+ * stand-in until `U07` brings a transport to the store node, where the real
+ * module actually runs. The shape does not change when it does.
+ */
+export interface UsersOfRecord {
+  list(listing?: Listing): Promise<readonly User[]>;
+  enrol(input: NewUser): Secured<User>;
+  rename(id: UserId, name: string): Secured<User>;
+  deactivate(id: UserId): Secured<User>;
+  reactivate(id: UserId): Secured<User>;
+  resetPassword(id: UserId, password: string): Secured<User>;
+  forceSignOut(id: UserId): Secured<User>;
+  readonly roles: {
+    /** The tenant's roles, `SEC-01`'s seven among them. */
+    list(listing?: Listing): Promise<readonly Role[]>;
+    /** Every right this edition's modules declare, for the grid (`SEC-02`). */
+    rights(): Promise<readonly DeclaredRight[]>;
+    define(input: NewRole): Secured<Role>;
+    rename(id: RoleId, name: string): Secured<Role>;
+    grant(id: RoleId, rights: readonly PermissionId[]): Secured<Role>;
+    revoke(id: RoleId, rights: readonly PermissionId[]): Secured<Role>;
+    /** Named as the contract names them (`RoleAdministration.roles`): a role is withdrawn, never deleted. */
+    withdraw(id: RoleId): Secured<Role>;
+    restore(id: RoleId): Secured<Role>;
+  };
+  readonly assignments: {
+    of(user: UserId): Promise<readonly Assignment[]>;
+    /** Every assignment of one role, across every user who holds it (`SEC-04`). */
+    holdersOf(role: RoleId): Promise<readonly Assignment[]>;
+    assign(input: NewAssignment): Secured<Assignment>;
+    withdraw(user: UserId, role: RoleId): Secured<Assignment>;
+  };
+}
+
 export interface SystemOfRecord {
   /**
    * A password verified against a sign-in, and nothing more.
@@ -183,5 +257,17 @@ export interface SystemOfRecord {
    */
   signIn(attempt: SignInAttempt): Promise<Result<Authenticated, SecRefusal>>;
 
+  /**
+   * `Credentials.changeOwnPassword`, as the account screen uses it.
+   *
+   * On the signed-in person's own record rather than under `users`: this is
+   * `SEC`'s own vocabulary for the one command whose subject is always the
+   * caller, available to everybody whether their sign-in is shared with another
+   * tenant or not (`SEC-09`). It asks for nobody's identifier, because it could
+   * not name anybody but the person already signed in.
+   */
+  changeOwnPassword(current: string, next: string): Secured<void>;
+
   readonly organisation: OrganisationOfRecord;
+  readonly users: UsersOfRecord;
 }

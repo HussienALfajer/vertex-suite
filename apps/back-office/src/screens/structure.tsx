@@ -1,16 +1,21 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import {
   Badge,
   Banner,
   Button,
+  Checkbox,
   Dialog,
   SearchInput,
+  Select,
   Switch,
   TextInput,
   useAttempt,
   useTranslator,
+  type SelectOption,
 } from '@vertex/ui';
+import type { Role } from '@vertex/sec/contract';
+import type { Branch } from '@vertex/sys/contract';
 
 import { useOrganisation } from '../organisation.js';
 
@@ -102,6 +107,111 @@ export function matchesQuery(name: string, query: string): boolean {
   const fold = (value: string): string => value.normalize('NFC').trim().toLowerCase();
   const wanted = fold(query);
   return wanted === '' || fold(name).includes(wanted);
+}
+
+/**
+ * A role's own name — what a tenant typed, or the terminology layer's word for
+ * one of `SEC-01`'s seven while nobody has renamed it.
+ *
+ * Shared by `Users.tsx`'s scope dialog and `Roles.tsx`, which both render the
+ * same `Role` records from opposite sides of the same assignment.
+ */
+export function roleLabel(translator: ReturnType<typeof useTranslator>, role: Role): string {
+  if (role.name !== null) return role.name;
+  return role.seeded === null
+    ? translator.format('permission.unknown')
+    : translator.format(`role.${role.seeded}`);
+}
+
+/**
+ * Every named branch, joined the way the locale in force joins a list —
+ * `Intl.ListFormat` rather than a written-out separator, which §12 refuses in
+ * code: even a comma is a choice a locale makes, and Arabic's is not a Latin
+ * one followed by a space.
+ *
+ * Shared by `Users.tsx`'s scope dialog and `Roles.tsx`'s holders section: both
+ * say the same sentence about a confinement, one from the user's side and one
+ * from the role's, and a confinement reads on screen the same way from either.
+ */
+export function branchNames(
+  formattingLocale: string,
+  branches: readonly Branch[],
+  ids: readonly Branch['id'][],
+): string {
+  const named = ids.map((id) => branches.find((one) => one.id === id)?.name ?? id);
+  return new Intl.ListFormat(formattingLocale, { style: 'long', type: 'conjunction' }).format(
+    named,
+  );
+}
+
+export interface ReachFieldsProps {
+  readonly branches: readonly Branch[];
+  readonly reach: 'tenant' | 'branches';
+  readonly onReachChange: (reach: 'tenant' | 'branches') => void;
+  readonly chosenBranches: ReadonlySet<string>;
+  readonly onChosenBranchesChange: (chosen: ReadonlySet<string>) => void;
+  readonly branchesMissing: boolean;
+}
+
+/**
+ * `SEC-04`'s reach, picked the same way wherever an assignment is made: every
+ * branch, or a chosen few. `Users.tsx`'s scope dialog fixes the role and picks
+ * among users; `Roles.tsx`'s holders section fixes the role and picks among
+ * users the other way round — both then ask this exact question, so it is
+ * asked once. `Confinement`'s own further narrowing, to specific locations
+ * within a branch, is not offered here yet for the reason `ScopeDialog`
+ * already gave: a control is built with the screen that first needs it.
+ */
+export function ReachFields({
+  branches,
+  reach,
+  onReachChange,
+  chosenBranches,
+  onChosenBranchesChange,
+  branchesMissing,
+}: ReachFieldsProps): ReactNode {
+  const translator = useTranslator();
+  const activeBranches = useMemo(() => branches.filter((one) => one.active), [branches]);
+  const reachOptions: readonly SelectOption[] = [
+    { id: 'tenant', label: translator.format('users.scope.tenantWide') },
+    { id: 'branches', label: translator.format('users.scope.someBranches') },
+  ];
+
+  return (
+    <>
+      <Select
+        label={translator.format('users.scope.reach')}
+        options={reachOptions}
+        value={reach}
+        onChange={(key) => {
+          onReachChange(key === 'branches' ? 'branches' : 'tenant');
+        }}
+      />
+      {reach === 'branches' ? (
+        <div className="flex flex-col gap-[var(--vx-gap-xs)]">
+          {activeBranches.map((branch) => (
+            <Checkbox
+              key={branch.id}
+              isSelected={chosenBranches.has(branch.id)}
+              onChange={(isSelected) => {
+                const next = new Set(chosenBranches);
+                if (isSelected) next.add(branch.id);
+                else next.delete(branch.id);
+                onChosenBranchesChange(next);
+              }}
+            >
+              {branch.name}
+            </Checkbox>
+          ))}
+          {branchesMissing ? (
+            <p className="text-footnote text-fg-danger">
+              {translator.format('users.scope.branches.required')}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 export interface NameDialogProps {
@@ -284,6 +394,27 @@ export function OpenListIcon(): ReactNode {
     <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
       <rect x="3" y="3.5" width="14" height="13" rx="2" />
       <path d="M6.5 8h7M6.5 11.5h4.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A shield with a keyhole: the security dialog — a password and the sessions behind it. */
+export function SecurityIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <path d="M10 2.5l6 2.5v4.5c0 4-2.5 6.7-6 7.9-3.5-1.2-6-3.9-6-7.9V5z" strokeLinejoin="round" />
+      <circle cx="10" cy="9.5" r="1.5" />
+      <path d="M10 11v2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A badge on a ribbon: the role a person is trusted with, and where it reaches. */
+export function ScopeIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <circle cx="10" cy="7" r="4" />
+      <path d="M7.5 10.3L6 17.5l4-2 4 2-1.5-7.2" strokeLinejoin="round" />
     </svg>
   );
 }

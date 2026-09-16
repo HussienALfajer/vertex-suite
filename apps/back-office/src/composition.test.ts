@@ -14,6 +14,7 @@ import {
   Credentials,
   RoleAdministration,
   secModule,
+  SEC_PERMISSIONS,
   TENANT_WIDE,
   UserAdministration,
   type Role,
@@ -259,5 +260,61 @@ describe('What the browser stand-in is allowed to claim — SEC-09', () => {
     expect(
       refusalOf(await shop.credentials.authenticate(shop.system, 'ahmad', 'till-morning-1')),
     ).toBe('sec.user-inactive');
+  });
+});
+
+/**
+ * `dev-system.ts` grew a hand-rolled role editor and a hand-rolled
+ * `changeOwnPassword` alongside its sign-in stand-in, once the screens that
+ * needed them arrived (`SEC-01`, `SEC-02`). Pinned here the same way: on the
+ * real module, in the one place it can run.
+ */
+describe('What the browser stand-in also claims — SEC-01, SEC-02, SEC-09', () => {
+  it('refuses to revoke the last role’s hold on editing roles', async () => {
+    const { owner, roles } = await aShopWithAnOwner();
+    const ownerRole = seededAs(roles, 'owner');
+
+    // A freshly seeded shop has exactly one role assigned to anybody, and it
+    // is this one — so taking `sec.role.edit` out of it leaves nobody who
+    // could ever put it back.
+    expect(
+      refusalOf(await shop.roles.roles.revoke(owner, ownerRole.id, [SEC_PERMISSIONS.role.edit])),
+    ).toBe('sec.last-owner');
+  });
+
+  it('lets a role keep editing roles once another one holds it too', async () => {
+    const { owner, roles } = await aShopWithAnOwner();
+    const ownerRole = seededAs(roles, 'owner');
+    const managerRole = seededAs(roles, 'manager');
+
+    taken(await shop.roles.roles.grant(owner, managerRole.id, [SEC_PERMISSIONS.role.edit]));
+    const person = taken(
+      await shop.users.enrol(owner, { handle: 'sara', name: 'سارة', password: 'till-morning-1' }),
+    );
+    taken(
+      await shop.roles.assignments.assign(owner, {
+        user: person.id,
+        role: managerRole.id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+
+    const revoked = taken(
+      await shop.roles.roles.revoke(owner, ownerRole.id, [SEC_PERMISSIONS.role.edit]),
+    );
+    expect(revoked.rights.includes(SEC_PERMISSIONS.role.edit)).toBe(false);
+  });
+
+  it('answers a wrong current password and a new one that is too short, from changeOwnPassword', async () => {
+    const { owner } = await aShopWithAnOwner();
+
+    expect(
+      refusalOf(
+        await shop.credentials.changeOwnPassword(owner, 'not-the-password', 'brand-new-one'),
+      ),
+    ).toBe('sec.password-wrong');
+    expect(
+      refusalOf(await shop.credentials.changeOwnPassword(owner, 'till-morning-1', 'short')),
+    ).toBe('sec.password-too-short');
   });
 });

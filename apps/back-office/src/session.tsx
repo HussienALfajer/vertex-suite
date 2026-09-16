@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { isOk, type Result } from '@vertex/kernel';
 import type { Authenticated, SecRefusal } from '@vertex/sec/contract';
 
+import type { Delivery } from './organisation.js';
 import type { SignInAttempt, SystemOfRecord } from './system.js';
 
 /**
@@ -31,6 +32,12 @@ export interface SessionState {
   readonly session: Session | null;
   readonly signIn: (attempt: SignInAttempt) => Promise<Result<Authenticated, SecRefusal>>;
   readonly signOut: () => void;
+  /**
+   * `Credentials.changeOwnPassword`, wrapped the way every command in this
+   * application is: a network failure is `unreachable` rather than a thrown
+   * error a dialog would have to catch for itself.
+   */
+  readonly changeOwnPassword: (current: string, next: string) => Promise<Delivery<void>>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -58,9 +65,22 @@ export function SessionProvider({ system, children }: SessionProviderProps): Rea
     setSession(null);
   }, []);
 
+  const changeOwnPassword = useCallback(
+    async (current: string, next: string): Promise<Delivery<void>> => {
+      try {
+        const outcome = await system.changeOwnPassword(current, next);
+        if (!isOk(outcome)) return { kind: 'refused', refusal: outcome.error };
+        return { kind: 'done', value: outcome.value };
+      } catch {
+        return { kind: 'unreachable' };
+      }
+    },
+    [system],
+  );
+
   const value = useMemo<SessionState>(
-    () => ({ session, signIn, signOut }),
-    [session, signIn, signOut],
+    () => ({ session, signIn, signOut, changeOwnPassword }),
+    [session, signIn, signOut, changeOwnPassword],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
