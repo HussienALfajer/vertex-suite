@@ -1,6 +1,15 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import { Banner, Button, Dialog, Panel, TextArea, useToast, useTranslator } from '@vertex/ui';
+import {
+  Banner,
+  Button,
+  Dialog,
+  Panel,
+  TextArea,
+  useAttempt,
+  useToast,
+  useTranslator,
+} from '@vertex/ui';
 import {
   GeoMap,
   PointPicker,
@@ -112,47 +121,40 @@ export function PlaceDialog({
 
   const [address, setAddress] = useState('');
   const [point, setPoint] = useState<PickedPoint | null>(null);
-  const [isWorking, setIsWorking] = useState(false);
-  const [refused, setRefused] = useState<string | null>(null);
-
   // Named on the subject alone: a reload follows every command, and listing
   // anything that a reload replaces would throw away a half-moved pin the
   // moment something else in the application refreshed the structure.
-  useEffect(() => {
+  const { isWorking, refused, attempt } = useAttempt(subject, () => {
     if (subject === null) return;
     setAddress(subject.address);
     setPoint(subject.point);
-    setRefused(null);
-    setIsWorking(false);
-  }, [subject]);
+  });
 
   async function save(): Promise<void> {
-    if (subject === null || isWorking) return;
-    setIsWorking(true);
-    setRefused(null);
-
+    if (subject === null) return;
     const of = subject;
     const wanted = point;
-    const addressed = await run((port) => commands.readdress(port, of.id, address));
-    const addressMessage = messageFor(addressed);
-    let placeMessage: string | null = null;
-    if (addressMessage === null) {
-      const located = await run((port) => commands.locate(port, of.id, wanted));
-      placeMessage = messageFor(located);
-    }
-    setIsWorking(false);
 
-    // The address is committed the moment it is sent without refusal, whether
-    // or not the point that follows it is. A later refusal of the point must
-    // not read back as if the address change never happened either.
-    if (addressMessage === null) onSaved();
+    await attempt(async () => {
+      const addressed = await run((port) => commands.readdress(port, of.id, address));
+      const addressMessage = messageFor(addressed);
+      let placeMessage: string | null = null;
+      if (addressMessage === null) {
+        const located = await run((port) => commands.locate(port, of.id, wanted));
+        placeMessage = messageFor(located);
+      }
 
-    if (addressMessage === null && placeMessage === null) {
-      toast.show(translator.format('place.saved', { name: of.name }), { tone: 'success' });
-      onOpenChange(false);
-    } else {
-      setRefused(addressMessage ?? placeMessage);
-    }
+      // The address is committed the moment it is sent without refusal,
+      // whether or not the point that follows it is. A later refusal of the
+      // point must not read back as if the address change never happened.
+      if (addressMessage === null) onSaved();
+
+      if (addressMessage === null && placeMessage === null) {
+        toast.show(translator.format('place.saved', { name: of.name }), { tone: 'success' });
+        onOpenChange(false);
+      }
+      return addressMessage ?? placeMessage;
+    });
   }
 
   return (

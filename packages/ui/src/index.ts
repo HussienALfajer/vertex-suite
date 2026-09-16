@@ -117,6 +117,7 @@ export {
   type ConfirmationDialogProps,
   type DialogProps,
 } from './components/Dialog.js';
+export { useAttempt, type Attempt } from './components/useAttempt.js';
 export {
   actionsColumnWidth,
   DataTable,

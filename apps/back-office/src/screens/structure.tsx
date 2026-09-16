@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import {
   Badge,
@@ -8,6 +8,7 @@ import {
   SearchInput,
   Switch,
   TextInput,
+  useAttempt,
   useTranslator,
 } from '@vertex/ui';
 
@@ -135,20 +136,16 @@ export function NameDialog({
 }: NameDialogProps): ReactNode {
   const translator = useTranslator();
   const [name, setName] = useState(initialName);
-  const [isWorking, setIsWorking] = useState(false);
-  const [refused, setRefused] = useState<string | null>(null);
   const [isMissing, setIsMissing] = useState(false);
-
-  // Opening it is what resets it, not closing: a dialog that cleared itself on
-  // the way out would blank the field somebody is still watching as it fades.
-  useEffect(() => {
-    if (isOpen) {
-      setName(initialName);
-      setRefused(null);
-      setIsMissing(false);
-      setIsWorking(false);
-    }
-  }, [isOpen, initialName]);
+  const {
+    isWorking,
+    refused,
+    setRefused,
+    attempt: attemptWith,
+  } = useAttempt(isOpen, () => {
+    setName(initialName);
+    setIsMissing(false);
+  });
 
   async function attempt(): Promise<void> {
     if (isWorking) return;
@@ -161,12 +158,11 @@ export function NameDialog({
       return;
     }
 
-    setIsWorking(true);
-    setRefused(null);
-    const message = await onSubmit(name.trim());
-    setIsWorking(false);
-    if (message === null) onOpenChange(false);
-    else setRefused(message);
+    await attemptWith(async () => {
+      const message = await onSubmit(name.trim());
+      if (message === null) onOpenChange(false);
+      return message;
+    });
   }
 
   return (
