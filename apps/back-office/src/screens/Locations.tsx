@@ -137,6 +137,7 @@ export function Locations(): ReactNode {
               lat: chosen.point.lat,
               lng: chosen.point.lng,
               isActive: chosen.active,
+              address: chosen.address,
             },
           ];
 
@@ -149,6 +150,7 @@ export function Locations(): ReactNode {
         lat: one.point.lat,
         lng: one.point.lng,
         isActive: one.active,
+        address: one.address,
       });
     }
     return here;

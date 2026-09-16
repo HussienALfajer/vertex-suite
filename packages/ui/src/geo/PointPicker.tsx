@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { Banner } from '../components/Banner.js';
 import { Button, IconButton } from '../components/Button.js';
+import { SearchInput } from '../components/SearchInput.js';
 import { TextInput } from '../components/TextInput.js';
 import { focusRing } from '../components/styles.js';
 import { useTranslator } from '../providers/context.js';
+import type { FoundPlace, PlaceSearch } from './geocode.js';
 import { BaseLayer, OUTLINE_MAX_ZOOM, zoomCeilingOf, type Basemap } from './BaseLayer.js';
 import { asLatLng } from './GeoMap.js';
 import { homeCentre, homeExtent } from './atlas.js';
@@ -42,6 +44,12 @@ export interface PointPickerProps {
   /** Other places already marked, drawn faintly so a new one can be put beside them. */
   readonly around?: readonly PickedPoint[];
   readonly basemap?: Basemap;
+  /**
+   * Finding a place by name. Absent means no search box — everything else still
+   * works, which is the point: this is the one part of `SYS-14` that needs a
+   * line, so it is a capability granted rather than a dependency assumed.
+   */
+  readonly search?: PlaceSearch;
   readonly className?: string;
 }
 
@@ -59,6 +67,12 @@ const CLOSE_ZOOM = 13;
 
 /** Six decimal places, the same as the store keeps (`sys/place.ts`). */
 const PLACES = 6;
+
+/** Long enough for a search to mean something. Two letters match half a country. */
+const SHORTEST_SEARCH = 3;
+
+/** A pause long enough to be a word rather than a keystroke. */
+const SEARCH_AFTER_MS = 500;
 
 /**
  * What the browser said when asked where the device is.
@@ -86,6 +100,7 @@ export function PointPicker({
   onChange,
   around = [],
   basemap = { kind: 'outlines' },
+  search,
   className,
 }: PointPickerProps): ReactNode {
   const translator = useTranslator();
@@ -133,6 +148,61 @@ export function PointPicker({
   );
 
   const gestures = useMapGestures({ view, viewport, onChange: setMoved, onPick: pick });
+
+  /**
+   * Searching for a place by name.
+   *
+   * Debounced and abortable, which is not politeness: a request per keystroke
+   * is both a worse experience — answers arriving out of order and overwriting
+   * each other — and an abuse of a service that asks callers not to do it. One
+   * search is in flight at a time, and the one before it is cancelled rather
+   * than left to land late and replace a newer answer.
+   */
+  const [looking, setLooking] = useState('');
+  const [found, setFound] = useState<readonly FoundPlace[]>([]);
+  const [searchState, setSearchState] = useState<'idle' | 'searching' | 'empty' | 'failed'>('idle');
+
+  useEffect(() => {
+    const wanted = looking.trim();
+    if (search === undefined || wanted.length < SHORTEST_SEARCH) {
+      setFound([]);
+      setSearchState('idle');
+      return;
+    }
+
+    const abandon = new AbortController();
+    const waiting = setTimeout(() => {
+      setSearchState('searching');
+      void search(wanted, abandon.signal)
+        .then((places) => {
+          if (abandon.signal.aborted) return;
+          setFound(places);
+          setSearchState(places.length === 0 ? 'empty' : 'idle');
+        })
+        .catch(() => {
+          // Every failure is one sentence, on purpose. A person who typed a
+          // place name does not need to know whether the line is down, the
+          // service is busy or the answer was malformed — only that typing is
+          // not the way in today, and that the map below still is.
+          if (abandon.signal.aborted) return;
+          setFound([]);
+          setSearchState('failed');
+        });
+    }, SEARCH_AFTER_MS);
+
+    return () => {
+      clearTimeout(waiting);
+      abandon.abort();
+    };
+  }, [looking, search]);
+
+  function takeFound(place: FoundPlace): void {
+    onChange({ lat: place.lat, lng: place.lng });
+    setMoved({ centre: { lat: Number(place.lat), lng: Number(place.lng) }, zoom: closeZoom });
+    setLooking('');
+    setFound([]);
+    setSearchState('idle');
+  }
 
   // Following the value rather than owning it: a point set by pasting a link
   // has to bring the map with it, or the marker lands off-screen and the person
@@ -211,7 +281,45 @@ export function PointPicker({
 
   return (
     <div className={clsx('flex flex-col gap-[var(--vx-gap-md)]', className)}>
-      <div className="border-line rounded-card relative isolate h-[18rem] overflow-hidden border">
+      {search === undefined ? null : (
+        <div className="flex flex-col gap-[var(--vx-gap-xs)]">
+          <SearchInput
+            label={translator.format('picker.search')}
+            isLabelVisible
+            placeholder={translator.format('picker.search.placeholder')}
+            value={looking}
+            onChange={setLooking}
+          />
+          {found.length === 0 ? null : (
+            <ul className="border-line rounded-card flex max-h-[11rem] flex-col overflow-auto border">
+              {found.map((place) => (
+                <li key={place.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      takeFound(place);
+                    }}
+                    className={clsx(
+                      'hover:bg-fill-ghost-hover w-full cursor-pointer text-start',
+                      'text-body text-fg px-[var(--vx-pad-md)] py-[var(--vx-pad-sm)]',
+                      focusRing,
+                    )}
+                  >
+                    {place.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {searchState === 'idle' ? null : (
+            <p className="text-footnote text-fg-secondary" role="status">
+              {translator.format(`picker.search.${searchState}`)}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="border-line rounded-card relative isolate h-[20rem] overflow-hidden border">
         <div
           ref={surface}
           dir="ltr"

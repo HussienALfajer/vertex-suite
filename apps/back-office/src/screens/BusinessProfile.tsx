@@ -299,16 +299,26 @@ export function BusinessProfile(): ReactNode {
       )}
       {isDirty ? <Banner tone="info">{translator.format('profile.unsaved')}</Banner> : null}
 
-      {/* A form has a measure and a table does not. Every field here is copied
-          from a document somebody is holding in the other hand, and a legal
-          name typed across eleven hundred pixels is a line they lose their
-          place in — so the form stops where reading stops being comfortable. */}
+      {/*
+        A **field** has a measure; a page does not. Every field here is copied
+        from a document somebody is holding in the other hand, and a legal name
+        typed across eleven hundred pixels is a line they lose their place in.
+
+        That was first read as a cap on the form, which put three panels in one
+        narrow column and left half the screen empty — a form that has stopped
+        rather than a page that has finished. The measure belongs to the fields,
+        so it is the **panels** that are two columns wide on a wide screen and
+        the grid inside each that keeps the inputs readable. Identity and tax
+        stand side by side; the receipt takes the full width, because what goes
+        in it is printed across a receipt and is read as lines rather than as
+        answers to questions.
+      */}
       <form
         onSubmit={(event) => {
           event.preventDefault();
           void save();
         }}
-        className="flex w-full max-w-[56rem] flex-col gap-[var(--vx-gap-lg)]"
+        className="grid w-full max-w-[96rem] gap-[var(--vx-gap-lg)] lg:grid-cols-2 lg:items-start"
       >
         <Panel title={translator.format('profile.section.identity')}>
           <div className="grid gap-[var(--vx-gap-md)] md:grid-cols-2">
@@ -358,7 +368,7 @@ export function BusinessProfile(): ReactNode {
           />
         </Panel>
 
-        <Panel title={translator.format('profile.section.receipt')}>
+        <Panel title={translator.format('profile.section.receipt')} className="lg:col-span-2">
           <div className="flex flex-col gap-[var(--vx-gap-md)]">
             <p className="text-footnote text-fg-muted">
               {translator.format('profile.receipt.description')}

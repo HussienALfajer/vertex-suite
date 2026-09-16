@@ -68,12 +68,24 @@ test('places a branch and draws it, with every request refused', async ({ page }
   await expect(map).toBeVisible();
   await expect(map.getByRole('button', { name: 'حلب' })).toBeVisible();
 
-  // The land is drawn from geometry that shipped, so there is something under
-  // the marker rather than an empty box with a pin floating in it.
+  // The land is drawn from geometry that shipped, so what is under the marker
+  // is a country rather than an empty box with a pin floating in it — with
+  // every tile refused.
   await expect(map.locator('svg path').first()).toBeVisible();
+  expect(await map.locator('svg path').count()).toBeGreaterThan(5);
 
-  // Nothing left the machine. Not a tile, not a geocode, not a beacon.
-  expect(offsite).toEqual([]);
+  // Everything above happened with the line down, which is the whole of
+  // `SYS-14`'s acceptance criterion — and the map is still a map, because the
+  // outlines it shipped with are drawn under the tiles rather than instead of
+  // them. There is no error state to get wrong: the land was already painted.
+  //
+  // What did try to leave is also the claim. Tiles from the one host the
+  // application named, and **nothing else**: no geocode of an address nobody
+  // asked to geocode, no font from a CDN, no beacon. A screen that quietly
+  // acquired a second outside dependency fails here rather than in a shop.
+  const unexpected = offsite.filter((url) => !url.startsWith('https://tile.openstreetmap.org/'));
+  expect(unexpected).toEqual([]);
+  expect(offsite.length).toBeGreaterThan(0);
 });
 
 test('opens what a marker is, and closes it with the keyboard', async ({ page }) => {

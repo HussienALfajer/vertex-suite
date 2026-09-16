@@ -114,6 +114,7 @@ export function Branches(): ReactNode {
                 lat: one.point.lat,
                 lng: one.point.lng,
                 isActive: one.active,
+                address: one.address,
               },
             ],
       ),

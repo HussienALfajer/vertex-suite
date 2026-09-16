@@ -17,6 +17,20 @@ beforeEach(() => {
   startAt('companies');
 });
 
+/**
+ * Puts text into a field the way somebody actually gets it there.
+ *
+ * Pasted rather than typed, and not only because it is faster: a maps link is
+ * copied off a phone, never typed out, so a test that types it is testing a
+ * journey nobody takes. It also stops the picker re-rendering a whole map for
+ * every one of forty-odd keystrokes, which is what pushed this suite past its
+ * own timeout.
+ */
+async function paste(shop: OpenShop, label: string, text: string): Promise<void> {
+  await shop.person.click(screen.getByLabelText(label));
+  await shop.person.paste(text);
+}
+
 /** The Aleppo branch, as a shopkeeper would share it: a maps link off a phone. */
 const ALEPPO_LINK = 'https://www.google.com/maps/@36.1997,37.1637,17z';
 
@@ -40,7 +54,7 @@ describe('Placing a branch from the screens — SYS-14', () => {
       screen.getByLabelText(catalogue['place.address']),
       'شارع التلل، مقابل الجامع',
     );
-    await shop.person.type(screen.getByLabelText(catalogue['picker.paste']), ALEPPO_LINK);
+    await paste(shop, catalogue['picker.paste'], ALEPPO_LINK);
     await shop.person.click(screen.getByRole('button', { name: catalogue['branches.new.submit'] }));
 
     await screen.findByRole('rowheader', { name: 'فرع حلب' });
@@ -68,7 +82,7 @@ describe('Placing a branch from the screens — SYS-14', () => {
     await screen.findByRole('rowheader', { name: 'فرع حلب' });
 
     await shop.person.click(screen.getByRole('button', { name: 'موقع «فرع حلب»' }));
-    await shop.person.type(screen.getByLabelText(catalogue['picker.paste']), ALEPPO_LINK);
+    await paste(shop, catalogue['picker.paste'], ALEPPO_LINK);
     await shop.person.click(screen.getByRole('button', { name: catalogue['action.save'] }));
 
     const map = await screen.findByRole('application', { name: catalogue['place.map.label'] });
@@ -83,7 +97,7 @@ describe('Placing a branch from the screens — SYS-14', () => {
     await shop.person.click(screen.getByRole('button', { name: 'موقع «فرع حلب»' }));
     // A digit too many in the latitude: not a place, so the picker does not
     // understand it and says so rather than dropping a marker in the sea.
-    await shop.person.type(screen.getByLabelText(catalogue['picker.paste']), '336.1997, 37.1637');
+    await paste(shop, catalogue['picker.paste'], '336.1997, 37.1637');
 
     expect(screen.getByText(catalogue['picker.paste.unreadable'])).toBeTruthy();
   });
@@ -111,7 +125,7 @@ describe('Placing a branch from the screens — SYS-14', () => {
 
   it('gives a warehouse across town a place of its own — SYS-14', async () => {
     const shop = await aShopWithABranch();
-    await shop.person.type(screen.getByLabelText(catalogue['picker.paste']), ALEPPO_LINK);
+    await paste(shop, catalogue['picker.paste'], ALEPPO_LINK);
     await shop.person.click(screen.getByRole('button', { name: catalogue['branches.new.submit'] }));
     await screen.findByRole('rowheader', { name: 'فرع حلب' });
 
@@ -126,7 +140,7 @@ describe('Placing a branch from the screens — SYS-14', () => {
       catalogue['locations.new.kind'],
       catalogue['location.kind.store-room'],
     );
-    await shop.person.type(screen.getByLabelText(catalogue['picker.paste']), '36.1400, 37.0800');
+    await paste(shop, catalogue['picker.paste'], '36.1400, 37.0800');
     await shop.person.click(
       screen.getByRole('button', { name: catalogue['locations.new.submit'] }),
     );

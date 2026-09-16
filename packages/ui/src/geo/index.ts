@@ -9,7 +9,22 @@ export { GeoMap, asLatLng, type GeoMapProps, type MapPlace, type PlaceKind } fro
 
 export { PointPicker, type PickedPoint, type PointPickerProps } from './PointPicker.js';
 
-export { BaseLayer, OUTLINE_MAX_ZOOM, zoomCeilingOf, type Basemap } from './BaseLayer.js';
+export {
+  BaseLayer,
+  OUTLINE_MAX_ZOOM,
+  STREET_MAP,
+  zoomCeilingOf,
+  type Basemap,
+} from './BaseLayer.js';
+
+export {
+  nominatimSearch,
+  type FoundPlace,
+  type NominatimOptions,
+  type PlaceSearch,
+} from './geocode.js';
+
+export { fold, matchesPlace } from './match.js';
 
 export {
   homeCentre,

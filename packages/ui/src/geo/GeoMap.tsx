@@ -4,10 +4,12 @@ import { Button as AriaButton } from 'react-aria-components';
 
 import { IconButton } from '../components/Button.js';
 import { Popover } from '../components/Popover.js';
+import { SearchInput } from '../components/SearchInput.js';
 import { focusRing } from '../components/styles.js';
 import { useTranslator } from '../providers/context.js';
 import { BaseLayer, zoomCeilingOf, type Basemap } from './BaseLayer.js';
 import { cluster } from './cluster.js';
+import { matchesPlace } from './match.js';
 import { fitToPoints, project, type LatLng, type MapView } from './projection.js';
 import { useMapGestures, useMeasured } from './surface.js';
 
@@ -42,6 +44,8 @@ export interface MapPlace {
   readonly lat: string;
   readonly lng: string;
   readonly isActive: boolean;
+  /** Searched alongside the label, because people look for a shop by its street. */
+  readonly address?: string;
 }
 
 export interface GeoMapProps {
@@ -60,8 +64,14 @@ const CLUSTER_RADIUS = 34;
 /** Kept clear inside every edge when framing, so no marker is half off. */
 const FIT_PADDING = 56;
 
-/** One place implies no extent, so it opens at a town-ish zoom instead. */
-const SINGLE_ZOOM = 9;
+/** One place implies no extent, so it opens at a street-ish zoom instead. */
+const SINGLE_ZOOM = 14;
+
+/** Where a chosen search result lands: close enough to read the street. */
+const FOUND_ZOOM = 16;
+
+/** More than this and a list stops being a shortlist and becomes a second table. */
+const MOST_MATCHES = 6;
 
 /**
  * `Number` and not `parseFloat`: the lint bans the latter everywhere, because a
@@ -84,14 +94,15 @@ export function GeoMap({
   const surface = useRef<HTMLDivElement>(null);
   const viewport = useMeasured(surface);
 
+  const ceiling = zoomCeilingOf(basemap);
   const framed = useMemo(
     () =>
       fitToPoints(places.map(asLatLng), viewport, {
         padding: FIT_PADDING,
-        singleZoom: SINGLE_ZOOM,
-        maxZoom: zoomCeilingOf(basemap),
+        singleZoom: Math.min(SINGLE_ZOOM, ceiling),
+        maxZoom: ceiling,
       }),
-    [places, viewport, basemap],
+    [places, viewport, ceiling],
   );
 
   /**
@@ -111,6 +122,34 @@ export function GeoMap({
     setMoved(null);
   }, []);
   const gestures = useMapGestures({ view, viewport, onChange: setMoved, onReset: reset });
+
+  /**
+   * Finding a branch by name, without asking anybody.
+   *
+   * It searches the places already on the map rather than the world, which is
+   * the search a person on this screen is actually doing: they know the shop
+   * exists and want to see where it is. A geocoder would answer a different
+   * question, need a line to answer it, and not know the tenant's own names.
+   */
+  const [query, setQuery] = useState('');
+  const matches = useMemo(
+    () =>
+      query.trim() === ''
+        ? []
+        : places
+            .filter((place) => matchesPlace(query, place.label, place.address))
+            .slice(0, MOST_MATCHES),
+    [places, query],
+  );
+
+  const goToPlace = useCallback(
+    (place: MapPlace) => {
+      setMoved({ centre: asLatLng(place), zoom: Math.min(FOUND_ZOOM, ceiling) });
+      setOpenId(place.id);
+      setQuery('');
+    },
+    [ceiling],
+  );
 
   const clusters = useMemo(() => {
     if (view === null) return [];
@@ -197,6 +236,50 @@ export function GeoMap({
           );
         })}
       </div>
+
+      {places.length === 0 ? null : (
+        <div className="absolute start-[var(--vx-pad-md)] bottom-[var(--vx-pad-md)] z-20 w-[16rem] max-w-[60%]">
+          {matches.length === 0 ? null : (
+            <ul
+              // Named, because it is a second list of the same places as the
+              // markers behind it and a reader who lands on it by keyboard has
+              // to be told which one they are in.
+              aria-label={translator.format('map.search.results')}
+              className="bg-surface-3 border-line shadow-lg rounded-card mb-[var(--vx-gap-xs)] flex flex-col overflow-hidden border"
+            >
+              {matches.map((place) => (
+                <li key={place.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      goToPlace(place);
+                    }}
+                    className={clsx(
+                      'hover:bg-fill-ghost-hover flex w-full cursor-pointer flex-col items-start',
+                      'px-[var(--vx-pad-md)] py-[var(--vx-pad-sm)] text-start',
+                      focusRing,
+                    )}
+                  >
+                    <span className="text-body font-body-medium text-fg">{place.label}</span>
+                    {place.address === undefined || place.address === '' ? null : (
+                      <span className="text-caption text-fg-secondary line-clamp-1">
+                        {place.address}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <SearchInput
+            label={translator.format('map.search')}
+            placeholder={translator.format('map.search')}
+            value={query}
+            onChange={setQuery}
+            className="bg-surface-3 rounded-card shadow-md w-full"
+          />
+        </div>
+      )}
 
       <div className="absolute end-[var(--vx-pad-md)] bottom-[var(--vx-pad-md)] z-20 flex flex-col gap-[var(--vx-gap-xs)]">
         <IconButton

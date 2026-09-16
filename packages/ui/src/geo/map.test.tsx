@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { useState, type ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -20,6 +20,13 @@ const translator = new Translator({
     'map.reset': 'إعادة الإطار',
     'map.marker.count': '{count, number}',
     'map.marker.many': '{count, number} أماكن هنا',
+    'map.search': 'ابحث في أماكنك',
+    'map.search.results': 'نتائج البحث في أماكنك',
+    'picker.search': 'ابحث عن مكان بالاسم',
+    'picker.search.placeholder': 'مثل: حلب',
+    'picker.search.searching': 'جارٍ البحث…',
+    'picker.search.empty': 'لا نتائج بهذا الاسم.',
+    'picker.search.failed': 'تعذّر البحث بالاسم الآن.',
     'picker.placeHere': 'ضع هنا',
     'picker.useMyLocation': 'موقعي',
     'picker.locating': 'جارٍ التحديد…',
@@ -78,6 +85,7 @@ const WAREHOUSE: MapPlace = {
   lat: '35.442000',
   lng: '36.651000',
   isActive: false,
+  address: 'طريق دمشق، بجانب المعمل',
 };
 
 const details = (place: MapPlace): ReactNode => <span>{place.label}</span>;
@@ -197,6 +205,77 @@ describe('The map of a tenant’s places — SYS-14', () => {
     expect(
       screen.getByRole('button', { name: 'إعادة الإطار' }).getAttribute('aria-disabled'),
     ).not.toBe('true');
+  });
+
+  it('finds a place by its name, and by the street it is on', async () => {
+    const user = userEvent.setup();
+    wrap(
+      <GeoMap
+        label="خريطة الفروع"
+        places={[ALEPPO, DAMASCUS, WAREHOUSE]}
+        renderDetails={details}
+      />,
+    );
+
+    // Over the tenant's own places rather than over the world: this is the
+    // search a person on this screen is actually doing — they know the shop
+    // exists and want to see where it is — and it answers with no line at all.
+    const search = screen.getByRole('searchbox');
+    const results = (): HTMLElement => screen.getByRole('list', { name: 'نتائج البحث في أماكنك' });
+
+    await user.type(search, 'دمشق');
+    await user.click(within(results()).getByRole('button', { name: /فرع دمشق/ }));
+    expect(await screen.findByRole('dialog', { name: 'فرع دمشق' })).toBeTruthy();
+
+    // The panel is dismissed before searching again, because while it is open
+    // the rest of the page is hidden from assistive technology — which is what
+    // makes a panel a panel, and is exactly what the next search has to get
+    // past to be reachable.
+    await user.keyboard('{Escape}');
+
+    // And by address, because people look for a shop by the street it is on.
+    await user.type(search, 'المعمل');
+    expect(within(results()).getByRole('button', { name: /مستودع خان شيخون/ })).toBeTruthy();
+  });
+
+  it('folds the marks nobody types when searching', async () => {
+    const user = userEvent.setup();
+    const marked: MapPlace = { ...ALEPPO, label: 'فَرْعُ حَلَبَ' };
+    wrap(<GeoMap label="خريطة الفروع" places={[marked, DAMASCUS]} renderDetails={details} />);
+
+    // The name on screen carries harakat; nobody types them into a search box.
+    // A comparison of bytes would fail to find a branch the person is looking
+    // straight at.
+    await user.type(screen.getByRole('searchbox'), 'فرع حلب');
+    const results = screen.getByRole('list', { name: 'نتائج البحث في أماكنك' });
+    expect(within(results).getByRole('button', { name: /فَرْعُ حَلَبَ/ })).toBeTruthy();
+  });
+
+  it('draws the land it shipped with underneath the tiles, not instead of them', () => {
+    // The tiles carry the streets and need a line; the outline needs nothing.
+    // Drawing one under the other is what makes `SYS-14`'s "with every network
+    // interface disabled" true without an error state to get wrong: when no
+    // tile arrives, the land is already painted.
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <GeoMap
+          label="خريطة الفروع"
+          places={[ALEPPO]}
+          renderDetails={details}
+          basemap={{
+            kind: 'tiles',
+            url: 'https://tiles.example/{z}/{x}/{y}.png',
+            maxZoom: 19,
+            attribution: '© مثال',
+          }}
+        />
+      </VertexProvider>,
+    );
+
+    expect(container.querySelectorAll('svg path').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('svg image').length).toBeGreaterThan(0);
+    // Attribution is rendered, not remembered.
+    expect(screen.getByText('© مثال')).toBeTruthy();
   });
 
   it('shows nothing but the empty surface when the tenant has placed nothing', () => {

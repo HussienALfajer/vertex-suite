@@ -125,6 +125,9 @@ export const catalogue = {
   /** The number in the marker itself. It goes through the locale, so §5.5's per-tenant digits reach it. */
   'map.marker.count': '{count, number}',
   'map.marker.many': '{count, number} أماكن هنا',
+  /** Over the tenant's own places rather than the world: instant, and offline. */
+  'map.search': 'ابحث في أماكنك',
+  'map.search.results': 'نتائج البحث في أماكنك',
 
   'place.title': 'موقع «{name}»',
   'place.address': 'العنوان',
@@ -135,6 +138,21 @@ export const catalogue = {
   'place.saved': 'حُفظ موقع «{name}».',
   'place.moves':
     'سيارة التوزيع مكانها يتحرّك معها، فلا نثبّت لها نقطة — يبقى لها عنوان إن كان لها مرآب ثابت.',
+
+  /**
+   * The one thing here that needs a line, and the only place that says so.
+   *
+   * One sentence for every failure, deliberately: somebody who typed a street
+   * name does not need to know whether the line is down, the service is busy or
+   * the answer came back malformed — only that typing is not the way in today
+   * and that the map below still is.
+   */
+  'picker.search': 'ابحث عن مكان بالاسم',
+  'picker.search.placeholder': 'مثل: حلب، شارع التلل',
+  'picker.search.searching': 'جارٍ البحث…',
+  'picker.search.empty': 'لا نتائج بهذا الاسم. جرّب اسمًا أقرب، أو حدّد الموقع على الخريطة.',
+  'picker.search.failed':
+    'تعذّر البحث بالاسم الآن — يحتاج اتصالًا بالإنترنت. حدّد الموقع على الخريطة أو ألصق رابطًا.',
 
   'picker.placeHere': 'ضع النقطة هنا',
   'picker.useMyLocation': 'موقعي الحالي',

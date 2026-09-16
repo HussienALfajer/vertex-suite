@@ -1,7 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { Banner, Button, Dialog, Panel, TextArea, useToast, useTranslator } from '@vertex/ui';
-import { GeoMap, PointPicker, type MapPlace, type PickedPoint } from '@vertex/ui/map';
+import {
+  GeoMap,
+  PointPicker,
+  STREET_MAP,
+  nominatimSearch,
+  type MapPlace,
+  type PickedPoint,
+} from '@vertex/ui/map';
 import type { Result } from '@vertex/kernel';
 import type { GeoPoint, OrganisationRefusal } from '@vertex/sys/contract';
 
@@ -19,6 +26,21 @@ import type { OrganisationOfRecord } from '../system.js';
  * differently from the picker on the other — which is the kind of difference
  * nobody reports and everybody notices.
  */
+
+/**
+ * The back office is the screen with a line, so it is the screen that grants
+ * the search.
+ *
+ * Built once at module scope rather than per render: a new function on every
+ * keystroke would restart the picker's own debounce and turn one search into
+ * one request per letter — which is both a worse answer and the thing the
+ * service asks callers not to do.
+ *
+ * The register grants nothing of the sort and never will. That is the whole
+ * shape of `SYS-14`: everything works with the line down, and the one part that
+ * cannot is handed to the one application that has one.
+ */
+const findPlace = nominatimSearch({ locale: 'ar' });
 
 /** Anything that carries `SYS-14`'s two fields, which is a branch or a location. */
 export interface Placeable {
@@ -215,6 +237,8 @@ export function PlaceFields({
           value={point}
           onChange={onPoint}
           around={around}
+          basemap={STREET_MAP}
+          search={findPlace}
         />
       ) : (
         // Said here rather than let the command say it: a picker offered and
@@ -263,7 +287,8 @@ export function PlacesMap({
         label={translator.format('place.map.label')}
         places={places}
         renderDetails={renderDetails}
-        className="h-[26rem] w-full"
+        basemap={STREET_MAP}
+        className="h-[30rem] w-full"
       />
     </Panel>
   );
