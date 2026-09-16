@@ -637,7 +637,3 @@ export const SEC_PERMISSIONS: SecPermissions = Object.freeze({
 });
 
 export const SEC_PERMISSION_SEEDS: readonly Declared[] = Object.freeze([...DECLARED]);
-
-export const SEC_PERMISSION_IDS: readonly PermissionId[] = Object.freeze(
-  DECLARED.map((one) => one.id),
-);

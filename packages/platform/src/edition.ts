@@ -1,6 +1,6 @@
 import { ok, refuse, type Refusal, type Result } from '@vertex/kernel';
 
-import { RegistryError } from './errors.js';
+import { DuplicateDeclarationError, RegistryError } from './errors.js';
 import { MODULE_CODES, type ModuleCode, type ModuleDefinition } from './module.js';
 
 /**
@@ -105,7 +105,13 @@ export function composeEdition<Session>(
   const byCode = new Map<ModuleCode, ModuleDefinition<Session>>();
   for (const definition of catalogue) {
     if (byCode.has(definition.code)) {
-      throw new RegistryError(`The catalogue holds ${definition.code} twice.`);
+      // `DuplicateDeclarationError`, and not the plainer `RegistryError` above:
+      // this is not a cycle in how modules depend on each other, it is two
+      // definitions claiming one identity. Left as a bare `RegistryError` it
+      // was indistinguishable from every other wiring defect this file raises,
+      // when a host catching the more specific error to report "you registered
+      // a module twice" could not.
+      throw new DuplicateDeclarationError(`The catalogue holds ${definition.code} twice.`);
     }
     byCode.set(definition.code, definition);
   }

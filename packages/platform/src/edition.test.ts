@@ -2,7 +2,7 @@ import { isErr, isOk } from '@vertex/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { composeEdition } from './edition.js';
-import { RegistryError } from './errors.js';
+import { DuplicateDeclarationError, RegistryError } from './errors.js';
 import { defineModule, type ModuleCode, type ModuleDefinition } from './module.js';
 
 /**
@@ -164,10 +164,13 @@ describe('composeEdition', () => {
   });
 
   it('raises when the catalogue holds one module twice', () => {
+    // Its own subtype, not the plain `RegistryError` the cycle above raises: a
+    // host wiring an edition can catch this one case — two claims on one
+    // module identity — by name.
     expect(() =>
       composeEdition([...CATALOGUE, defineModule({ code: 'SYS', labelKey: 'module.sys' })], {
         modules: [...CORE],
       }),
-    ).toThrow(RegistryError);
+    ).toThrow(DuplicateDeclarationError);
   });
 });

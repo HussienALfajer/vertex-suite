@@ -52,5 +52,17 @@ export default defineConfig({
       { find: /^@vertex\/platform$/, replacement: source('platform') },
     ],
   },
-  server: { port: Number(process.env.PORT) || 5181 },
+  /**
+   * 5181 is the port `playwright.config.ts` and `.claude/launch.json` both
+   * name; `PORT` overrides it so a second instance can be started beside a
+   * running one.
+   *
+   * Bracketed because `process.env` is an index signature and the dotted form
+   * does not compile under `noPropertyAccessFromIndexSignature` — which is what
+   * this line was, until a forced type-check found it behind a warm cache. The
+   * form a bundler cannot substitute is harmless here: this file is read by
+   * Node, never bundled into a browser, which is why `check:policy` scopes that
+   * rule to `src/`.
+   */
+  server: { port: Number(process.env['PORT']) || 5181 },
 });

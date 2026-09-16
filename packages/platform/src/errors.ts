@@ -26,7 +26,14 @@ export class ModuleDeclarationError extends PlatformError {}
 /** The set of modules cannot be arranged: a cycle, a gap, or two claims on one name. */
 export class RegistryError extends PlatformError {}
 
-/** Two modules declared the same permission, account role, setting, switch or event. */
+/**
+ * A catalogue holds one module code twice — a module registered beside a
+ * stand-in for it, or the same definition reached by two paths.
+ *
+ * A subtype of `RegistryError` rather than a use of it directly, so that a host
+ * wiring an edition can catch this one case by name: two claims on one module
+ * identity, as against a genuine cycle or an unrelated wiring defect.
+ */
 export class DuplicateDeclarationError extends RegistryError {}
 
 /** A subscription names an event that no module in the catalogue publishes. */

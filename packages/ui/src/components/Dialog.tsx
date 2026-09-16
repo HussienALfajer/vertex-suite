@@ -9,8 +9,7 @@ import {
 } from 'react-aria-components';
 
 import { useTranslator } from '../providers/context.js';
-import { Button } from './Button.js';
-import { IconButton } from './Button.js';
+import { Button, IconButton } from './Button.js';
 import type { Tone } from './styles.js';
 
 export interface DialogProps {

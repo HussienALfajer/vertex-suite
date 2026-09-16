@@ -32,7 +32,7 @@
     "@vertex/sys": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "24.10.1",
+    "@types/node": "24.13.4",
     "typescript": "6.0.2",
     "vitest": "4.1.11"
   }

@@ -19,9 +19,9 @@ import type {
   NewLocation,
   NewRegister,
   OrganisationRefusal,
+  RecordSession,
   Register,
 } from './contract.js';
-import type { RecordSession } from './contract.js';
 import { normalisePoint, writtenAddress } from './place.js';
 import { readRecord, scanRecords, writeRecord } from './records.js';
 
