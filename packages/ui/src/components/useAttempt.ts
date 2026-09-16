@@ -51,6 +51,7 @@ export function useAttempt(active: unknown, onReset: () => void): Attempt {
     onReset();
     // `onReset` closes over each dialog's own fields and is a new function
     // every render; only `active` changing means "this is a fresh attempt".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   async function attempt(action: () => Promise<string | null>): Promise<void> {

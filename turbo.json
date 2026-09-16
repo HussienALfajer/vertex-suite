@@ -1,20 +1,31 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "stream",
+  // No task narrows its `inputs`, and that is the correction of a bug rather
+  // than an omission. Each of them once listed `src/**` and a couple of config
+  // files — which is what a task *usually* reads, not what it *does* read: an
+  // app type-checks whatever its `tsconfig.json` includes, and that is
+  // `vite.config.ts`, `vitest.config.ts`, `playwright.config.ts` and `e2e/**`
+  // as well. A type error in one of those was invisible to `pnpm verify`
+  // because nothing in the declared inputs had changed, so turbo replayed a
+  // green run over a tree that no longer compiled — and CI, which has no cache,
+  // would have been the first to say so.
+  //
+  // A cache that can report a broken tree as green is worse than no cache: the
+  // whole of `pnpm verify` is only worth what its weakest hash is. So the
+  // inputs are the package's own files, which is turbo's default and the only
+  // set guaranteed to contain everything a task reads.
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig*.json", "package.json"],
       "outputs": ["dist/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig*.json", "package.json"],
       "outputs": []
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "vitest.config.ts", "tsconfig*.json", "package.json"],
       "outputs": []
     },
     "test:watch": {

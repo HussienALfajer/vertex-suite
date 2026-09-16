@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -93,6 +94,27 @@ export default tseslint.config(
       '@typescript-eslint/explicit-module-boundary-types': 'error',
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
       eqeqeq: ['error', 'always', { null: 'ignore' }],
+    },
+  },
+
+  /**
+   * React's own two rules, on the two packages that render a component.
+   *
+   * `rules-of-hooks` is what keeps a hook from being called conditionally or
+   * from a loop — a mistake that does not fail a type check and does not fail
+   * a single-render test, and surfaces instead as state that attaches itself
+   * to the wrong component the first time a render count changes. `packages/ui`
+   * is where every hook this product has is either defined or first used, and
+   * `apps/back-office` is where they are composed into screens; `packages/kernel`
+   * and the modules never import React at all, so the rule has nothing to check
+   * there.
+   */
+  {
+    files: ['packages/ui/src/**/*.{ts,tsx}', 'apps/back-office/src/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
 

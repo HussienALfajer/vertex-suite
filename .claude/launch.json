@@ -11,7 +11,8 @@
       "name": "back-office",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@vertex/back-office", "dev"],
-      "port": 5181
+      "port": 5181,
+      "autoPort": true
     }
   ]
 }

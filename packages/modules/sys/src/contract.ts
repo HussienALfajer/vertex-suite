@@ -679,9 +679,5 @@ export const SYS_PERMISSIONS: SysPermissions = Object.freeze({
   }),
 });
 
-export const SYS_PERMISSION_IDS: readonly PermissionId[] = Object.freeze(
-  DECLARED.map((one) => one.id),
-);
-
 /** What the module hands the platform: every right, and who starts out holding it. */
 export const SYS_PERMISSION_SEEDS: readonly Declared[] = Object.freeze([...DECLARED]);
