@@ -30,6 +30,8 @@ export const ROUTES = [
   'locations',
   'registers',
   'numbering',
+  'users',
+  'roles',
 ] as const;
 
 export type RouteName = (typeof ROUTES)[number];

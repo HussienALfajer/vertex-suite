@@ -32,7 +32,12 @@ function shopWhere(
   change: (system: SystemOfRecord) => SystemOfRecord['organisation'],
 ): SystemOfRecord {
   const real = developmentSystem({ people: PEOPLE });
-  return { signIn: real.signIn.bind(real), organisation: change(real) };
+  return {
+    signIn: real.signIn.bind(real),
+    changeOwnPassword: real.changeOwnPassword.bind(real),
+    organisation: change(real),
+    users: real.users,
+  };
 }
 
 describe('Companies — SYS-09', () => {

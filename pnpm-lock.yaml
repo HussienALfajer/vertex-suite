@@ -196,6 +196,9 @@ importers:
 
   apps/back-office:
     dependencies:
+      '@vertex/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@vertex/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n

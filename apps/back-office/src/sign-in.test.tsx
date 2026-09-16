@@ -29,7 +29,13 @@ function open(system: SystemOfRecord = developmentSystem({ people: PEOPLE })): v
  * failure to sign in indistinguishable from a shop that could not be read.
  */
 function systemThatAnswers(signIn: SystemOfRecord['signIn']): SystemOfRecord {
-  return { signIn, organisation: developmentSystem({ people: PEOPLE }).organisation };
+  const real = developmentSystem({ people: PEOPLE });
+  return {
+    signIn,
+    changeOwnPassword: real.changeOwnPassword.bind(real),
+    organisation: real.organisation,
+    users: real.users,
+  };
 }
 
 /** The frame, which is the one thing on screen that says somebody is signed in. */
@@ -84,14 +90,14 @@ describe('Sign-in — SEC-09', () => {
   it('renders a refusal the catalogue has no words for rather than a raw code', async () => {
     // A real refusal `SEC` can return and this screen has never been given a
     // sentence for — which is the ordinary way the two drift, since the domain
-    // grows and a catalogue lags. A screen that printed `sec.identity-shared`
+    // grows and a catalogue lags. A screen that printed `sec.identity-not-found`
     // at somebody would be showing them a symbol from a program they cannot
     // read.
-    open(systemThatAnswers(() => Promise.resolve(refuse('sec.identity-shared'))));
+    open(systemThatAnswers(() => Promise.resolve(refuse('sec.identity-not-found'))));
     await signIn('owner', 'till-morning-1');
 
     expect(screen.getByRole('alert').textContent).toContain(catalogue['refusal.unknown']);
-    expect(screen.getByRole('alert').textContent).not.toContain('sec.identity-shared');
+    expect(screen.getByRole('alert').textContent).not.toContain('sec.identity-not-found');
   });
 
   it('says so rather than failing silently when the store node cannot be reached', async () => {

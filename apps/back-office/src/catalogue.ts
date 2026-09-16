@@ -47,6 +47,44 @@ export const catalogue = {
   'refusal.unknown': 'تعذّر إتمام الطلب. حاول مرة أخرى.',
 
   /**
+   * `SEC-09`, `SEC-01` and `SEC-04`'s own refusals, as sentences — the users
+   * screen's counterpart to `SYS`'s block below.
+   */
+  'refusal.sec.not-permitted':
+    'هذا الإجراء يحتاج صلاحية «{right}»، وهي غير ممنوحة لك. راجع مالك المتجر.',
+  'refusal.sec.handle-required': 'أدخل اسم الدخول.',
+  'refusal.sec.user-name-required': 'أدخل اسم المستخدم.',
+  'refusal.sec.password-too-short': 'كلمة المرور قصيرة جدًا. أدخل {atLeast, number} حروف أو أكثر.',
+  'refusal.sec.handle-taken': 'اسم الدخول «{handle}» مستخدم هنا بالفعل. اختر اسمًا آخر.',
+  'refusal.sec.user-not-found': 'لم يعد هذا المستخدم موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.identity-shared':
+    'اسم الدخول هذا مشترك مع منشأة أخرى، فكلمة المرور لا تُعاد من هنا — تُغيَّر من صاحب الحساب نفسه.',
+  'refusal.sec.role-not-found': 'لم يعد هذا الدور موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.role-withdrawn':
+    'هذا الدور مسحوب من الخدمة. أعِده إلى الخدمة أولًا، أو اختر دورًا آخر.',
+  'refusal.sec.confinement-empty': 'اختر فرعًا واحدًا على الأقل، أو اختر «كل فروع المتجر».',
+  'refusal.sec.branch-not-found': 'لم يعد هذا الفرع موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.branch-inactive': 'الفرع «{branch}» مسحوب من الخدمة، فلا يصلح نطاقًا لمستخدم جديد.',
+  'refusal.sec.assignment-not-found': 'لم يعد هذا التكليف موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.role-name-required': 'أدخل اسم الدور.',
+  /**
+   * `SEC-02`: a grant naming a right no module in this edition declared.
+   * `{right}` is resolved through `nameOfPermission` like every other refusal
+   * that carries one — except this one names a right that has no name here,
+   * so what a person actually reads is its raw identifier, which is the honest
+   * answer to a request for something that does not exist.
+   */
+  'refusal.sec.right-undeclared': 'الصلاحية «{right}» غير معروفة في هذا الإصدار من النظام.',
+  /**
+   * One sentence for two lockouts `SEC` guards the same way: the shop's last
+   * owner standing down (`{user}`), and the last role able to edit roles at all
+   * losing that ability (`{role}`) — both leave nobody who can put it back, and
+   * both are refused for exactly that reason rather than reworded per shape.
+   */
+  'refusal.sec.last-owner':
+    'هذا آخر من يملك صلاحية إدارة الأدوار والمستخدمين في هذا المتجر. امنح هذه الصلاحية لجهة أخرى أولًا، وإلا لن يبقى من يستطيع التراجع عن هذا القرار.',
+
+  /**
    * `SYS`'s own refusals, as sentences.
    *
    * Each one says what happened **and what to do next**, because a refusal that
@@ -132,13 +170,57 @@ export const catalogue = {
   'permission.sys.business-profile.edit': 'تعديل ملف العمل التجاري',
   'permission.sys.numbering-series.view': 'الاطلاع على سلاسل الترقيم',
   'permission.sys.numbering-series.edit': 'تعديل صيغ الترقيم',
+  'permission.sys.branch-setting.view': 'الاطلاع على إعدادات الفرع',
+  'permission.sys.branch-setting.edit': 'تعديل إعدادات الفرع',
+
+  /** `SEC`'s own rights, named the same way. */
+  'permission.sec.user.view': 'الاطلاع على المستخدمين',
+  'permission.sec.user.create': 'إضافة مستخدم',
+  'permission.sec.user.edit': 'تعديل بيانات المستخدمين',
+  'permission.sec.user.delete': 'سحب مستخدم من الخدمة',
+  'permission.sec.user.reset-password': 'إعادة تعيين كلمات المرور',
+  'permission.sec.user.force-sign-out': 'إنهاء جلسات المستخدمين',
+  'permission.sec.role.view': 'الاطلاع على الأدوار',
+  'permission.sec.role.create': 'إنشاء دور',
+  'permission.sec.role.edit': 'تعديل الأدوار',
+  'permission.sec.role.delete': 'سحب دور من الخدمة',
+  'permission.sec.role-assignment.view': 'الاطلاع على تكليفات الأدوار',
+  'permission.sec.role-assignment.create': 'تعيين دور لمستخدم',
+  'permission.sec.role-assignment.edit': 'تعديل تكليف دور',
+  'permission.sec.role-assignment.delete': 'سحب تكليف دور',
   'permission.unknown': 'غير معروفة',
+
+  /**
+   * `SEC-02`'s grid, read by column and by row rather than as full sentences:
+   * `permission.action.*` names the five actions across the top, and
+   * `permission.resource.*` names what each row is about. The full sentence
+   * above (`permission.sec.user.view`) still names every checkbox itself, so a
+   * screen reader announces "الاطلاع على المستخدمين" rather than "عرض" bare —
+   * only the visible header is this short.
+   */
+  'permission.action.view': 'عرض',
+  'permission.action.create': 'إنشاء',
+  'permission.action.edit': 'تعديل',
+  'permission.action.delete': 'حذف',
+  'permission.action.approve': 'اعتماد',
+
+  'permission.resource.sys.company': 'الشركات',
+  'permission.resource.sys.branch': 'الفروع',
+  'permission.resource.sys.location': 'المواقع',
+  'permission.resource.sys.register': 'الصناديق والأجهزة',
+  'permission.resource.sys.business-profile': 'ملف العمل التجاري',
+  'permission.resource.sys.numbering-series': 'سلاسل الترقيم',
+  'permission.resource.sys.branch-setting': 'إعدادات الفرع',
+  'permission.resource.sec.user': 'المستخدمون',
+  'permission.resource.sec.role': 'الأدوار',
+  'permission.resource.sec.role-assignment': 'تكليفات الأدوار',
 
   'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
   'theme.light': 'فاتح',
   'theme.dark': 'داكن',
 
   'shell.signedInAs': 'المستخدم الحالي: {handle}',
+  'shell.account.action': 'كلمة المرور',
   'shell.signOut': 'تسجيل الخروج',
   'shell.nav': 'أقسام النظام',
   'nav.companies': 'الشركات',
@@ -147,6 +229,8 @@ export const catalogue = {
   'nav.locations': 'المواقع',
   'nav.registers': 'الصناديق والأجهزة',
   'nav.numbering': 'سلاسل الترقيم',
+  'nav.users': 'المستخدمون',
+  'nav.roles': 'الأدوار',
 
   'action.close': 'إغلاق',
   'action.cancel': 'إلغاء',
@@ -504,6 +588,190 @@ export const catalogue = {
   'numbering.specimen.waiting': 'أكمل نوع المستند والسنة المالية ليظهر الرقم.',
   'numbering.save': 'حفظ الصيغة',
   'numbering.saved': 'حُفظت صيغة «{documentType}».',
+
+  /**
+   * `SEC-01`'s seven, in the words an administrator would use for them. Shown
+   * whenever a role has not been renamed — `role.name` is null — which is every
+   * role this screen can produce, since it offers no way to define an eighth.
+   */
+  'role.owner': 'المالك',
+  'role.manager': 'المدير',
+  'role.accountant': 'المحاسب',
+  'role.purchasing': 'المشتريات',
+  'role.warehouse-keeper': 'أمين المستودع',
+  'role.floor-supervisor': 'مشرف الصالة',
+  'role.cashier': 'الكاشير',
+
+  /**
+   * `SEC-09`: the people who work in this shop, and the sign-ins behind them.
+   *
+   * A user is withdrawn and never deleted, like every structural entity `SYS-09`
+   * describes — their historical transactions stay attributable to them, so the
+   * row is a status rather than a memory of somebody who was here once.
+   */
+  'users.title': 'المستخدمون',
+  'users.description':
+    'من يعمل في هذا المتجر: لكل مستخدم اسم دخول، وكلمة مرور، ودور يحدّد ما يفعله وأين. يُسحب المستخدم من الخدمة ولا يُحذف، فتبقى كل حركاته منسوبة إليه.',
+  'users.table': 'المستخدمون',
+  'users.search': 'ابحث في المستخدمين',
+  'users.enrol': 'إضافة مستخدم',
+  'users.column.name': 'الاسم',
+  'users.column.handle': 'اسم الدخول',
+  'users.column.status': 'الحالة',
+  'users.column.actions': 'إجراءات',
+  'users.shared': 'مشترك مع منشأة أخرى',
+
+  'users.new.title': 'إضافة مستخدم',
+  'users.new.handle': 'اسم الدخول',
+  'users.new.handle.description': 'ما يكتبه هذا الشخص عند تسجيل الدخول. فريد داخل هذا المتجر.',
+  'users.new.handle.required': 'أدخل اسم الدخول.',
+  'users.new.name': 'الاسم',
+  'users.new.name.required': 'أدخل اسم المستخدم.',
+  'users.new.password': 'كلمة المرور',
+  'users.new.password.required': 'أدخل كلمة المرور.',
+  'users.new.password.confirm': 'تأكيد كلمة المرور',
+  'users.new.password.mismatch': 'كلمتا المرور غير متطابقتين.',
+  'users.new.submit': 'إضافة',
+  'users.enrolled': 'أُضيف «{name}».',
+
+  'users.rename.title': 'تغيير اسم المستخدم',
+  'users.renamed': 'صار يُعرف باسم «{name}».',
+
+  'users.withdraw': 'سحب من الخدمة',
+  'users.withdraw.title': 'سحب المستخدم من الخدمة',
+  'users.withdraw.message':
+    'ستبقى حركات «{name}» منسوبة إليه وقابلة للتقارير، ولن يستطيع الدخول بعد الآن. يمكنك إعادته متى شئت.',
+  'users.restore': 'إعادة إلى الخدمة',
+  'users.restore.title': 'إعادة المستخدم إلى الخدمة',
+  'users.restore.message': 'سيستطيع «{name}» الدخول من جديد بكلمة المرور نفسها.',
+  'users.withdrawn': 'سُحب «{name}» من الخدمة.',
+  'users.restored': 'أُعيد «{name}» إلى الخدمة.',
+
+  /**
+   * The security dialog: what `SEC-09` calls resetting a password and forcing a
+   * sign-out, kept apart from renaming and withdrawal because both spend
+   * something — a session, a secret — that renaming and withdrawal do not.
+   */
+  'users.security.action': 'الأمان: كلمة المرور والجلسات',
+  'users.security.title': 'أمان «{name}»',
+  'users.security.resetPassword': 'كلمة مرور جديدة',
+  'users.security.resetPassword.submit': 'تعيين كلمة المرور',
+  'users.security.resetPassword.done': 'حُدّثت كلمة مرور «{name}».',
+  'users.security.forceSignOut': 'إنهاء كل الجلسات',
+  'users.security.forceSignOut.description':
+    'يُنهي دخول «{name}» على كل جهاز عند أول اتصال به بعد الآن. لا يوقف عملًا جاريًا على صندوق غير متصل حاليًا.',
+  'users.security.forceSignOut.confirm.title': 'إنهاء جلسات «{name}»',
+  'users.security.forceSignOut.confirm.message':
+    'سيُطلب من «{name}» تسجيل الدخول من جديد على كل جهاز، فور أن يتصل بعقدة المتجر.',
+  'users.security.forceSignOut.done': 'أُنهيت جلسات «{name}».',
+
+  /**
+   * `SEC-04`: the role, and where it reaches. Deliberately branch-level only —
+   * narrowing within a branch to specific locations is `Confinement`'s own
+   * capability and this screen does not yet offer it, the same way `numbering`
+   * arrived before `registers` needed a second screen: a control is built with
+   * the screen that first needs it.
+   */
+  'users.scope.action': 'الدور والنطاق',
+  'users.scope.title': 'دور «{name}» ونطاق عمله',
+  'users.scope.current': 'الأدوار الحالية',
+  'users.scope.none':
+    'لا دور لهذا المستخدم بعد. من دون دور لن يستطيع فعل شيء في هذا المتجر — عيّن له دورًا أدناه.',
+  /** Both the option a scope is chosen from and the words a live scope is shown with. */
+  'users.scope.tenantWide': 'كل فروع المتجر',
+  'users.scope.someBranches': 'فروع محددة',
+  'users.scope.withdraw': 'سحب هذا الدور',
+  'users.scope.assign.title': 'تعيين دور',
+  'users.scope.role': 'الدور',
+  'users.scope.role.placeholder': 'اختر الدور',
+  'users.scope.role.required': 'اختر الدور.',
+  'users.scope.reach': 'النطاق',
+  'users.scope.branches.required': 'اختر فرعًا واحدًا على الأقل.',
+  'users.scope.assign': 'تعيين',
+  'users.scope.assigned': 'صار دور «{role}» لـ«{name}».',
+  'users.scope.withdrawn': 'سُحب دور «{role}» من «{name}».',
+
+  /**
+   * `SEC-01`: the roles themselves, defined, named and withdrawn — this
+   * screen's counterpart to the four organisation screens, over `SEC` instead
+   * of `SYS`. A role is withdrawn and never deleted, the same rule `SYS-09`
+   * states for every structural row: an assignment already made through it
+   * stays reportable.
+   */
+  'roles.title': 'الأدوار',
+  'roles.description':
+    'كل دور مجموعة صلاحيات باسم واحد: تُسنِد الدور لمستخدم فيحمل كل ما فيه دفعة واحدة. السبعة المهيّأة قابلة للتعديل والسحب، ويمكنك تعريف أدوار جديدة.',
+  'roles.table': 'الأدوار',
+  'roles.search': 'ابحث في الأدوار',
+  'roles.define': 'إنشاء دور',
+  'roles.column.name': 'الدور',
+  'roles.column.status': 'الحالة',
+  'roles.column.actions': 'إجراءات',
+  'roles.open.action': 'الصلاحيات والإسناد',
+
+  'roles.new.title': 'إنشاء دور',
+  'roles.new.name': 'اسم الدور',
+  'roles.new.submit': 'إنشاء',
+  'roles.defined': 'أُنشئ دور «{name}». افتحه لمنحه صلاحياته.',
+
+  'roles.rename.title': 'تغيير اسم الدور',
+  'roles.renamed': 'صار يُعرف باسم «{name}».',
+
+  'roles.withdraw': 'سحب من الخدمة',
+  'roles.withdraw.title': 'سحب الدور من الخدمة',
+  'roles.withdraw.message':
+    'لن يُسنَد «{name}» بعد الآن، ويبقى من يحمله على ما كان يحمله ريثما يُنقَل إلى دور آخر. يمكنك إعادته متى شئت.',
+  'roles.restore': 'إعادة إلى الخدمة',
+  'roles.restore.title': 'إعادة الدور إلى الخدمة',
+  'roles.restore.message': 'سيعود «{name}» متاحًا للإسناد من جديد، بصلاحياته نفسها كما تركتها.',
+  'roles.withdrawn': 'سُحب «{name}» من الخدمة.',
+  'roles.restored': 'أُعيد «{name}» إلى الخدمة.',
+
+  'roles.empty': 'لا يوجد دور بعد',
+  'roles.empty.explanation': 'السبعة المهيّأة تُنشأ مع المتجر نفسه؛ إن غابت فحدّث الصفحة.',
+
+  /**
+   * `SEC-02`'s grid: one checkbox per (resource, action) pair this role either
+   * holds or does not. Not a form saved all at once — each cell is its own
+   * command (`grant` or `revoke`) that takes effect the moment it is toggled,
+   * the same immediacy withdrawing a role or assigning one already has.
+   */
+  'roles.rights.resource': 'المورد',
+  'roles.rights.title': 'شبكة الصلاحيات',
+  'roles.rights.description':
+    'صلاحية لكل إجراء، لا لكل شاشة: يملك هذا الدور الاطلاع على شيء دون أن يملك اعتماده أو حذفه.',
+  'roles.rights.extra': 'صلاحيات إضافية',
+  'roles.rights.granted': 'صار دور «{role}» يملك «{right}».',
+  'roles.rights.revoked': 'صار دور «{role}» لا يملك «{right}».',
+
+  /**
+   * `SEC-04` from the role's own side: who holds it, and where it reaches.
+   * Complements the "role and scope" dialog on the users screen — the same
+   * side asked from the other direction — rather than repeating it: both run
+   * through the same `assign`/`withdraw` commands.
+   */
+  'roles.holders.title': 'من يحمل هذا الدور',
+  'roles.holders.none': 'لا أحد يحمل هذا الدور بعد.',
+  'roles.holders.assign.title': 'إسناد الدور لمستخدم',
+  'roles.holders.user': 'المستخدم',
+  'roles.holders.user.placeholder': 'اختر المستخدم',
+  'roles.holders.user.required': 'اختر المستخدم.',
+
+  /**
+   * `Credentials.changeOwnPassword`: the one action here that belongs to
+   * whoever is signed in rather than to an administrator — reached from the
+   * frame itself rather than from a screen of the shop's structure, since it
+   * asks for nobody's identifier but the caller's own.
+   */
+  'account.changePassword.title': 'تغيير كلمة المرور',
+  'account.changePassword.current': 'كلمة المرور الحالية',
+  'account.changePassword.current.required': 'أدخل كلمة المرور الحالية.',
+  'account.changePassword.next': 'كلمة المرور الجديدة',
+  'account.changePassword.next.required': 'أدخل كلمة المرور الجديدة.',
+  'account.changePassword.confirm': 'تأكيد كلمة المرور الجديدة',
+  'account.changePassword.mismatch': 'كلمتا المرور غير متطابقتين.',
+  'account.changePassword.submit': 'تغيير كلمة المرور',
+  'account.changePassword.done': 'تغيّرت كلمة مرورك.',
 
   'profile.title': 'ملف العمل التجاري',
   'profile.description':

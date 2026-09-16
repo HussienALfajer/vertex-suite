@@ -69,6 +69,26 @@ export async function registerCompany(shop: OpenShop, name: string): Promise<voi
   await screen.findByRole('rowheader', { name });
 }
 
+export interface NewPerson {
+  readonly handle: string;
+  readonly name: string;
+  readonly password: string;
+}
+
+/** Adds a user through the screen, the way a shop's own administrator would. */
+export async function enrolUser(shop: OpenShop, person: NewPerson): Promise<void> {
+  await shop.person.click(firstButton(catalogue['users.enrol']));
+  await shop.person.type(screen.getByLabelText(catalogue['users.new.name']), person.name);
+  await shop.person.type(screen.getByLabelText(catalogue['users.new.handle']), person.handle);
+  await shop.person.type(screen.getByLabelText(catalogue['users.new.password']), person.password);
+  await shop.person.type(
+    screen.getByLabelText(catalogue['users.new.password.confirm']),
+    person.password,
+  );
+  await shop.person.click(screen.getByRole('button', { name: catalogue['users.new.submit'] }));
+  await screen.findByRole('rowheader', { name: person.name });
+}
+
 /**
  * Picks an option out of a `Select`.
  *

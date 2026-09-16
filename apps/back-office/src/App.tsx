@@ -9,6 +9,7 @@ import { useSession, SessionProvider } from './session.js';
 import { SignIn } from './SignIn.js';
 import { Shell } from './Shell.js';
 import type { SystemOfRecord } from './system.js';
+import { UsersProvider } from './users.js';
 
 const translator = createTranslator();
 
@@ -76,7 +77,9 @@ function Screen({
     <SignIn themeSwitch={themeSwitch} />
   ) : (
     <OrganisationProvider system={system}>
-      <Shell themeSwitch={themeSwitch} />
+      <UsersProvider system={system}>
+        <Shell themeSwitch={themeSwitch} />
+      </UsersProvider>
     </OrganisationProvider>
   );
 }
