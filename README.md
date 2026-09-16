@@ -13,7 +13,7 @@ Read them in this order. They are the specification; the code answers to them.
 
 | Document                                         | What it settles                                                                                                                  |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/core-features.md`](docs/core-features.md) | The 182 features across 16 modules, each with a stable identifier and, where it matters, an acceptance criterion                 |
+| [`docs/core-features.md`](docs/core-features.md) | The 183 features across 16 modules, each with a stable identifier and, where it matters, an acceptance criterion                 |
 | [`docs/modules.md`](docs/modules.md)             | How those features decompose into modules, what each module owns, which may depend on which, and the order they are built in     |
 | [`docs/design-system.md`](docs/design-system.md) | The interface layer — generated palette with measured contrast, Arabic-derived type scale, three densities, keyboard conventions |
 

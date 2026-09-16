@@ -5,9 +5,9 @@
  * `modules.md` §7 states it exactly: **a unit is finished when the acceptance
  * criteria of every feature it names are automated and passing.** Until this
  * check existed, nothing verified that. A unit was finished because somebody
- * said so, and with 182 features across 30 units the claim becomes unauditable
+ * said so, and with 183 features across 30 units the claim becomes unauditable
  * long before the last one — not through carelessness, but because nobody can
- * hold 182 acceptance criteria in mind and notice the one that was quietly
+ * hold 183 acceptance criteria in mind and notice the one that was quietly
  * proven by a neighbouring test.
  *
  * Nothing is maintained by hand except the list of delivered units in

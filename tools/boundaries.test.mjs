@@ -238,8 +238,14 @@ describe('altitude — an app may not hold a file that knows nothing about the a
       '// boundary-exempt: altitude — one fragment of the sign-in screen, never reused\n' + source;
     expect(breaches('apps/store-node/src/Fragment.tsx', reasoned, withUi)).toEqual([]);
 
-    // A shrug is not an exemption.
-    const bare = '// boundary-exempt: altitude —\n' + source;
-    expect(rules(breaches('apps/store-node/src/Fragment.tsx', bare, withUi))).toEqual(['altitude']);
+    // A shrug is not an exemption, and neither is a shrug with a full stop.
+    for (const shrug of [
+      '// boundary-exempt: altitude —\n',
+      '// boundary-exempt: altitude — .\n',
+    ]) {
+      expect(rules(breaches('apps/store-node/src/Fragment.tsx', shrug + source, withUi))).toEqual([
+        'altitude',
+      ]);
+    }
   });
 });

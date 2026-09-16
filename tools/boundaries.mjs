@@ -64,6 +64,13 @@
  */
 import { posix } from 'node:path';
 
+// An application's own strings, which the policy check knows as "the one place
+// a user-facing string is supposed to live". It is the most app-specific file an
+// app has and it is invisible to the altitude rule, because what it knows is its
+// **content** rather than its imports. One function decides which file that is
+// for both checks, so they cannot come to disagree about it.
+import { isCatalogue } from './policy.mjs';
+
 /** @typedef {{ name: string, dir: string, exported: readonly string[] }} WorkspacePackage */
 /** @typedef {{ file: string, source: string }} SourceFile */
 /** @typedef {{ file: string, line: number, rule: string, message: string }} Finding */
@@ -274,20 +281,6 @@ function isShippedSource(path) {
 }
 
 /**
- * An application's own strings, which `check-policy.mjs` already knows by the
- * same name as "the one place a user-facing string is supposed to live".
- *
- * It is the most app-specific file an app has and it is invisible to this rule,
- * because what it knows is its **content** rather than its imports: a thousand
- * sentences about this product, reached through a translator that could equally
- * serve any other. Exempting it one app at a time would spend a reasoned
- * exception on something that is true by definition.
- */
-function isCatalogue(path) {
-  return /catalogue|messages|strings/i.test(path);
-}
-
-/**
  * An exemption, written where the exception is, and required to carry a reason
  * so that it cannot be a shrug.
  */
@@ -296,8 +289,9 @@ function isExempt(source, rule) {
   // pattern that let whitespace run across the newline would happily read the
   // next line of code as the justification, which is a shrug that type-checks.
   for (const line of source.split('\n')) {
-    const match = /boundary-exempt:[^\S\n]*(\S+)[^\S\n]*—[^\S\n]*(.+)/.exec(line);
-    if (match !== null && match[1] === rule && match[2].trim().length > 0) return true;
+    const match = /boundary-exempt:[^\S\n]*(\S+)[^\S\n]*—[^\S\n]*(.*)$/.exec(line);
+    // A reason is words: a dash followed by a full stop is a shrug with punctuation.
+    if (match !== null && match[1] === rule && /\p{L}/u.test(match[2])) return true;
   }
   return false;
 }

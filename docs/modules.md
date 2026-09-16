@@ -1,6 +1,6 @@
 # Vertex Suite — Module Map and Build Order
 
-The 182 features of `core-features.md` decomposed into 16 modules and 30 build units.
+The 183 features of `core-features.md` decomposed into 16 modules and 30 build units.
 
 This document answers three questions and no others:
 
