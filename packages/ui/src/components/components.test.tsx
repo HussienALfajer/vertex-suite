@@ -30,7 +30,8 @@ function wrap(children: ReactNode): void {
 }
 
 describe('<Button>', () => {
-  it('is operable from the keyboard alone — POS-02', async () => {
+  it('is operable from the keyboard alone', async () => {
+    // What POS-02 asks of every control; the register, not a button, proves it.
     const user = userEvent.setup();
     const pressed = vi.fn();
     wrap(<Button onPress={pressed}>حفظ</Button>);

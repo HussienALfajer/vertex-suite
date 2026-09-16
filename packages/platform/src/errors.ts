@@ -81,5 +81,8 @@ export class AuthoriserUnavailableError extends PlatformError {
   }
 }
 
-/** A migration failed, or the journal and the plan disagree about what has run. */
+/**
+ * A migration failed, or the journal and the plan disagree about what has run:
+ * one recorded that the plan no longer names, or one pending before one applied.
+ */
 export class MigrationError extends PlatformError {}

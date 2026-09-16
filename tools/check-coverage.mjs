@@ -47,9 +47,14 @@ for (const [id, unit] of owner) {
 // Only an identifier that is not a feature fails. Naming a feature whose unit
 // has not been delivered is not an error — it is how a unit begins, since the
 // acceptance tests of a slice are written from the specification before the
-// code that satisfies them, and it is also how a lower layer records which
-// future feature a primitive was shaped for. Those are reported below instead,
-// so that standing work stays visible on every run.
+// code that satisfies them. Those are reported below instead, so that standing
+// work stays visible on every run.
+//
+// A lower layer does **not** name a feature to record what a primitive was
+// shaped for. It once did — kernel rounding tests named FX-07, a button test
+// POS-02 — and each of those would have been counted as proof of the feature
+// the day its unit was delivered, although none asserts what the feature
+// requires. The primitive's comment says what it serves; the name stays a claim.
 const standing = new Map();
 for (const [id, where] of proofs) {
   if (!features.has(id)) {

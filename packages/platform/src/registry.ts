@@ -7,6 +7,8 @@ import {
   AuthoriserUnavailableError,
   ContractCycleError,
   ContractUnavailableError,
+  DuplicateDeclarationError,
+  RegistryError,
   UndeclaredEventError,
 } from './errors.js';
 import type { EventBus } from './events.js';
@@ -92,6 +94,28 @@ export interface RegistryOptions<Session> {
  */
 export function createRegistry<Session>(options: RegistryOptions<Session>): Registry<Session> {
   const { catalogue, plan, bus, transactor, clock } = options;
+
+  // The plan is trusted to have come from `composeEdition` over this same
+  // catalogue, and nothing made that true. Two definitions under one code
+  // resolved silently to the last, and a module the plan enabled but the
+  // catalogue lacked simply was not there — an edition short a module it was
+  // sold, with nothing to say so until the first command that needed it.
+  const seen = new Set<ModuleCode>();
+  for (const definition of catalogue) {
+    if (seen.has(definition.code)) {
+      throw new DuplicateDeclarationError(`The catalogue holds ${definition.code} twice.`);
+    }
+    seen.add(definition.code);
+  }
+  const missing = [...plan.enabled].filter(
+    (code) => !seen.has(code) || !plan.activation.includes(code),
+  );
+  if (missing.length > 0) {
+    throw new RegistryError(
+      `The plan enables ${missing.join(', ')}, which the catalogue or the activation order ` +
+        'does not contain. Compose the plan from this catalogue with composeEdition.',
+    );
+  }
 
   const enabled = catalogue.filter((one) => plan.enabled.has(one.code));
   const byCode = new Map(enabled.map((one) => [one.code, one] as const));

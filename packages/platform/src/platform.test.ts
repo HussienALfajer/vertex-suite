@@ -2,7 +2,7 @@ import { newId, orThrow, systemClock, type Id } from '@vertex/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { contractKey } from './contract.js';
-import { commandContext, type CommandContext } from './context.js';
+import { commandContext, systemContext, type CommandContext } from './context.js';
 import { composeEdition, type EditionRequest } from './edition.js';
 import { createEventBus, eventType, type HandlerFailure } from './events.js';
 import { memoryJournal, runMigrations } from './migrations.js';
@@ -180,7 +180,7 @@ async function install(request: EditionRequest) {
   await runMigrations({
     plan: registry.migrationPlan('store-node'),
     transactor,
-    context: commandContext({ tenant: TENANT }),
+    context: systemContext(TENANT),
     journal: memoryJournal(),
   });
 
@@ -192,13 +192,16 @@ const CASH_ONLY: EditionRequest = { modules: [...CORE, 'CAT', 'STK'] };
 
 describe('an edition that bought purchasing', () => {
   it('creates every module table in dependency order', async () => {
-    const { registry } = await install(FULL);
+    const { registry, store } = await install(FULL);
     expect(registry.migrationPlan('store-node').map((one) => one.id)).toEqual([
       'sys.0001-tenant',
       'cat.0001-item',
       'stk.0001-movement',
       'pur.0001-supplier',
     ]);
+    for (const table of ['tenant', 'item', 'movement', 'supplier']) {
+      expect(store.committed().get(`table:${table}`), table).toBe(true);
+    }
   });
 
   it('raises the payable when a consignment unit is sold', async () => {
@@ -235,7 +238,7 @@ describe('an edition that did not', () => {
   it('runs the same sale, and simply has no payable', async () => {
     const { registry, store, handlerFailures } = await install(CASH_ONLY);
 
-    await registry.require(Selling).sell('SKU-1', commandContext({ tenant: TENANT }));
+    await registry.require(Selling).sell('SKU-1', systemContext(TENANT));
 
     expect(store.committed().get('movement:SKU-1')).toEqual({ kind: 'sale', item: 'SKU-1' });
     expect(store.committed().has('payable:SKU-1')).toBe(false);

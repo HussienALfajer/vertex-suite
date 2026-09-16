@@ -142,7 +142,8 @@ describe('<Quantity> — §12', () => {
   });
 });
 
-describe('<UnitLabel> — SYS-08', () => {
+describe('<UnitLabel> — a tenant renames a unit', () => {
+  // The display half of SYS-08; the override itself is U27's to prove.
   it('uses the tenant name for a concept when there is one', () => {
     const renamed = new Translator({
       locale: 'ar',
@@ -170,7 +171,8 @@ describe('<DateTime> — §12', () => {
     expect(container.textContent).toMatch(/12:30|GMT|\+3/u);
   });
 
-  it('marks a provisional business date visibly — POS-01', () => {
+  it('marks a provisional business date visibly', () => {
+    // POS-01's offline day needs this mark; it does not prove the day.
     wrap(<DateTime value={at} timeZone="Asia/Damascus" provisional />);
     expect(screen.getByText('مؤقت')).toBeDefined();
   });
@@ -181,7 +183,8 @@ describe('<DateTime> — §12', () => {
   });
 });
 
-describe('<CurrencyRate> — FX-04', () => {
+describe('<CurrencyRate> — a rate and the day it was set', () => {
+  // FX-04 shows a rate's date on every currency-sensitive screen; this is the component, not the rule.
   const asOf = new Date('2026-09-14T00:00:00Z');
 
   it('names both halves of the quote, in the stored direction', () => {

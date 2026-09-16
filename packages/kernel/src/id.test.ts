@@ -86,6 +86,16 @@ describe('a generator under a controlled clock', () => {
     expect(timeOf(ids[4_096]!)).toBe(plusMillis(NOON, 1));
   });
 
+  it('refuses a clock that reads before 1970 rather than stamping 1970', () => {
+    // A machine whose clock battery has died boots into a year the format
+    // cannot carry. Issuing anyway would file its sales under the epoch.
+    const generator = createIdGenerator({
+      clock: manualClock(instant(-5_000)),
+      randomBytes: noEntropy,
+    });
+    expect(() => generator.next()).toThrow(InvalidIdError);
+  });
+
   it('never reuses a value across a stopped clock', () => {
     const generator = createIdGenerator({ clock: manualClock(NOON), randomBytes: noEntropy });
     const ids = Array.from({ length: 5_000 }, () => generator.next());

@@ -156,6 +156,32 @@ describe('a command that fails', () => {
     // No receipt, no event, and the compensation ran. SYN-05 in one line.
     expect(log).toEqual(['compensated']);
   });
+
+  it('keeps the command’s own error, and still compensates, when the rollback fails too', async () => {
+    // The connection is gone: the work failed on it, and so does the rollback.
+    // The caller needs to hear why the command failed, and the drawer that was
+    // opened still has to be closed.
+    const store = createMemoryStore();
+    const failing: SessionDriver<MemorySession> = {
+      begin: store.driver.begin.bind(store.driver),
+      commit: store.driver.commit.bind(store.driver),
+      rollback: () => Promise.reject(new Error('connection already closed')),
+    };
+    const { transactor, log, effectFailures } = harness(failing);
+
+    await expect(
+      transactor.run(context, (uow) => {
+        uow.onRollback(() => {
+          log.push('compensated');
+        });
+        return Promise.reject(new Error('the credit limit query failed'));
+      }),
+    ).rejects.toThrow('the credit limit query failed');
+
+    expect(log).toEqual(['compensated']);
+    expect(effectFailures.map((one) => one.phase)).toEqual(['rollback']);
+    expect(String(effectFailures[0]?.cause)).toContain('connection already closed');
+  });
 });
 
 describe('failures after the commit', () => {
@@ -196,6 +222,80 @@ describe('failures after the commit', () => {
     expect(handlerFailures).toHaveLength(1);
     expect(handlerFailures[0]?.subscriber).toBe('STK');
   });
+
+  it('runs every effect and delivers every event even when the host’s sinks throw', async () => {
+    // A host that makes failures loud — development does — may not thereby
+    // decide which effects run or which subscribers hear of a committed fact.
+    const store = createMemoryStore();
+    const log: string[] = [];
+    const bus = createEventBus({
+      onHandlerFailure: () => {
+        throw new Error('loud handler sink');
+      },
+    });
+    bus.subscribe(SaleRecorded.name, 'STK', () => Promise.reject(new Error('locked')));
+    bus.subscribe(SaleRecorded.name, 'RPT', () => {
+      log.push('read model');
+      return Promise.resolve();
+    });
+    const transactor = createTransactor({
+      driver: store.driver,
+      bus,
+      clock: systemClock,
+      onEffectFailure: () => {
+        throw new Error('loud effect sink');
+      },
+    });
+
+    const outcome = transactor.run(context, (uow) => {
+      uow.session.put('sale:1', { total: '1' });
+      uow.afterCommit(() => {
+        throw new Error('the printer is out of paper');
+      });
+      uow.afterCommit(() => {
+        log.push('drawer opened');
+      });
+      uow.publish(SaleRecorded, { total: '1' });
+      return Promise.resolve();
+    });
+
+    // Loud, as the host asked — both sinks, and only after everything happened.
+    await expect(outcome).rejects.toThrow('The failure sink raised more than once.');
+    expect(store.committed().has('sale:1')).toBe(true);
+    expect(log).toEqual(['drawer opened', 'read model']);
+  });
+});
+
+describe('a unit of work that has ended', () => {
+  it('refuses to publish, defer or compensate once its command has finished', async () => {
+    // An event published from an after-commit effect used to be delivered as if
+    // the transaction had produced it, and one published later simply vanished.
+    const { transactor, delivered } = harness();
+    let kept: Parameters<Parameters<typeof transactor.run>[1]>[0] | undefined;
+    const inEffect: unknown[] = [];
+
+    await transactor.run(context, (uow) => {
+      kept = uow;
+      uow.afterCommit(() => {
+        try {
+          uow.publish(SaleRecorded, { total: 'late' });
+        } catch (refusal) {
+          inEffect.push(refusal);
+        }
+      });
+      return Promise.resolve();
+    });
+
+    expect(inEffect).toHaveLength(1);
+    expect(delivered).toEqual([]);
+    expect(() => kept?.publish(SaleRecorded, { total: 'later' })).toThrow(/has finished/u);
+    expect(() => {
+      kept?.afterCommit(() => undefined);
+    }).toThrow(/has finished/u);
+    expect(() => {
+      kept?.onRollback(() => undefined);
+    }).toThrow(/has finished/u);
+  });
 });
 
 describe('the memory store', () => {
@@ -235,5 +335,33 @@ describe('the memory store', () => {
     ).rejects.toThrow('changed my mind');
 
     expect(store.committed().get('a')).toBe(1);
+  });
+
+  it('holds values, not the objects it was handed', async () => {
+    // As a database does. Editing what `get` returned, and then failing, once
+    // changed committed state anyway; and a command that forgot to `put` passed
+    // here and lost its write against a real store.
+    const { store, transactor } = harness();
+    const handed = { balance: '100' };
+
+    await transactor.run(context, (uow) => {
+      uow.session.put('till:1', handed);
+      return Promise.resolve();
+    });
+    handed.balance = 'edited after the commit';
+
+    await expect(
+      transactor.run(context, (uow) => {
+        (uow.session.get('till:1') as { balance: string }).balance = '0';
+        throw new Error('rolled back');
+      }),
+    ).rejects.toThrow('rolled back');
+
+    await transactor.run(context, (uow) => {
+      (uow.session.get('till:1') as { balance: string }).balance = 'never put';
+      return Promise.resolve();
+    });
+
+    expect(store.committed().get('till:1')).toEqual({ balance: '100' });
   });
 });

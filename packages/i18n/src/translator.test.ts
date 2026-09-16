@@ -41,7 +41,8 @@ describe('Translator', () => {
     expect(arabic().format('item.title')).toBe('صنف');
   });
 
-  it('lets a tenant rename a concept without touching a message — SYS-08', () => {
+  it('lets a tenant rename a concept without touching a message', () => {
+    // The mechanism SYS-08 will be built on; the feature is U27's to prove.
     const t = arabic({ item: 'مادة' });
     expect(t.format('item.title')).toBe('مادة');
     // And the renaming reaches inside a plural, not just a bare label.

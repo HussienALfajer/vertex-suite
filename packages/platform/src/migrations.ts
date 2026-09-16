@@ -55,6 +55,10 @@ export async function runMigrations<Session>(
     seen.add(migration.id);
   }
 
+  await transactor.run(context, async (uow) => {
+    agreeWithJournal(plan, await journal.applied(uow.session));
+  });
+
   const applied: string[] = [];
   const alreadyApplied: string[] = [];
 
@@ -79,6 +83,52 @@ export async function runMigrations<Session>(
     applied: Object.freeze(applied),
     alreadyApplied: Object.freeze(alreadyApplied),
   });
+}
+
+/** `sys.0001-tenant` belongs to `sys`; `defineModule` refuses any other shape. */
+const moduleOf = (id: string): string => id.slice(0, id.indexOf('.'));
+
+/**
+ * Refuses a plan that disagrees with what the store says has already run.
+ *
+ * The journal is keyed by identifier, so it cannot tell a new migration from an
+ * old one renamed. Without this, a release that renamed `0003` ran it again
+ * under its new name against live data, and a release that inserted `0002`
+ * before an applied `0003` ran it after — against a shape that had already
+ * moved past it. Both went through without a word.
+ *
+ * Only the modules the plan names are compared. A module the journal knows and
+ * the plan does not is one this edition no longer ships, and its record is
+ * history rather than a disagreement.
+ */
+function agreeWithJournal<Session>(
+  plan: readonly MigrationDeclaration<Session>[],
+  done: ReadonlySet<string>,
+): void {
+  const planned = new Set(plan.map((migration) => migration.id));
+  const modules = new Set(plan.map((migration) => moduleOf(migration.id)));
+
+  for (const id of [...done].sort()) {
+    if (modules.has(moduleOf(id)) && !planned.has(id)) {
+      throw new MigrationError(
+        `The store records "${id}" as applied and this plan does not contain it. A migration ` +
+          'renamed or removed after it ran would otherwise run again under its new name.',
+      );
+    }
+  }
+
+  const waiting = new Map<string, string>();
+  for (const { id } of plan) {
+    const module = moduleOf(id);
+    const earlier = waiting.get(module);
+    if (done.has(id) && earlier !== undefined) {
+      throw new MigrationError(
+        `"${earlier}" has not run and "${id}", which comes after it, has. Running it now would ` +
+          'apply it against a shape that has already moved past it.',
+      );
+    }
+    if (!done.has(id) && earlier === undefined) waiting.set(module, id);
+  }
 }
 
 const JOURNAL_PREFIX = 'platform.migration.';

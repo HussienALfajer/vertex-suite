@@ -174,7 +174,8 @@ describe('Addresses and places on a map — SYS-14', () => {
     ).toBe('sys.location-kind-has-no-place');
   });
 
-  it('lets a vehicle be cleared, so a command SYN-02 replays is not a failure', async () => {
+  it('lets a vehicle be cleared, so a replayed command is not a failure', async () => {
+    // SYN-02 replays commands; this is the half of that SYS owns.
     const branch = await aBranch();
     const van = await aLocation(branch, 'vehicle');
 

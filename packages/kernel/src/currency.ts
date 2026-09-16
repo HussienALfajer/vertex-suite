@@ -18,6 +18,15 @@ export type CurrencyCode = string;
  */
 export type RoundingMode = 'half-up' | 'half-even' | 'up' | 'down' | 'ceil' | 'floor';
 
+const ROUNDING_MODES: ReadonlySet<string> = new Set<RoundingMode>([
+  'half-up',
+  'half-even',
+  'up',
+  'down',
+  'ceil',
+  'floor',
+]);
+
 /**
  * A currency and its arithmetic rules (`FX-01`, `FX-07`).
  *
@@ -65,6 +74,17 @@ export function defineCurrency<C extends CurrencyCode>(currency: Currency<C>): C
     );
   }
 
+  // FX-01 makes the currency list data, so a mode arrives as a stored string the
+  // type never saw. An unknown one used to reach the library as `undefined`,
+  // which it reads as its own default — half-up — and a currency declared
+  // `half_even` rounded the wrong way with nothing to say so.
+  if (!ROUNDING_MODES.has(roundingMode)) {
+    throw new InvalidCurrencyError(
+      `Currency ${code} declares a rounding mode of "${roundingMode}", which is not one of ` +
+        `${[...ROUNDING_MODES].join(', ')}.`,
+    );
+  }
+
   const increment = new Dec(roundingIncrement);
   if (!increment.isPositive() || increment.isZero()) {
     throw new InvalidCurrencyError(
@@ -86,7 +106,13 @@ export function incrementOf(currency: Currency): Decimal {
   return new Dec(currency.roundingIncrement);
 }
 
-/** Maps a declared rounding mode onto the decimal library's constant. */
+/**
+ * Maps a declared rounding mode onto the decimal library's constant.
+ *
+ * Throws past the switch rather than falling out of it: a mode that is not in
+ * the union can only have come from outside the type system, and `undefined`
+ * would be taken by the library as a silent instruction to round half-up.
+ */
 export function roundingOf(mode: RoundingMode): Rounding {
   switch (mode) {
     case 'half-up':
@@ -102,4 +128,5 @@ export function roundingOf(mode: RoundingMode): Rounding {
     case 'floor':
       return Dec.ROUND_FLOOR;
   }
+  throw new InvalidCurrencyError(`"${String(mode)}" is not a rounding mode.`);
 }

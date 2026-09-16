@@ -37,7 +37,15 @@ export interface CommandContext {
 
 export interface CommandContextInput {
   readonly tenant: TenantId;
-  readonly actor?: UserId | null;
+  /**
+   * Required, and null only on purpose. An optional actor made `{ tenant }` —
+   * the context a caller gets by forgetting a field, or a sync payload that
+   * lost one in transit — into the system, and the system holds every right:
+   * `authorise` answered yes without asking anybody. Leaving it out now fails
+   * to compile, and fails at run time for anything that did not compile
+   * against this type. `systemContext` is the one way to mean "nobody".
+   */
+  readonly actor: UserId | null;
   readonly device?: DeviceId | null;
   /**
    * Supplied when a command is being **re-run**: a retried outbox entry or a
@@ -48,9 +56,17 @@ export interface CommandContextInput {
 }
 
 export function commandContext(input: CommandContextInput): CommandContext {
+  // Widened for the check: the type already requires the field, and this is
+  // for the caller the type never saw — JavaScript, or data read off a wire.
+  if ((input as { readonly actor?: unknown }).actor === undefined) {
+    throw new TypeError(
+      'A command context must say who is acting. Pass actor: null only for the system, ' +
+        'or use systemContext.',
+    );
+  }
   return Object.freeze({
     tenant: input.tenant,
-    actor: input.actor ?? null,
+    actor: input.actor,
     device: input.device ?? null,
     correlation: input.correlation ?? newId<'command'>(),
   });
@@ -58,5 +74,5 @@ export function commandContext(input: CommandContextInput): CommandContext {
 
 /** A command nobody asked for: a migration, a scheduled job, an applied sync. */
 export function systemContext(tenant: TenantId): CommandContext {
-  return commandContext({ tenant });
+  return commandContext({ tenant, actor: null });
 }

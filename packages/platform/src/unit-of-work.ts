@@ -78,6 +78,22 @@ export interface TransactorOptions<Session> {
   readonly onEffectFailure: (failure: EffectFailure) => void;
 }
 
+/**
+ * The failures a host's own sink raised, rethrown once everything it was told
+ * about has still happened.
+ *
+ * A sink that throws is a host asking to be loud, and development does. What it
+ * may not do is decide which effects run and which events are delivered: a sink
+ * that threw on the first failed receipt used to skip every later effect and
+ * never deliver the committed command's events at all.
+ */
+function rethrowSinkFailures(failures: readonly unknown[]): void {
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, 'The failure sink raised more than once.');
+  }
+}
+
 export interface Transactor<Session = unknown> {
   /**
    * Runs one command.
@@ -96,16 +112,26 @@ export function createTransactor<Session>(
 ): Transactor<Session> {
   const { driver, bus, clock, onEffectFailure } = options;
 
+  /** Reports a failure, and keeps what the sink itself raised for later. */
+  const report = (failure: EffectFailure, raised: unknown[]): void => {
+    try {
+      onEffectFailure(failure);
+    } catch (sinkFailure) {
+      raised.push(sinkFailure);
+    }
+  };
+
   const runEffects = async (
     effects: readonly (() => void | Promise<void>)[],
     context: CommandContext,
     phase: EffectFailure['phase'],
+    raised: unknown[],
   ): Promise<void> => {
     for (const effect of effects) {
       try {
         await effect();
       } catch (cause) {
-        onEffectFailure({ context, phase, cause });
+        report({ context, phase, cause }, raised);
       }
     }
   };
@@ -120,11 +146,25 @@ export function createTransactor<Session>(
       const afterCommit: (() => void | Promise<void>)[] = [];
       const onRollback: (() => void | Promise<void>)[] = [];
 
+      // Open while the work runs, and only then. An event published from an
+      // after-commit effect was delivered as though the transaction had
+      // produced it, and one published after `run` returned was silently
+      // dropped; both are a command reaching for a unit of work that has ended.
+      let open = true;
+      const stillOpen = (what: string): void => {
+        if (!open) {
+          throw new Error(
+            `${what} on a unit of work whose command has finished. Start a command of its own.`,
+          );
+        }
+      };
+
       const uow: UnitOfWork<Session> = {
         session,
         context,
         startedAt: clock.now(),
         publish<Payload>(type: EventType<Payload>, payload: Payload): DomainEvent<Payload> {
+          stillOpen(`Publishing ${type.name}`);
           const event: DomainEvent<Payload> = Object.freeze({
             id: newId<'event'>(),
             name: type.name,
@@ -136,21 +176,37 @@ export function createTransactor<Session>(
           return event;
         },
         afterCommit(effect: () => void | Promise<void>): void {
+          stillOpen('Deferring an effect');
           afterCommit.push(effect);
         },
         onRollback(effect: () => void | Promise<void>): void {
+          stillOpen('Registering a compensation');
           onRollback.push(effect);
         },
       };
+
+      // What the host's sink raised along the way. The command's own error, when
+      // there is one, is what the caller is told; a sink's is kept for after.
+      const raised: unknown[] = [];
 
       let outcome: T;
       try {
         outcome = await work(uow);
       } catch (cause) {
-        await driver.rollback(session);
-        await runEffects(onRollback, context, 'rollback');
+        open = false;
+        // A rollback that throws — the connection already gone — used to replace
+        // the command's own error and skip every compensation. The compensations
+        // undo what the store never knew about either way, and the caller needs
+        // to hear why the command failed, not why cleaning up after it did.
+        try {
+          await driver.rollback(session);
+        } catch (rollbackFailure) {
+          report({ context, phase: 'rollback', cause: rollbackFailure }, raised);
+        }
+        await runEffects(onRollback, context, 'rollback', raised);
         throw cause;
       }
+      open = false;
 
       try {
         await driver.commit(session);
@@ -159,16 +215,23 @@ export function createTransactor<Session>(
         // decided what state it is in, and asking it to roll back is as likely
         // to raise a second error that hides the first. The compensations still
         // run: they undo what the store never knew about.
-        await runEffects(onRollback, context, 'rollback');
+        await runEffects(onRollback, context, 'rollback', raised);
         throw cause;
       }
 
       // Effects before subscribers, deliberately. The cashier is waiting for
-      // the receipt; the ledger is not waiting for anything. Both are after the
-      // commit, so both are equally safe, and only one of them has a person
+      // the receipt; a subscriber is not waiting for anything. Both are after
+      // the commit, so both are equally safe, and only one of them has a person
       // standing in front of it.
-      await runEffects(afterCommit, context, 'after-commit');
-      await bus.dispatch(events);
+      await runEffects(afterCommit, context, 'after-commit', raised);
+      try {
+        // The bus catches every subscriber's failure itself; what reaches here
+        // is its own sink raising, which waits with the rest.
+        await bus.dispatch(events);
+      } catch (sinkFailure) {
+        raised.push(sinkFailure);
+      }
+      rethrowSinkFailures(raised);
 
       return outcome;
     },
@@ -182,6 +245,11 @@ export function createTransactor<Session>(
  * exists, and it has the one property that makes such a test worth writing —
  * a rolled-back command leaves nothing behind. Writes go to an overlay that is
  * merged on commit and dropped on rollback.
+ *
+ * Values are copied in and copied out, as a database would. It once held the
+ * objects themselves, so a command that edited what `get` returned and then
+ * failed had changed committed state anyway — and a module could forget a
+ * `put`, pass every test here, and lose the write against a real store.
  */
 export interface MemorySession {
   put(key: string, value: unknown): void;
@@ -195,6 +263,13 @@ export interface MemoryStore {
   /** What is committed. A test asserts against this, never against a session. */
   committed(): ReadonlyMap<string, unknown>;
 }
+
+/**
+ * Declared here rather than taken from `lib.dom` or `@types/node`, neither of
+ * which this package opts into: it is a global in every runtime the platform
+ * ships to — the store node, Electron and the browser.
+ */
+declare function structuredClone<T>(value: T): T;
 
 /** What one uncommitted write says: a value, or the absence of one. */
 type Slot = { readonly removed: true } | { readonly value: unknown };
@@ -217,12 +292,12 @@ export function createMemoryStore(): MemoryStore {
     const overlay = new Map<string, Slot>();
     const session: MemorySession = {
       put(key: string, value: unknown): void {
-        overlay.set(key, { value });
+        overlay.set(key, { value: structuredClone(value) });
       },
       get(key: string): unknown {
         const slot = overlay.get(key);
-        if (slot === undefined) return committed.get(key);
-        return 'removed' in slot ? undefined : slot.value;
+        if (slot === undefined) return structuredClone(committed.get(key));
+        return 'removed' in slot ? undefined : structuredClone(slot.value);
       },
       remove(key: string): void {
         overlay.set(key, REMOVED);
@@ -259,7 +334,7 @@ export function createMemoryStore(): MemoryStore {
       },
     },
     committed(): ReadonlyMap<string, unknown> {
-      return new Map(committed);
+      return structuredClone(committed);
     },
   };
 }
