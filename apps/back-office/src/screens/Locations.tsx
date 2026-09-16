@@ -617,7 +617,12 @@ function NewLocationDialog({
           value={kind}
           onChange={(key) => {
             const picked = KINDS.find((one) => one === key);
-            if (picked !== undefined) setKind(picked);
+            if (picked === undefined) return;
+            setKind(picked);
+            // A van holds no point, and clearing it here rather than only
+            // hiding the field is what stops switching back to a placeable
+            // kind from silently restoring a point nobody re-confirmed.
+            if (picked === 'vehicle') setPoint(null);
           }}
         />
         <PlaceFields

@@ -89,7 +89,12 @@ function written(value: string): string {
   const signed = value.startsWith('+') ? value.slice(1) : value;
   const negative = signed.startsWith('-');
   const digits = (negative ? signed.slice(1) : signed).replace(/^0+(?=\d)/, '');
-  return `${negative ? '-' : ''}${digits}`;
+  // A sign carried by an all-zero magnitude is not a place a metre west of the
+  // prime meridian, it is "-0" — the exact string `sys/place.ts`'s own guard
+  // exists to prevent, reachable here first because that guard runs at save,
+  // not at paste.
+  const isZero = /^0*\.?0*$/.test(digits);
+  return `${negative && !isZero ? '-' : ''}${digits}`;
 }
 
 export function parsePlace(text: string): ParsedPlace {

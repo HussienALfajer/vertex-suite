@@ -41,6 +41,15 @@ export default defineConfig({
       { find: /^@vertex\/ui$/, replacement: source('ui') },
       { find: /^@vertex\/kernel$/, replacement: source('kernel') },
       { find: /^@vertex\/i18n$/, replacement: source('i18n') },
+      // `SYS` is the real module, hosted here (`dev-system.ts`) rather than
+      // stood in for — nothing in it needs a machine. Left off this list it
+      // resolves through the package's `dist/` exports instead of `src/`, and
+      // an edit to a rule in `packages/modules/sys` looks like it did nothing
+      // until the package is rebuilt: the same stale-copy trap `@vertex/ui/map`
+      // fell into above. `@vertex/platform` composes it and needs the same fix
+      // for the same reason.
+      { find: /^@vertex\/sys$/, replacement: source('modules/sys') },
+      { find: /^@vertex\/platform$/, replacement: source('platform') },
     ],
   },
   server: { port: 5181 },

@@ -1,6 +1,8 @@
 import { clsx } from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { Dec } from '@vertex/kernel';
+
 import { Banner } from '../components/Banner.js';
 import { Button, IconButton } from '../components/Button.js';
 import { SearchInput } from '../components/SearchInput.js';
@@ -86,8 +88,15 @@ const SEARCH_AFTER_MS = 500;
  */
 type Asking = 'idle' | 'asking' | 'insecure' | 'unsupported' | 'refused' | 'unavailable';
 
+/**
+ * The same six-decimal-place rule `sys/place.ts` stores by, and the same
+ * `Decimal` it rounds with — a click or a drag produces a float, and a native
+ * `toFixed` on it can round the sixth place differently than the store's
+ * correctly-rounded decimal does, which is the one gap `place.ts`'s own
+ * comment says two "written" seams must not have between them.
+ */
 function written(degrees: number): string {
-  return degrees.toFixed(PLACES);
+  return new Dec(degrees).toDecimalPlaces(PLACES).toFixed(PLACES);
 }
 
 function pointAt(at: LatLng): PickedPoint {

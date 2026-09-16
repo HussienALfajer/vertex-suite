@@ -218,7 +218,10 @@ export function GeoMap({
                     // somewhere else of its own is square, and a withdrawn
                     // place is hollow and dashed.
                     !many && first.kind === 'store' ? 'rounded' : 'rounded-pill',
-                    many || first.isActive
+                    // A cluster is active if anything inside it is: a group
+                    // hides no active place, but one holding nothing but
+                    // withdrawn places must still read as withdrawn.
+                    one.members.some((member) => member.isActive)
                       ? 'bg-fill-accent text-on-accent'
                       : 'bg-surface-3 text-fg-muted border-line-strong border border-dashed',
                   )}

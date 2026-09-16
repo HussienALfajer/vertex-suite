@@ -101,9 +101,15 @@ export function toWorld(point: LatLng, zoom: number): Pixel {
 export function fromWorld(pixel: Pixel, zoom: number): LatLng {
   const size = worldSize(zoom);
   const y = 0.5 - pixel.y / size;
+  const lng = (pixel.x / size) * 360 - 180;
   return {
     lat: (Math.atan(Math.sinh(2 * Math.PI * y)) * 180) / Math.PI,
-    lng: (pixel.x / size) * 360 - 180,
+    // Wrapped back into (-180, 180]: panning is repeated small offsets against
+    // whatever `centre.lng` already is, and left unwrapped it walks past the
+    // edge after enough of them — at which point `toWorld` (which does not
+    // wrap) places the outline layer a whole world away from where the tile
+    // layer's own wrapped `x` still draws it.
+    lng: ((((lng + 180) % 360) + 360) % 360) - 180,
   };
 }
 

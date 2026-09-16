@@ -134,19 +134,24 @@ export function PlaceDialog({
     const of = subject;
     const wanted = point;
     const addressed = await run((port) => commands.readdress(port, of.id, address));
-    let message = messageFor(addressed);
-    if (message === null) {
+    const addressMessage = messageFor(addressed);
+    let placeMessage: string | null = null;
+    if (addressMessage === null) {
       const located = await run((port) => commands.locate(port, of.id, wanted));
-      message = messageFor(located);
+      placeMessage = messageFor(located);
     }
     setIsWorking(false);
 
-    if (message === null) {
-      onSaved();
+    // The address is committed the moment it is sent without refusal, whether
+    // or not the point that follows it is. A later refusal of the point must
+    // not read back as if the address change never happened either.
+    if (addressMessage === null) onSaved();
+
+    if (addressMessage === null && placeMessage === null) {
       toast.show(translator.format('place.saved', { name: of.name }), { tone: 'success' });
       onOpenChange(false);
     } else {
-      setRefused(message);
+      setRefused(addressMessage ?? placeMessage);
     }
   }
 
