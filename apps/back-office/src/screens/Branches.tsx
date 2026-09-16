@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import {
   actionsColumnWidth,
@@ -14,6 +14,7 @@ import {
   TableRowAction,
   TableRowActions,
   TextInput,
+  useAttempt,
   useToast,
   useTranslator,
   type DataTableColumn,
@@ -492,30 +493,30 @@ function NewBranchDialog({
   // could have filled it in while it was already typing.
   const [address, setAddress] = useState('');
   const [point, setPoint] = useState<PickedPoint | null>(null);
-  const [isWorking, setIsWorking] = useState(false);
-  const [refused, setRefused] = useState<string | null>(null);
   const [missing, setMissing] = useState<{ company: boolean; name: boolean }>({
     company: false,
     name: false,
   });
 
-  // **Opening it is the only thing that fills it in**, and the dependency list
-  // says so by naming nothing else. `companies` is a fresh array after every
-  // reload — and a reload follows every successful command — so listing it here
-  // cleared a half-typed branch name the moment anything else in the
-  // application refreshed the structure underneath the dialog.
-  useEffect(() => {
-    if (!isOpen) return;
+  // **Opening it is the only thing that fills it in**, and `useAttempt`'s
+  // dependency list says so by naming nothing else. `companies` is a fresh
+  // array after every reload — and a reload follows every successful command
+  // — so listing it here cleared a half-typed branch name the moment anything
+  // else in the application refreshed the structure underneath the dialog.
+  const {
+    isWorking,
+    refused,
+    setRefused,
+    attempt: attemptWith,
+  } = useAttempt(isOpen, () => {
     // A shop with one company never answers this question; a shop that filtered
     // the list to one has already answered it.
     setCompany(only ?? companies.find((one) => one.id === preferred) ?? null);
     setName('');
     setAddress('');
     setPoint(null);
-    setRefused(null);
     setMissing({ company: false, name: false });
-    setIsWorking(false);
-  }, [isOpen]);
+  });
 
   async function attempt(): Promise<void> {
     if (isWorking) return;
@@ -527,28 +528,25 @@ function NewBranchDialog({
       return;
     }
 
-    setIsWorking(true);
-    setRefused(null);
     const chosen = name.trim();
     const into = company;
     const where: GeoPoint | undefined = point ?? undefined;
-    const delivery = await run((of) =>
-      of.branches.open({
-        company: into.id,
-        name: chosen,
-        address,
-        ...(where === undefined ? {} : { point: where }),
-      }),
-    );
-    setIsWorking(false);
-
-    const message = messageFor(delivery);
-    if (message === null) {
-      toast.show(translator.format('branches.opened', { name: chosen }), { tone: 'success' });
-      onOpenChange(false);
-    } else {
-      setRefused(message);
-    }
+    await attemptWith(async () => {
+      const delivery = await run((of) =>
+        of.branches.open({
+          company: into.id,
+          name: chosen,
+          address,
+          ...(where === undefined ? {} : { point: where }),
+        }),
+      );
+      const message = messageFor(delivery);
+      if (message === null) {
+        toast.show(translator.format('branches.opened', { name: chosen }), { tone: 'success' });
+        onOpenChange(false);
+      }
+      return message;
+    });
   }
 
   const options: readonly SelectOption[] = companies.map((one) => ({

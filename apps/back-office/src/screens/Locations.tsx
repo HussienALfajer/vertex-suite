@@ -14,6 +14,7 @@ import {
   TableRowAction,
   TableRowActions,
   TextInput,
+  useAttempt,
   useToast,
   useTranslator,
   type DataTableColumn,
@@ -507,20 +508,19 @@ function NewLocationDialog({
   // its branch, and only the warehouse across town needs a point of its own.
   const [address, setAddress] = useState('');
   const [point, setPoint] = useState<PickedPoint | null>(null);
-  const [isWorking, setIsWorking] = useState(false);
-  const [refused, setRefused] = useState<string | null>(null);
   const [isMissing, setIsMissing] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) return;
+  const {
+    isWorking,
+    refused,
+    setRefused,
+    attempt: attemptWith,
+  } = useAttempt(isOpen, () => {
     setName('');
     setKind('shop-floor');
     setAddress('');
     setPoint(null);
-    setRefused(null);
     setIsMissing(false);
-    setIsWorking(false);
-  }, [isOpen]);
+  });
 
   async function attempt(): Promise<void> {
     if (isWorking) return;
@@ -530,32 +530,29 @@ function NewLocationDialog({
       return;
     }
 
-    setIsWorking(true);
-    setRefused(null);
     const chosen = name.trim();
     // A van is never placed, so nothing is sent for one — the command would
     // refuse it, and a refusal over something the screen never offered would
     // be this screen's mistake rather than the administrator's.
     const where: GeoPoint | undefined = kind === 'vehicle' ? undefined : (point ?? undefined);
-    const delivery = await run((of) =>
-      of.locations.open({
-        branch: branch.id,
-        name: chosen,
-        kind,
-        address,
-        ...(where === undefined ? {} : { point: where }),
-      }),
-    );
-    setIsWorking(false);
-
-    const message = messageFor(delivery);
-    if (message === null) {
-      onOpened();
-      toast.show(translator.format('locations.opened', { name: chosen }), { tone: 'success' });
-      onOpenChange(false);
-    } else {
-      setRefused(message);
-    }
+    await attemptWith(async () => {
+      const delivery = await run((of) =>
+        of.locations.open({
+          branch: branch.id,
+          name: chosen,
+          kind,
+          address,
+          ...(where === undefined ? {} : { point: where }),
+        }),
+      );
+      const message = messageFor(delivery);
+      if (message === null) {
+        onOpened();
+        toast.show(translator.format('locations.opened', { name: chosen }), { tone: 'success' });
+        onOpenChange(false);
+      }
+      return message;
+    });
   }
 
   const kindOptions: readonly SelectOption[] = KINDS.map((one) => ({
