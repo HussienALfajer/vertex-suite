@@ -23,7 +23,14 @@ import { useCallback, useSyncExternalStore } from 'react';
  * revocation could not reach.
  */
 
-export const ROUTES = ['companies', 'business-profile', 'branches', 'locations'] as const;
+export const ROUTES = [
+  'companies',
+  'business-profile',
+  'branches',
+  'locations',
+  'registers',
+  'numbering',
+] as const;
 
 export type RouteName = (typeof ROUTES)[number];
 

@@ -10,8 +10,14 @@ import type {
   NewBranch,
   NewCompany,
   NewLocation,
+  NewRegister,
+  NumberingRefusal,
+  NumberingSeries,
+  NumberingSpecimen,
   OrganisationRefusal,
   ProfileRevision,
+  Register,
+  SeriesScope,
 } from '@vertex/sys/contract';
 
 /**
@@ -52,8 +58,18 @@ export interface SignInAttempt {
 type CompanyId = Company['id'];
 type BranchId = Branch['id'];
 type LocationId = Location['id'];
+type RegisterId = Register['id'];
 
 type Outcome<T> = Promise<Result<T, OrganisationRefusal>>;
+/**
+ * Numbering refuses in its own vocabulary, and the two are kept apart.
+ *
+ * A format that drops the device generation and a branch name already in use
+ * are not the same kind of event and do not become one by sharing a type: the
+ * screens render a refusal by its code, and a union of every code in the module
+ * would let a screen claim to handle one it has never heard of.
+ */
+type Numbered<T> = Promise<Result<T, NumberingRefusal>>;
 
 /**
  * `SYS-09` and `SYS-05` as a screen uses them.
@@ -64,9 +80,10 @@ type Outcome<T> = Promise<Result<T, OrganisationRefusal>>;
  * assembled its own context would be a screen that could claim to be somebody
  * else. Everything that remains is the domain's own vocabulary, unchanged.
  *
- * There are no registers and no numbering series here, and no settings. Both
- * are `SYS`'s and both have screens coming; this port grows the day one is
- * built, rather than declaring methods nothing calls.
+ * There are no settings here. They are `SYS`'s and they have a screen coming;
+ * this port grows the day one is built, rather than declaring methods nothing
+ * calls — which is how registers and numbering arrived, each with the screen
+ * that needed it.
  *
  * `deactivate` and `reactivate` stay two commands rather than collapsing into a
  * flag, because that is what the contract offers and they are not symmetrical:
@@ -100,6 +117,53 @@ export interface OrganisationOfRecord {
     locate(id: LocationId, point: GeoPoint | null): Outcome<Location>;
     deactivate(id: LocationId): Outcome<Location>;
     reactivate(id: LocationId): Outcome<Location>;
+  };
+  /**
+   * The till positions of `SYS-09`, and the machines standing at them.
+   *
+   * Listed per branch for the reason locations are: a chain has one or two per
+   * shop and nobody works across the lot, so the branch is chosen first.
+   *
+   * There is no way to change a prefix, and that is the contract's rather than
+   * an omission here: every number a register has ever issued carries it, and a
+   * number already printed cannot be renamed.
+   */
+  readonly registers: {
+    list(branch: BranchId, listing?: Listing): Promise<readonly Register[]>;
+    open(input: NewRegister): Outcome<Register>;
+    rename(id: RegisterId, name: string): Outcome<Register>;
+    /**
+     * Says which machine is standing at this till now (`SYS-02`).
+     *
+     * A different machine raises the device generation and cannot be undone; the
+     * same machine named again changes nothing, which is what lets a till that
+     * reconnects say so as often as it likes.
+     *
+     * **Text, and not the branded identifier**, which is the one place this port
+     * departs from the domain's vocabulary and does so deliberately. What
+     * arrives here is what an administrator read off a till's own screen and
+     * typed; the brand is a compile-time claim this side cannot substantiate,
+     * and pretending otherwise would put the check in a screen. `SYS` judges the
+     * shape and refuses one it could not have issued — which it has to do
+     * regardless, since the same command also arrives from a sync that never
+     * passed a screen at all.
+     */
+    assignDevice(id: RegisterId, device: string): Outcome<Register>;
+    deactivate(id: RegisterId): Outcome<Register>;
+    reactivate(id: RegisterId): Outcome<Register>;
+  };
+  /**
+   * `SYS-02` as a screen configures it.
+   *
+   * `preview` is a read and the only way this application may know what a
+   * format prints: the parser and the renderer belong to the module that prints
+   * on every receipt in the shop, and a screen that worked the answer out for
+   * itself would be a second copy of them.
+   */
+  readonly numbering: {
+    configured(branch: BranchId): Promise<readonly NumberingSpecimen[]>;
+    preview(scope: SeriesScope, format: string | null): Numbered<NumberingSpecimen>;
+    define(scope: SeriesScope, format: string): Numbered<NumberingSeries>;
   };
   readonly profile: {
     /** Null only for a company this tenant did not register: every one it did has one. */

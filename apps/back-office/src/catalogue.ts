@@ -71,6 +71,41 @@ export const catalogue = {
     'سيارة التوزيع مكانها يتحرّك معها، فلا يُثبَّت لها موقع على الخريطة — موقع ثابت لها يجيب عن سؤال «أين البضاعة» بمكان كانت فيه.',
 
   /**
+   * The register's own refusals, and the device's.
+   *
+   * Each says what `SYS-02` turns on rather than merely what was rejected: a
+   * prefix and a device generation are abstractions until somebody is told that
+   * two tills sharing one file two sales under one number.
+   */
+  'refusal.sys.register-not-found': 'لم يعد هذا الصندوق موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sys.register-inactive': 'الصندوق «{register}» مسحوب من الخدمة. أعِده إلى الخدمة أولًا.',
+  'refusal.sys.register-outside-branch': 'الصندوق «{register}» ليس من صناديق هذا الفرع.',
+  'refusal.sys.register-prefix-taken':
+    'الرمز «{prefix}» مستعمل في صندوق آخر. كل رقم مستند يحمل رمز صندوقه، فرمزان متطابقان يعنيان بيعتين تحت رقم واحد.',
+  'refusal.sys.register-prefix-invalid':
+    'الرمز «{prefix}» لا يصلح: حروف لاتينية وأرقام فقط، ثماني خانات على الأكثر. هذا الرمز يُقرأ من إيصال بيد زبون، وعلامة ترقيم فيه تجعل الرقم ملتبسًا.',
+  'refusal.sys.register-has-no-device':
+    'لا جهاز مسجّل على الصندوق «{register}»، فلا يصدر عنه رقم. سجّل الجهاز القائم عليه أولًا.',
+  'refusal.sys.device-identifier-invalid':
+    'هذا ليس معرّف جهاز يصدره النظام. انسخه كما يعرضه الصندوق على شاشته، كاملًا وبلا تغيير — فالجهاز هو من يعرّف نفسه.',
+
+  /**
+   * `SYS-02`'s own vocabulary. A format is configuration somebody typed, and
+   * what it produces is printed on a document that cannot be reprinted — so
+   * each of these says what the rule protects, not just that it was broken.
+   */
+  'refusal.sys.document-type-unowned':
+    'نوع المستند «{documentType}» لا يسمّي وحدة تُصدره. يُكتب «وحدة.مستند» بحروف لاتينية صغيرة: pos.sale للبيع، pur.invoice لفاتورة الشراء.',
+  'refusal.sys.fiscal-year-required':
+    'السنة المالية «{fiscalYear}» لا تصلح تسمية: حروف لاتينية وأرقام وشرطات، بلا فراغات — مثل 2026 أو 2026-27 أو 1447.',
+  'refusal.sys.series-format-invalid':
+    'الصيغة «{format}» غير مقروءة، أو لا عدّاد فيها. صيغة بلا عدّاد تعطي كل مستندات السلسلة الرقم نفسه.',
+  'refusal.sys.series-format-must-carry-register':
+    'صيغة سلسلة صندوق لا بدّ أن تحمل رمز الصندوق وجيل جهازه معًا. بدونهما يسقط ضمان الترقيم: جهاز بديل قد يعيد إصدار رقم طبعه الجهاز الذي حلّ محلّه ولم يصل إلى عقدة المتجر بعد.',
+  'refusal.sys.series-format-carries-absent-register':
+    'هذه السلسلة لا صندوق لها، فلا شيء يملأ رمز الصندوق ولا جيل الجهاز. احذف العلامتين من الصيغة.',
+
+  /**
    * The rights `SYS` declares, named the way an administrator would say them.
    *
    * The key is the permission's own identifier, which is exactly the `labelKey`
@@ -89,8 +124,14 @@ export const catalogue = {
   'permission.sys.location.create': 'فتح موقع',
   'permission.sys.location.edit': 'تعديل بيانات المواقع',
   'permission.sys.location.delete': 'سحب موقع من الخدمة',
+  'permission.sys.register.view': 'الاطلاع على الصناديق',
+  'permission.sys.register.create': 'فتح صندوق',
+  'permission.sys.register.edit': 'تعديل بيانات الصناديق وأجهزتها',
+  'permission.sys.register.delete': 'سحب صندوق من الخدمة',
   'permission.sys.business-profile.view': 'الاطلاع على ملف العمل التجاري',
   'permission.sys.business-profile.edit': 'تعديل ملف العمل التجاري',
+  'permission.sys.numbering-series.view': 'الاطلاع على سلاسل الترقيم',
+  'permission.sys.numbering-series.edit': 'تعديل صيغ الترقيم',
   'permission.unknown': 'غير معروفة',
 
   'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
@@ -104,6 +145,8 @@ export const catalogue = {
   'nav.businessProfile': 'ملف العمل التجاري',
   'nav.branches': 'الفروع',
   'nav.locations': 'المواقع',
+  'nav.registers': 'الصناديق والأجهزة',
+  'nav.numbering': 'سلاسل الترقيم',
 
   'action.close': 'إغلاق',
   'action.cancel': 'إلغاء',
@@ -318,6 +361,149 @@ export const catalogue = {
   'location.kind.shop-floor': 'صالة بيع',
   'location.kind.store-room': 'مستودع',
   'location.kind.vehicle': 'مركبة',
+
+  /**
+   * `SYS-09`'s tills and `SYS-02`'s machines, on one screen because they are
+   * one question: a till position is not the machine standing at it, and the
+   * only place that distinction is visible is where both are shown at once.
+   */
+  'registers.title': 'الصناديق والأجهزة',
+  'registers.description':
+    'مواقع البيع داخل الفرع، والأجهزة القائمة عليها. لكل صندوق رمز يرافق كل رقم مستند يصدر عنه، ولجهازه جيل يمنع الجهاز البديل من إعادة إصدار رقم طبعه سابقه ولم يصل بعد.',
+  'registers.table': 'الصناديق',
+  'registers.search': 'ابحث في الصناديق',
+  'registers.branch': 'الفرع',
+  'registers.branch.placeholder': 'اختر الفرع',
+  'registers.open': 'فتح صندوق',
+  'registers.column.name': 'الصندوق',
+  'registers.column.prefix': 'الرمز',
+  'registers.column.device': 'الجهاز',
+  'registers.column.generation': 'الجيل',
+  'registers.column.status': 'الحالة',
+  'registers.column.actions': 'إجراءات',
+  /** The number goes through the locale, so §5.5's per-tenant digits reach it. */
+  'registers.generation.value': '{generation, number}',
+  'registers.generation.none': '—',
+  'registers.device.none': 'لا جهاز',
+  'registers.device.full': 'معرّف الجهاز: {device}',
+  'registers.idle': 'صناديق لا تصدر مستندات',
+  'registers.idle.explanation':
+    '{count, plural, one {صندوق واحد قيد الاستخدام لا جهاز عليه} two {صندوقان قيد الاستخدام لا جهاز عليهما} few {# صناديق قيد الاستخدام بلا أجهزة} many {# صندوقًا قيد الاستخدام بلا أجهزة} other {# صندوق قيد الاستخدام بلا أجهزة}}. رقم المستند يحمل جيل الجهاز، ولا جيل قبل أن يُسجَّل جهاز — فلن يصدر بيع من هذه الصناديق حتى تُسجَّل أجهزتها.',
+  'registers.empty': 'لا صناديق في هذا الفرع بعد',
+  'registers.empty.explanation':
+    'الصندوق هو موقع البيع الذي تصدر عنه الإيصالات، ورمزه يرافق كل رقم يصدر منه.',
+  'registers.noBranches': 'لا يوجد فرع بعد',
+  'registers.noBranches.explanation': 'الصندوق يُفتح داخل فرع، فابدأ بفتح الفرع.',
+  'registers.noBranches.action': 'الذهاب إلى الفروع',
+  'registers.new.title': 'فتح صندوق',
+  'registers.new.name': 'اسم الصندوق',
+  'registers.new.prefix': 'رمز الصندوق',
+  'registers.new.prefix.description':
+    'يُطبع ضمن كل رقم مستند يصدر عن هذا الصندوق، ولا يتغيّر بعد الفتح — فالرقم الذي طُبع لا يُعاد تسميته. حروف لاتينية وأرقام، ثماني خانات على الأكثر.',
+  'registers.new.prefix.required': 'أدخل رمز الصندوق.',
+  'registers.new.submit': 'فتح',
+  'registers.opened': 'فُتح «{name}».',
+  'registers.rename.title': 'تغيير اسم الصندوق',
+  'registers.renamed': 'صار يُعرف باسم «{name}».',
+  'registers.withdraw': 'سحب من الخدمة',
+  'registers.withdraw.title': 'سحب الصندوق من الخدمة',
+  'registers.withdraw.message':
+    'ستبقى مستندات «{name}» منسوبة إليه وقابلة للتقارير، ولن يصدر عنه جديد. يمكنك إعادته متى شئت.',
+  'registers.restore': 'إعادة إلى الخدمة',
+  'registers.restore.title': 'إعادة الصندوق إلى الخدمة',
+  'registers.restore.message':
+    'سيعود «{name}» متاحًا للبيع، ويستأنف ترقيمه من حيث توقّف على جهازه المسجّل.',
+  'registers.withdrawn': 'سُحب «{name}» من الخدمة.',
+  'registers.restored': 'أُعيد «{name}» إلى الخدمة.',
+
+  /**
+   * Registering the machine, which is the one action here that spends something
+   * nobody can give back — so the words carry the whole of `SYS-02`'s bargain
+   * rather than asking for a confirmation people learn to click through.
+   */
+  'registers.device.action': 'الجهاز القائم على الصندوق',
+  'registers.device.assign.title': 'تسجيل جهاز على الصندوق',
+  'registers.device.replace.title': 'استبدال جهاز الصندوق',
+  'registers.device.label': 'معرّف الجهاز',
+  'registers.device.label.description':
+    'يعرضه الصندوق على شاشته عند أول تشغيل. يُنسخ منها كما هو ولا يُخترع هنا: الجهاز هو من يعرّف نفسه، ومعرّف لا يعرفه عن نفسه يجعله جهازًا جديدًا في كل مرة يتّصل.',
+  'registers.device.placeholder': '01920a7b-3c4d-7e5f-8a9b-0c1d2e3f4a5b',
+  'registers.device.required': 'أدخل معرّف الجهاز.',
+  'registers.device.submit': 'تسجيل الجهاز',
+  'registers.device.current': 'المسجّل الآن: {device} — الجيل {generation, number}.',
+  'registers.device.replace.warning':
+    'جهاز مختلف يرفع الجيل، ولا رجعة في ذلك. يبدأ الترقيم على الجهاز الجديد من واحد، وتبقى أرقام الجهاز السابق محفوظة بجيله فلا يتكرّر منها رقم — حتى ما لم يصل منها إلى عقدة المتجر بعد.',
+  'registers.device.assigned':
+    'سُجّل الجهاز على «{name}»، والترقيم يبدأ بالجيل {generation, number}.',
+  'registers.device.unchanged':
+    'هذا هو الجهاز المسجّل على «{name}» أصلًا. لم يتغيّر شيء، ولم يُستهلك جيل.',
+
+  /**
+   * `SYS-02` as an accountant configures it.
+   *
+   * The screen's hardest job is not the form: it is saying that an empty list
+   * means nothing is wrong. A shop numbers every document from its first sale
+   * without anybody configuring anything, and a screen that implied otherwise
+   * would send somebody looking for a setting they do not need.
+   */
+  'numbering.title': 'سلاسل الترقيم',
+  'numbering.description':
+    'صيغة رقم المستند: سلسلة مستقلة لكل نوع مستند، ولكل فرع، ولكل صندوق، ولكل سنة مالية. ما صدر من أرقام يبقى كما طُبع، والصيغة الجديدة تسري من الرقم التالي وحده.',
+  'numbering.table': 'سلاسل الترقيم',
+  'numbering.search': 'ابحث في أنواع المستندات',
+  'numbering.branch': 'الفرع',
+  'numbering.branch.placeholder': 'اختر الفرع',
+  'numbering.filter.register': 'تصفية حسب الصندوق',
+  'numbering.filter.allRegisters': 'كل الصناديق',
+  'numbering.column.documentType': 'نوع المستند',
+  'numbering.column.register': 'الصندوق',
+  'numbering.column.fiscalYear': 'السنة المالية',
+  'numbering.column.format': 'الصيغة',
+  'numbering.column.specimen': 'الرقم التالي',
+  'numbering.column.actions': 'إجراءات',
+  'numbering.register.none': 'بدون صندوق',
+  'numbering.register.withdrawn': '{name} (مسحوب من الخدمة)',
+  'numbering.register.unknown': 'صندوق لم يعد معروفًا',
+  'numbering.define': 'تعريف سلسلة',
+  'numbering.empty': 'لا سلسلة معرّفة في هذا الفرع',
+  'numbering.empty.explanation':
+    'وهذا ليس نقصًا: كل مستند يُرقَّم بالصيغة الافتراضية من أول بيعة، بلا إعداد وبلا اتصال. عرّف سلسلة حين تريد صيغة تخصّك.',
+  'numbering.noBranches': 'لا يوجد فرع بعد',
+  'numbering.noBranches.explanation': 'السلسلة تُعرَّف داخل فرع، فابدأ بفتح الفرع.',
+  'numbering.noBranches.action': 'الذهاب إلى الفروع',
+  'numbering.new.title': 'تعريف سلسلة ترقيم',
+  'numbering.revise.title': 'تعديل صيغة السلسلة',
+  'numbering.revise.action': 'تعديل الصيغة',
+  'numbering.revise.note':
+    'ما صدر من أرقام يبقى كما طُبع؛ الصيغة الجديدة تسري من الرقم التالي وحده.',
+  'numbering.documentType': 'نوع المستند',
+  'numbering.documentType.description':
+    'اسم تختاره الوحدة التي تُصدر المستند، لا هذه الشاشة: pos.sale للبيع في الصندوق، pur.invoice لفاتورة الشراء. يُكتب «وحدة.مستند» بحروف لاتينية صغيرة.',
+  'numbering.documentType.required': 'أدخل نوع المستند.',
+  'numbering.register': 'الصندوق',
+  'numbering.register.description':
+    'اتركه على «بدون صندوق» لمستند لا يصدر من صندوق: فاتورة شراء تُكتب، أو إشعار.',
+  'numbering.fiscalYear': 'السنة المالية',
+  'numbering.fiscalYear.description':
+    'تسمية تُقسَّم بها السلسلة، كما يسمّيها نظامك المحاسبي: 2026، أو 2026-27، أو 1447.',
+  'numbering.fiscalYear.required': 'أدخل السنة المالية.',
+  'numbering.format': 'الصيغة',
+  'numbering.format.description': 'نصّ ثابت تتخلّله علامات بين قوسين معقوفين، تُملأ عند كل إصدار.',
+  'numbering.format.required': 'أدخل الصيغة.',
+  'numbering.marks': 'العلامات المتاحة',
+  'numbering.field.sequence':
+    'العدّاد: يزيد واحدًا مع كل مستند. يقبل عرضًا ثابتًا بعد نقطتين، فيُصفَّر إليه.',
+  'numbering.field.prefix': 'رمز الصندوق كما فُتح به.',
+  'numbering.field.generation': 'جيل جهاز الصندوق: يرتفع مع كل جهاز بديل. يقبل عرضًا ثابتًا كذلك.',
+  'numbering.field.year': 'السنة المالية كما كُتبت في هذه السلسلة.',
+  'numbering.specimen': 'الرقم التالي بهذه الصيغة',
+  'numbering.specimen.sequence': 'التسلسل التالي: {sequence, number}',
+  'numbering.specimen.default': 'لا صيغة معرّفة هنا؛ هذه هي الافتراضية السارية الآن.',
+  'numbering.specimen.noDevice':
+    'لا جهاز على هذا الصندوق بعد، فالجيل صفر ولن يصدر عنه رقم حتى يُسجَّل جهاز.',
+  'numbering.specimen.waiting': 'أكمل نوع المستند والسنة المالية ليظهر الرقم.',
+  'numbering.save': 'حفظ الصيغة',
+  'numbering.saved': 'حُفظت صيغة «{documentType}».',
 
   'profile.title': 'ملف العمل التجاري',
   'profile.description':

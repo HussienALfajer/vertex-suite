@@ -15,11 +15,11 @@ import {
 import { useOrganisation } from '../organisation.js';
 
 /**
- * What the three structural screens of `SYS-09` have in common.
+ * What the four structural screens of `SYS-09` have in common.
  *
- * Companies, branches and locations are the same shape of thing three times
- * over: a named row that is in use or withdrawn, found in a list, renamed in
- * place, and taken out of use without ever being deleted. The parts of that
+ * Companies, branches, locations and registers are the same shape of thing four
+ * times over: a named row that is in use or withdrawn, found in a list, renamed
+ * in place, and taken out of use without ever being deleted. The parts of that
  * which are identical live here, and what differs — the columns, the fields a
  * new one needs, where a row leads — stays in the screen it belongs to.
  *
@@ -284,6 +284,38 @@ export function OpenListIcon(): ReactNode {
     <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
       <rect x="3" y="3.5" width="14" height="13" rx="2" />
       <path d="M6.5 8h7M6.5 11.5h4.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * A machine with a plug trailing from it: the thing standing at the till, which
+ * is not the till. Unmirrored — §9 mirrors direction, and this depicts an object.
+ */
+export function DeviceIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <rect x="3" y="3" width="14" height="9" rx="1.5" />
+      <path d="M10 12v3M6.5 17.5h7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Braces around a line: a shape a value is poured into, which is what a format is. */
+export function FormatIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <path
+        d="M7.5 4.5c-2 0-2 2.2-2 3.5s-.8 2-2 2c1.2 0 2 .7 2 2s0 3.5 2 3.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12.5 4.5c2 0 2 2.2 2 3.5s.8 2 2 2c-1.2 0-2 .7-2 2s0 3.5-2 3.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M10 8.5v3" strokeLinecap="round" />
     </svg>
   );
 }

@@ -22,6 +22,18 @@ export interface TextInputProps extends Omit<
   readonly description?: string;
   readonly errorMessage?: string;
   readonly placeholder?: string;
+  /**
+   * What is typed here is machine text — an identifier, a code, a numbering
+   * format — so the value is laid out left to right and set in `font-mono`
+   * (§5.1, §9). See `Code`, which has the measurement: a right-to-left field
+   * reorders the parts of `{prefix}-{generation}-{year}-{sequence:6}` and shows
+   * somebody a format their shop does not use.
+   *
+   * Only the value. The label, the description and the error stay in the
+   * document's direction, because they are prose and are read by the same
+   * person in the same breath.
+   */
+  readonly isMachineText?: boolean;
   readonly className?: string;
 }
 
@@ -50,6 +62,7 @@ export function TextInput({
   description,
   errorMessage,
   placeholder,
+  isMachineText = false,
   className,
   ...props
 }: TextInputProps): ReactNode {
@@ -76,9 +89,14 @@ export function TextInput({
         <Input
           {...(placeholder === undefined ? {} : { placeholder })}
           {...(type === undefined ? {} : { type })}
+          // On the input rather than on the field: `dir` carries
+          // `unicode-bidi: isolate` with it, so what is typed is ordered on its
+          // own and the label beside it stays in the document's direction.
+          {...(isMachineText ? { dir: 'ltr' as const } : {})}
           className={clsx(
             'h-[var(--vx-h-control)] w-full rounded px-[var(--vx-pad-md)]',
             'bg-fill-field text-fg text-body',
+            isMachineText ? 'font-mono' : '',
             'border border-line-strong',
             'placeholder:text-fg-muted',
             'outline-none data-[focused]:shadow-[var(--vx-focus-ring)]',

@@ -33,7 +33,7 @@ import {
   type NewRegister,
   type ProfileRevision,
 } from './contract.js';
-import { defineSeries, nextNumber, seriesIn } from './numbering.js';
+import { configuredSeries, defineSeries, nextNumber, seriesIn, specimenOf } from './numbering.js';
 import { profileIn, reviseProfile, seedProfile } from './profile.js';
 import { setBranchSetting, settingIn, setTenantSetting } from './settings.js';
 import {
@@ -146,6 +146,14 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
           series: (by: CommandContext, scope: SeriesScope) =>
             context.transactor.run(by, (uow) =>
               Promise.resolve(seriesIn(uow.session, by.tenant, scope)),
+            ),
+          configured: (by: CommandContext, branch: BranchId) =>
+            context.transactor.run(by, (uow) =>
+              Promise.resolve(configuredSeries(uow.session, by.tenant, branch)),
+            ),
+          preview: (by: CommandContext, scope: SeriesScope, format: string | null) =>
+            context.transactor.run(by, (uow) =>
+              Promise.resolve(specimenOf(uow.session, by.tenant, scope, format)),
             ),
         } satisfies DocumentNumbering;
       }),

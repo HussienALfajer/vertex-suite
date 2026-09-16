@@ -134,6 +134,28 @@ describe('<TextInput>', () => {
     expect(screen.getByLabelText<HTMLInputElement>('اسم الصنف').value).toBe('سكر');
   });
 
+  it('lays machine text out in the order it was typed — SYS-01', () => {
+    // A numbering format is bracket pairs separated by punctuation, and in a
+    // right-to-left paragraph the algorithm resolves those brackets to the
+    // paragraph's direction (UAX #9, N0) and reverses the parts: measured in a
+    // browser, `{prefix}-{generation}-{year}-{sequence:6}` comes out as
+    // `{sequence:6}-{year}-{generation}-{prefix}`. It cannot be asserted here
+    // — no layout engine under these tests — so what is asserted is the
+    // mechanism that prevents it, which `Code` carries the measurement for.
+    wrap(<TextInput label="الصيغة" isMachineText defaultValue="{prefix}-{sequence:6}" />);
+    const input = screen.getByLabelText('الصيغة');
+
+    expect(input.getAttribute('dir')).toBe('ltr');
+    // The label is prose and stays in the document's own direction: it is read
+    // in the same breath as the Arabic sentence above it.
+    expect(screen.getByText('الصيغة').getAttribute('dir')).toBeNull();
+  });
+
+  it('leaves an ordinary field in the document’s direction', () => {
+    wrap(<TextInput label="اسم الصنف" />);
+    expect(screen.getByLabelText('اسم الصنف').getAttribute('dir')).toBeNull();
+  });
+
   it('never lets the browser write the error message — §12', () => {
     // Left to validate natively, the browser writes "Please fill out this
     // field." in its own language, under a label reading "اسم المستخدم". It is

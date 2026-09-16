@@ -228,6 +228,17 @@ export type OrganisationRefusalCode =
   | 'sys.branch-inactive'
   | 'sys.register-prefix-taken'
   | 'sys.register-prefix-invalid'
+  /**
+   * `SYS-02`: what was offered as the machine standing at a till is not an
+   * identifier this system issues.
+   *
+   * Checked because the brand on `DeviceId` is gone at run time and the value
+   * always comes from outside — an administrator pairing a till, or a replayed
+   * command. A machine stored under an identity it will never report for itself
+   * is a machine that looks new on every reconnection, and each of those spends
+   * a device generation that cannot be given back.
+   */
+  | 'sys.device-identifier-invalid'
   | 'sys.name-required'
   /** `SYS-14`: not a decimal, or more degrees than the Earth has. */
   | 'sys.point-out-of-range'
@@ -420,6 +431,20 @@ export interface NumberingSeries extends TenantOwned {
   readonly format: string;
 }
 
+/**
+ * The marks a format may carry, each written between braces: `{prefix}`.
+ *
+ * Published because the format is configuration a person types, and a screen
+ * that offers to explain the marks would otherwise hold a copy of this module's
+ * grammar — a copy that keeps working while it goes quietly out of date, which
+ * is exactly how an administrator ends up typing a mark the parser rejects.
+ * What each one *means* is prose and lives in the catalogue of whoever is
+ * showing it; which ones exist is this module's, and comes from here.
+ */
+export const NUMBERING_FIELDS = ['sequence', 'prefix', 'generation', 'year'] as const;
+
+export type NumberingField = (typeof NUMBERING_FIELDS)[number];
+
 export interface IssuedNumber {
   /** What is printed, and what a person reads back over the counter. */
   readonly number: string;
@@ -427,6 +452,44 @@ export interface IssuedNumber {
   /** Zero for a series with no register, where there is no machine to count. */
   readonly generation: number;
   readonly scope: SeriesScope;
+}
+
+/**
+ * A series as somebody **configuring** it reads it, rather than as a document
+ * takes a number from it.
+ *
+ * It exists because a format is the one piece of configuration in this module
+ * whose effect nobody can see until a document is printed, and a document
+ * cannot be reprinted. `{prefix}-{generation}-{year}-{sequence:6}` tells an
+ * accountant nothing; `AL1-1-2026-000001` beside it tells them everything —
+ * and only this module can turn the first into the second, so a screen that
+ * worked it out for itself would be holding a second copy of the parser that
+ * prints on every receipt in the shop.
+ *
+ * `isDefault` is the other half of the same answer. A series nobody has
+ * configured is not a series that is broken: it prints under the default, from
+ * the first sale of the first morning (`SYS-02`, "offline-safe by
+ * construction"), and an administrator has to be able to see what that is
+ * before deciding whether to change it.
+ */
+export interface NumberingSpecimen {
+  readonly scope: SeriesScope;
+  /** The format in force here: the one defined for this scope, or the default. */
+  readonly format: string;
+  /** True when nobody has defined a format here, so the default is what prints. */
+  readonly isDefault: boolean;
+  /**
+   * The next number as it would print.
+   *
+   * **Nothing is taken and no counter moves.** Asking twice gives the same
+   * answer, and the document that eventually carries this number takes it
+   * through `next` inside its own transaction.
+   */
+  readonly specimen: string;
+  /** Where the counter of this generation stands: what the next document gets. */
+  readonly sequence: number;
+  /** Zero at a till no machine has stood at, which cannot issue a document yet. */
+  readonly generation: number;
 }
 
 export type NumberingRefusalCode =
@@ -500,6 +563,43 @@ export interface DocumentNumbering {
 
   /** The configured series, or null where nobody has set a format yet. */
   series(by: CommandContext, scope: SeriesScope): Promise<NumberingSeries | null>;
+
+  /**
+   * Every series configured in one branch, each read as a specimen.
+   *
+   * Per branch, because that is the scale a person works at: a series belongs
+   * to a branch and to at most one of its tills, and a tenant-wide listing
+   * would be a list that has to be filtered before it can be read.
+   *
+   * **Only the configured ones.** A scope nobody has given a format to has no
+   * record here and still numbers documents perfectly well under the default,
+   * so an empty answer means "nothing has been overridden", never "nothing is
+   * numbered" — which is what `preview` is for.
+   *
+   * The order is stable across calls, so a list somebody is reading does not
+   * rearrange itself underneath them between two reads.
+   */
+  configured(by: CommandContext, branch: BranchId): Promise<readonly NumberingSpecimen[]>;
+
+  /**
+   * How one scope's next number would read, without taking it.
+   *
+   * `format` null asks about the format in force — the one defined here, or the
+   * default it falls back to — which is how a screen shows what is printing
+   * **today** before anybody changes it. A format given asks the same question
+   * about a proposal, so that a mistyped one is refused in a dialog rather than
+   * discovered on a document that cannot be reprinted.
+   *
+   * A register that no machine is standing at is not refused here, unlike
+   * `next`: its generation is genuinely zero and the specimen says so, which is
+   * a truthful answer to "what would this print" and the one that sends
+   * somebody to the till rather than to the vendor.
+   */
+  preview(
+    by: CommandContext,
+    scope: SeriesScope,
+    format: string | null,
+  ): Numbered<NumberingSpecimen>;
 }
 
 export const DocumentNumbering = contractKey<DocumentNumbering>('sys.document-numbering');

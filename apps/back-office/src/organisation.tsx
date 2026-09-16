@@ -9,9 +9,9 @@ import {
   type ReactNode,
 } from 'react';
 
-import { isOk, type Result } from '@vertex/kernel';
+import { isOk, type Refusal, type Result } from '@vertex/kernel';
 import { useTranslator } from '@vertex/ui';
-import type { Branch, Company, OrganisationRefusal } from '@vertex/sys/contract';
+import type { Branch, Company } from '@vertex/sys/contract';
 
 import { messageForRefusal } from './catalogue.js';
 import type { OrganisationOfRecord, SystemOfRecord } from './system.js';
@@ -43,10 +43,17 @@ import type { OrganisationOfRecord, SystemOfRecord } from './system.js';
  *
  * `switch-exhaustiveness-check` is on, so a fourth outcome would stop every
  * screen from compiling rather than falling quietly through to a default.
+ *
+ * The refusal is the kernel's own rather than `SYS`'s organisation refusal,
+ * because two of `SYS`'s vocabularies now travel this path — `SYS-02` refuses
+ * a numbering format in terms of its own — and what happens to a refusal here
+ * is the same for both: it becomes a sentence through its code. Each command
+ * keeps its own narrow type where it is declared, which is where a screen can
+ * still be held to handling only the codes that command can actually return.
  */
 export type Delivery<T> =
   | { readonly kind: 'done'; readonly value: T }
-  | { readonly kind: 'refused'; readonly refusal: OrganisationRefusal }
+  | { readonly kind: 'refused'; readonly refusal: Refusal }
   | { readonly kind: 'unreachable' };
 
 export interface OrganisationState {
@@ -68,7 +75,7 @@ export interface OrganisationState {
    * be showing a shop that only it believes in.
    */
   readonly run: <T>(
-    command: (of: OrganisationOfRecord) => Promise<Result<T, OrganisationRefusal>>,
+    command: (of: OrganisationOfRecord) => Promise<Result<T, Refusal>>,
   ) => Promise<Delivery<T>>;
   /**
    * The port itself, for the two screens that read something of their own.
@@ -154,7 +161,7 @@ export function OrganisationProvider({ system, children }: OrganisationProviderP
 
   const run = useCallback(
     async <T,>(
-      command: (port: OrganisationOfRecord) => Promise<Result<T, OrganisationRefusal>>,
+      command: (port: OrganisationOfRecord) => Promise<Result<T, Refusal>>,
     ): Promise<Delivery<T>> => {
       try {
         const outcome = await command(of);

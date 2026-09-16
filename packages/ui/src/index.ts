@@ -98,6 +98,7 @@ export { Quantity, type QuantityProps } from './display/Quantity.js';
 export { DateTime, type DateTimeProps } from './display/DateTime.js';
 export { CurrencyRate, type CurrencyRateProps } from './display/CurrencyRate.js';
 export { UnitLabel, type UnitLabelProps } from './display/UnitLabel.js';
+export { Code, type CodeProps } from './display/Code.js';
 export { decimalPlacesOf, formatExact, type FormattedFigure } from './display/format.js';
 
 export { Button, IconButton, type ButtonProps, type IconButtonProps } from './components/Button.js';
