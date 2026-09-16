@@ -6,6 +6,7 @@ import { Translator } from '@vertex/i18n';
 import { defineCurrency, defineUnit, money, quantity } from '@vertex/kernel';
 
 import { VertexProvider } from '../providers/VertexProvider.js';
+import { Code } from './Code.js';
 import { CurrencyRate } from './CurrencyRate.js';
 import { DateTime } from './DateTime.js';
 import { Money } from './Money.js';
@@ -211,5 +212,31 @@ describe('<CurrencyRate> — FX-04', () => {
       />,
     );
     expect(screen.getByText('ليس سعر اليوم')).toBeDefined();
+  });
+});
+
+describe('Code — SYS-01', () => {
+  it('is an island of its own direction inside an Arabic document', () => {
+    // The measurement is in `Code`'s own comment: in a right-to-left paragraph
+    // the algorithm resolves a bracket pair to the paragraph's direction
+    // (UAX #9, N0), and `SYS-02`'s default format comes out as its four parts
+    // in reverse. No layout engine runs under these tests, so what is asserted
+    // here is the mechanism that prevents it — and `dir` carries
+    // `unicode-bidi: isolate` with it, so the fragment cannot reorder the
+    // sentence around it either.
+    wrap(<Code>{'{prefix}-{generation}-{year}-{sequence:6}'}</Code>);
+    const rendered = screen.getByText('{prefix}-{generation}-{year}-{sequence:6}');
+
+    expect(rendered.getAttribute('dir')).toBe('ltr');
+    expect(rendered.className).toContain('font-mono');
+  });
+
+  it('carries the whole of a value it is a shortened form of', () => {
+    // A column shows the tail of a machine's identifier; the whole of it is
+    // what somebody compares against the screen the till is showing.
+    wrap(<Code title="01920a7b-3c4d-7e5f-8a9b-0c1d2e3f4a5b">2e3f4a5b</Code>);
+    expect(screen.getByText('2e3f4a5b').getAttribute('title')).toBe(
+      '01920a7b-3c4d-7e5f-8a9b-0c1d2e3f4a5b',
+    );
   });
 });

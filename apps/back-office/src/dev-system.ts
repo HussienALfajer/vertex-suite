@@ -13,7 +13,13 @@ import {
   type MemorySession,
 } from '@vertex/platform';
 import { Authorisation } from '@vertex/sec/contract';
-import { Organisation, OrganisationAdministration, sysModule } from '@vertex/sys';
+import {
+  DocumentNumbering,
+  Organisation,
+  OrganisationAdministration,
+  sysModule,
+  type Register,
+} from '@vertex/sys';
 
 import type { OrganisationOfRecord, SignInAttempt, SystemOfRecord } from './system.js';
 
@@ -119,6 +125,11 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
 
   const read = registry.require(Organisation);
   const admin = registry.require(OrganisationAdministration);
+  // `next` is not reached from here and must not be: a number is taken on the
+  // machine that prints the document, inside that document's own transaction.
+  // What the back office asks this contract are the two questions that take
+  // nothing — what is configured, and what a format would print.
+  const numbering = registry.require(DocumentNumbering);
 
   /**
    * Who is asking, which is the transport's business and not a screen's.
@@ -137,6 +148,19 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   };
 
   const by = asWhoeverSignedIn;
+
+  /**
+   * A machine's identifier, as it crosses the process boundary.
+   *
+   * The brand is a compile-time claim and nothing at run time, and what reaches
+   * here is text somebody read off a till's screen — so asserting it is honest
+   * about what this is rather than a shortcut. The value is judged by `SYS`,
+   * which refuses an identifier it could not have issued. `U07` replaces this
+   * file with a transport, and JSON carries no brands either: the assertion
+   * moves, the check does not.
+   */
+  const asMachine = (device: string): NonNullable<Register['heldBy']> =>
+    device as NonNullable<Register['heldBy']>;
 
   const organisation: OrganisationOfRecord = {
     companies: {
@@ -163,6 +187,19 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
       locate: (id, point) => admin.locations.locate(by(), id, point),
       deactivate: (id) => admin.locations.deactivate(by(), id),
       reactivate: (id) => admin.locations.reactivate(by(), id),
+    },
+    registers: {
+      list: (branch, listing) => read.registers(by(), branch, listing),
+      open: (input) => admin.registers.open(by(), input),
+      rename: (id, name) => admin.registers.rename(by(), id, name),
+      assignDevice: (id, device) => admin.registers.assignDevice(by(), id, asMachine(device)),
+      deactivate: (id) => admin.registers.deactivate(by(), id),
+      reactivate: (id) => admin.registers.reactivate(by(), id),
+    },
+    numbering: {
+      configured: (branch) => numbering.configured(by(), branch),
+      preview: (scope, format) => numbering.preview(by(), scope, format),
+      define: (scope, format) => admin.numbering.define(by(), scope, format),
     },
     profile: {
       read: (company) => read.profile(by(), company),

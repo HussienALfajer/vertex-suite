@@ -6,7 +6,7 @@ import type {
   RegisterId,
   TenantId,
 } from '@vertex/contracts';
-import { isErr, newId, ok, refuse, type Result } from '@vertex/kernel';
+import { isErr, isId, newId, ok, parseId, refuse, type Result } from '@vertex/kernel';
 
 import type {
   Branch,
@@ -343,12 +343,25 @@ export function assignDevice(
   const register = registerIn(session, tenant, id);
   if (register === null) return refuse('sys.register-not-found', { register: id });
   if (!register.active) return refuse('sys.register-inactive', { register: register.name });
-  if (register.heldBy === device) return ok(register);
+
+  // The brand on `DeviceId` is a compile-time claim and nothing at all at run
+  // time, and this value always arrives from outside the process: typed by an
+  // administrator pairing a till, or carried in a command `SYN-02` replayed.
+  // Storing whatever was handed over would be storing a machine's identity that
+  // the machine itself will never report — so every reconnection would look
+  // like a different machine and spend another generation, and a generation is
+  // not recoverable.
+  if (!isId(device)) return refuse('sys.device-identifier-invalid', { device });
+  // Cannot throw behind `isId`. It is here for the normalisation: a UUID is
+  // case-insensitive by specification, and one machine written two ways would
+  // otherwise be two machines.
+  const machine = parseId<'device'>(device);
+  if (register.heldBy === machine) return ok(register);
 
   return ok(
     writeRecord(session, 'register', tenant, [id], {
       ...register,
-      heldBy: device,
+      heldBy: machine,
       generation: register.generation + 1,
     }),
   );

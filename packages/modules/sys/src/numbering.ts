@@ -1,14 +1,17 @@
-import type { TenantId } from '@vertex/contracts';
+import type { BranchId, TenantId } from '@vertex/contracts';
 import { ok, refuse, type Result } from '@vertex/kernel';
 
-import type {
-  IssuedNumber,
-  NumberingRefusal,
-  NumberingSeries,
-  RecordSession,
-  SeriesScope,
+import {
+  NUMBERING_FIELDS,
+  type IssuedNumber,
+  type NumberingField,
+  type NumberingRefusal,
+  type NumberingSeries,
+  type NumberingSpecimen,
+  type RecordSession,
+  type SeriesScope,
 } from './contract.js';
-import { readRecord, writeRecord } from './records.js';
+import { readRecord, scanRecords, writeRecord } from './records.js';
 import { branchIn, registerIn } from './structure.js';
 
 /**
@@ -33,16 +36,12 @@ import { branchIn, registerIn } from './structure.js';
 const DEFAULT_REGISTER_FORMAT = '{prefix}-{generation}-{year}-{sequence:6}';
 const DEFAULT_BRANCH_FORMAT = '{year}-{sequence:6}';
 
-type FieldName = 'sequence' | 'prefix' | 'generation' | 'year';
+type FieldName = NumberingField;
 
 /** Only a number can be padded; padding a prefix would be padding a name. */
 const PADDABLE: ReadonlySet<FieldName> = new Set<FieldName>(['sequence', 'generation']);
-const FIELDS: ReadonlySet<string> = new Set<FieldName>([
-  'sequence',
-  'prefix',
-  'generation',
-  'year',
-]);
+/** From the published list, so that the grammar and what is published are one thing. */
+const FIELDS: ReadonlySet<string> = new Set<FieldName>(NUMBERING_FIELDS);
 
 type Token =
   | { readonly kind: 'literal'; readonly text: string }
@@ -257,7 +256,7 @@ export function defineSeries(
 ): Result<NumberingSeries, NumberingRefusal> {
   const scoped = checkScope(scope);
   if (!scoped.ok) return scoped;
-  const place = placeOfForDefinition(session, tenant, scope);
+  const place = placeAsConfigured(session, tenant, scope);
   if (!place.ok) return place;
 
   const checked = checkFormat(format, scope.register !== null);
@@ -272,26 +271,155 @@ export function defineSeries(
 }
 
 /**
- * Defining a format is configuration, which happens before the till is plugged
- * in as often as after. So the checks here stop at "this is a real place in
- * this tenant" and leave whether it can print to the moment it tries to.
+ * The same question as `placeOf`, asked of **configuration** rather than of a
+ * document about to be printed.
+ *
+ * Defining a format happens before the till is plugged in as often as after, so
+ * the checks here stop at "this is a real place in this tenant": whether it can
+ * print — a machine standing at it, a branch still trading — is left to the
+ * moment it tries to. A register nobody has plugged anything into reports
+ * generation zero, which is the truth about it and exactly what a specimen
+ * should show rather than hide behind a refusal.
  */
-function placeOfForDefinition(
+function placeAsConfigured(
   session: RecordSession,
   tenant: TenantId,
   scope: SeriesScope,
-): Result<null, NumberingRefusal> {
+): Result<Place, NumberingRefusal> {
   if (branchIn(session, tenant, scope.branch) === null) {
     return refuse('sys.branch-not-found', { branch: scope.branch });
   }
-  if (scope.register === null) return ok(null);
+  if (scope.register === null) return ok({ prefix: '', generation: 0 });
 
   const register = registerIn(session, tenant, scope.register);
   if (register === null) return refuse('sys.register-not-found', { register: scope.register });
   if (register.branch !== scope.branch) {
     return refuse('sys.register-outside-branch', { register: register.name });
   }
-  return ok(null);
+  return ok({ prefix: register.prefix, generation: register.generation });
+}
+
+/** The format a scope's numbers are actually taken under, and where it came from. */
+function formatInForce(
+  session: RecordSession,
+  tenant: TenantId,
+  scope: SeriesScope,
+): { readonly format: string; readonly isDefault: boolean } {
+  const defined = seriesIn(session, tenant, scope);
+  if (defined !== null) return { format: defined.format, isDefault: false };
+  return {
+    format: scope.register === null ? DEFAULT_BRANCH_FORMAT : DEFAULT_REGISTER_FORMAT,
+    isDefault: true,
+  };
+}
+
+/**
+ * Where a series' count lives: **per generation, not per series**.
+ *
+ * One function rather than the shape written out at each of the three places
+ * that needs it — the read that issues, the write that advances, and the read
+ * that only looks. A specimen taken from a differently-spelled key would be a
+ * specimen of a number this till will never print.
+ */
+function counterKey(scope: SeriesScope, generation: number): readonly string[] {
+  return [seriesKey(scope), String(generation)];
+}
+
+/** Where the counter stands, without moving it: what the next document gets. */
+function sequenceAt(
+  session: RecordSession,
+  tenant: TenantId,
+  scope: SeriesScope,
+  generation: number,
+): number {
+  return readRecord(session, 'counter', tenant, counterKey(scope, generation))?.next ?? 1;
+}
+
+/**
+ * What a scope's next number would look like, under a proposed format or under
+ * the one in force (`format` null).
+ *
+ * Reads only. It is the same parser and the same renderer `nextNumber` uses,
+ * reached the only way a screen is allowed to reach them — which is the point:
+ * a dialog that worked the answer out for itself would be a second copy of the
+ * thing that prints on every receipt in the shop, and the two would drift.
+ */
+export function specimenOf(
+  session: RecordSession,
+  tenant: TenantId,
+  scope: SeriesScope,
+  format: string | null,
+): Result<NumberingSpecimen, NumberingRefusal> {
+  const scoped = checkScope(scope);
+  if (!scoped.ok) return scoped;
+
+  const place = placeAsConfigured(session, tenant, scope);
+  if (!place.ok) return place;
+
+  const inForce =
+    format === null ? formatInForce(session, tenant, scope) : { format, isDefault: false };
+  const checked = checkFormat(inForce.format, scope.register !== null);
+  if (!checked.ok) return checked;
+
+  const { prefix, generation } = place.value;
+  const sequence = sequenceAt(session, tenant, scope, generation);
+  return ok({
+    scope: Object.freeze({ ...scope }),
+    format: inForce.format,
+    isDefault: inForce.isDefault,
+    specimen: render(checked.value, { sequence, prefix, generation, year: scope.fiscalYear }),
+    sequence,
+    generation,
+  });
+}
+
+/**
+ * Every series somebody has configured in one branch, in a stable order.
+ *
+ * Ordered here rather than left to the store, because the order a list is read
+ * in is part of being readable: a screen that rearranged itself between two
+ * reads would make an administrator lose the row they were looking at. Sorted
+ * by the parts of the scope that a person can actually see — the document type
+ * first, then the till, then the year — and a series with no till sorts before
+ * the tills, because that is the branch's own.
+ */
+export function configuredSeries(
+  session: RecordSession,
+  tenant: TenantId,
+  branch: BranchId,
+): readonly NumberingSpecimen[] {
+  const found: NumberingSpecimen[] = [];
+  for (const series of scanRecords(session, 'series', tenant)) {
+    if (series.scope.branch !== branch) continue;
+    const specimen = specimenOf(session, tenant, series.scope, series.format);
+    if (!specimen.ok) {
+      // Impossible by construction, and raised rather than skipped because of
+      // what skipping would look like. Every stored format passed `checkFormat`
+      // when it was defined, nothing this module offers can invalidate one
+      // afterwards — no structural entity is ever deleted, and the only way to
+      // change a format is `defineSeries`, which checks it again — so a refusal
+      // here is a defect in this file rather than an answer about the shop. A
+      // row quietly missing from a numbering screen is a series nobody
+      // maintains and nobody knows they are not maintaining.
+      throw new Error(`A stored numbering series will not render: ${specimen.error.code}.`);
+    }
+    found.push(specimen.value);
+  }
+
+  return found.sort((one, two) => compareBy(orderOf(one.scope), orderOf(two.scope)));
+}
+
+function orderOf(scope: SeriesScope): readonly string[] {
+  return [scope.documentType, scope.register ?? '', scope.fiscalYear];
+}
+
+/** Plain comparisons rather than a locale's: every part here is ASCII by rule. */
+function compareBy(one: readonly string[], two: readonly string[]): number {
+  for (const [index, left] of one.entries()) {
+    const right = two[index] ?? '';
+    if (left !== right) return left < right ? -1 : 1;
+  }
+  return 0;
 }
 
 /**
@@ -333,18 +461,18 @@ export function nextNumber(
   const place = placeOf(session, tenant, scope);
   if (!place.ok) return place;
 
-  const defined = seriesIn(session, tenant, scope);
-  const format =
-    defined?.format ?? (scope.register === null ? DEFAULT_BRANCH_FORMAT : DEFAULT_REGISTER_FORMAT);
-  const checked = checkFormat(format, scope.register !== null);
+  // Through the same function a specimen asks. Written out here once and there
+  // once, the two would agree until somebody changed a default — and the day
+  // they stopped agreeing, a screen would show an administrator one number and
+  // the till would print another.
+  const inForce = formatInForce(session, tenant, scope);
+  const checked = checkFormat(inForce.format, scope.register !== null);
   if (!checked.ok) return checked;
 
   // The counter is per generation, not per series. See the note at the top of
   // this file: carrying it across a handover is the one thing that cannot be
   // done without knowing what the replaced machine never told anyone.
-  const counterKey = [key, String(place.value.generation)];
-  const counter = readRecord(session, 'counter', tenant, counterKey);
-  const sequence = counter?.next ?? 1;
+  const sequence = sequenceAt(session, tenant, scope, place.value.generation);
 
   const issued: IssuedNumber = {
     number: render(checked.value, {
@@ -358,6 +486,8 @@ export function nextNumber(
     scope: Object.freeze({ ...scope }),
   };
 
-  writeRecord<'counter'>(session, 'counter', tenant, counterKey, { next: sequence + 1 });
+  writeRecord<'counter'>(session, 'counter', tenant, counterKey(scope, place.value.generation), {
+    next: sequence + 1,
+  });
   return ok(writeRecord(session, 'issued', tenant, [document, key], issued));
 }

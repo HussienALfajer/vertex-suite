@@ -1,4 +1,4 @@
-import { isErr, isOk, orThrow, type Refusal, type Result } from '@vertex/kernel';
+import { isErr, isOk, newId, orThrow, type Id, type Refusal, type Result } from '@vertex/kernel';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { SYS_PERMISSIONS, type Branch, type Company } from './contract.js';
@@ -277,6 +277,47 @@ describe('Organisation structure — SYS-09', () => {
       prefix: 'AL1',
     });
     expect(refusalOf(refused)).toBe('sys.register-prefix-taken');
+  });
+
+  it('refuses a machine identifier this system could not have issued', async () => {
+    const branch = await aBranch();
+    const register = taken(
+      await sys.admin.registers.open(sys.by, { branch: branch.id, name: '1', prefix: 'AL1' }),
+    );
+
+    // The brand on `DeviceId` is a compile-time claim and nothing at run time,
+    // and the value always comes from outside: typed by an administrator
+    // pairing a till, or carried in a command `SYN-02` replayed. A machine
+    // stored under an identity it will never report for itself would look new
+    // on every reconnection, and each of those spends a generation that cannot
+    // be given back (`SYS-02`).
+    for (const claimed of ['till-one', '', '550e8400-e29b-41d4-a716-446655440000']) {
+      expect(
+        refusalOf(
+          await sys.admin.registers.assignDevice(sys.by, register.id, claimed as Id<'device'>),
+        ),
+      ).toBe('sys.device-identifier-invalid');
+    }
+
+    const untouched = await sys.read.register(sys.by, register.id);
+    expect(untouched?.generation).toBe(0);
+    expect(untouched?.heldBy).toBeNull();
+
+    // The same machine written in upper case is the same machine: a UUID is
+    // case-insensitive by specification, so naming it twice must not cost a
+    // second generation.
+    const device = newId<'device'>();
+    expect(
+      taken(await sys.admin.registers.assignDevice(sys.by, register.id, device)).generation,
+    ).toBe(1);
+    const again = taken(
+      await sys.admin.registers.assignDevice(
+        sys.by,
+        register.id,
+        device.toUpperCase() as Id<'device'>,
+      ),
+    );
+    expect(again.generation).toBe(1);
   });
 
   it('refuses a prefix that punctuation could make ambiguous in a printed number', async () => {

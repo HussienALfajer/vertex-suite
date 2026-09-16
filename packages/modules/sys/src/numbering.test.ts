@@ -302,4 +302,125 @@ describe('Document numbering series — SYS-02', () => {
       refusalOf(await sys.admin.numbering.define(sys.by, scope, '{prefix}-{year}-{sequence:6}')),
     ).toBe('sys.series-format-carries-absent-register');
   });
+
+  it('shows what a format would print before a document is printed under it', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    const scope = scopeFor(register);
+    const format = 'INV/{year}/{prefix}g{generation}/{sequence:4}';
+
+    const specimen = taken(await sys.numbering.preview(sys.by, scope, format));
+    expect(specimen.specimen).toBe('INV/2026/AL1g1/0001');
+
+    // Asking cost nothing: the counter has not moved, so the first real
+    // document still gets the number the specimen showed.
+    expect(taken(await sys.numbering.preview(sys.by, scope, format)).sequence).toBe(1);
+    taken(await sys.admin.numbering.define(sys.by, scope, format));
+    expect(taken(await issue(scope, newId<'document'>())).number).toBe('INV/2026/AL1g1/0001');
+
+    // And afterwards it shows the next one rather than the one just printed.
+    expect(taken(await sys.numbering.preview(sys.by, scope, null)).specimen).toBe(
+      'INV/2026/AL1g1/0002',
+    );
+  });
+
+  it('says when a series is printing under a format nobody chose', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    const scope = scopeFor(register);
+
+    // A shop that has configured nothing is not a shop that is numbering
+    // nothing, and an administrator has to be able to see what is printing
+    // before deciding whether to change it.
+    const before = taken(await sys.numbering.preview(sys.by, scope, null));
+    expect(before.isDefault).toBe(true);
+    expect(before.format).toBe('{prefix}-{generation}-{year}-{sequence:6}');
+    expect(before.specimen).toBe('AL1-1-2026-000001');
+
+    taken(await sys.admin.numbering.define(sys.by, scope, '{prefix}{generation}-{sequence:3}'));
+    const after = taken(await sys.numbering.preview(sys.by, scope, null));
+    expect(after.isDefault).toBe(false);
+    expect(after.specimen).toBe('AL11-001');
+  });
+
+  it('refuses a proposed format where it can still be retyped', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+
+    // The same judgement `define` makes, asked before anything is stored — so a
+    // format that drops the guarantee is refused in front of whoever typed it
+    // rather than on a document that cannot be reprinted.
+    expect(
+      refusalOf(await sys.numbering.preview(sys.by, scopeFor(register), '{year}-{sequence:6}')),
+    ).toBe('sys.series-format-must-carry-register');
+  });
+
+  it('reads a till that no machine is standing at as generation zero, rather than refusing', async () => {
+    const branch = await aBranch();
+    const bare = taken(
+      await sys.admin.registers.open(sys.by, { branch: branch.id, name: '2', prefix: 'AL2' }),
+    );
+    const scope = scopeFor(bare);
+
+    // `next` refuses here, and must: there is no generation for the number to
+    // carry. A specimen has nothing to lose by answering truthfully, and the
+    // zero is what sends somebody to the till rather than to the vendor.
+    const specimen = taken(await sys.numbering.preview(sys.by, scope, null));
+    expect(specimen.generation).toBe(0);
+    expect(specimen.specimen).toBe('AL2-0-2026-000001');
+    expect(refusalOf(await issue(scope, newId<'document'>()))).toBe('sys.register-has-no-device');
+  });
+
+  it('lists the series configured in one branch, in an order that holds still', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    const elsewhere = taken(
+      await sys.admin.branches.open(sys.by, { company: branch.company, name: 'Homs' }),
+    );
+
+    // A branch with nothing configured is numbering documents perfectly well
+    // under the defaults, so an empty listing says "nothing overridden".
+    expect(await sys.numbering.configured(sys.by, branch.id)).toEqual([]);
+
+    const typed: SeriesScope = {
+      documentType: 'pur.invoice',
+      branch: branch.id,
+      register: null,
+      fiscalYear: '2026',
+    };
+    taken(
+      await sys.admin.numbering.define(
+        sys.by,
+        scopeFor(register),
+        '{prefix}-{generation}-{sequence:5}',
+      ),
+    );
+    taken(await sys.admin.numbering.define(sys.by, typed, 'PUR-{sequence:5}'));
+    taken(
+      await sys.admin.numbering.define(
+        sys.by,
+        { ...typed, fiscalYear: '2027' },
+        'PUR-{sequence:6}',
+      ),
+    );
+    taken(
+      await sys.admin.numbering.define(
+        sys.by,
+        { documentType: 'pur.invoice', branch: elsewhere.id, register: null, fiscalYear: '2026' },
+        'HO-{sequence:5}',
+      ),
+    );
+
+    const here = await sys.numbering.configured(sys.by, branch.id);
+    expect(here.map((one) => [one.scope.documentType, one.scope.fiscalYear])).toEqual([
+      ['pos.sale', '2026'],
+      ['pur.invoice', '2026'],
+      ['pur.invoice', '2027'],
+    ]);
+    // Homs is not in Aleppo's list, and the order does not depend on the order
+    // the four were defined in.
+    expect(here.every((one) => one.scope.branch === branch.id)).toBe(true);
+    expect(here.map((one) => one.specimen)).toEqual(['AL1-1-00001', 'PUR-00001', 'PUR-000001']);
+    expect(here.every((one) => !one.isDefault)).toBe(true);
+  });
 });

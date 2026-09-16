@@ -8,6 +8,8 @@ import { BusinessProfile } from './screens/BusinessProfile.js';
 import { Branches } from './screens/Branches.js';
 import { Companies } from './screens/Companies.js';
 import { Locations } from './screens/Locations.js';
+import { Numbering } from './screens/Numbering.js';
+import { Registers } from './screens/Registers.js';
 import { useSession } from './session.js';
 
 /**
@@ -54,6 +56,18 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       label: translator.format('nav.locations'),
       href: hrefOf('locations'),
       icon: <LocationIcon />,
+    },
+    {
+      id: 'registers',
+      label: translator.format('nav.registers'),
+      href: hrefOf('registers'),
+      icon: <RegisterIcon />,
+    },
+    {
+      id: 'numbering',
+      label: translator.format('nav.numbering'),
+      href: hrefOf('numbering'),
+      icon: <NumberingIcon />,
     },
   ];
 
@@ -111,6 +125,10 @@ function Screen({ name }: { readonly name: RouteName }): ReactNode {
       return <Branches />;
     case 'locations':
       return <Locations />;
+    case 'registers':
+      return <Registers />;
+    case 'numbering':
+      return <Numbering />;
   }
 }
 
@@ -155,6 +173,27 @@ function LocationIcon(): ReactNode {
     <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
       <path d="M10 2.5l7 3.5v8l-7 3.5-7-3.5v-8z" strokeLinejoin="round" />
       <path d="M3 6l7 3.5L17 6M10 9.5v8" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A drawer with a screen above it: the till, and the machine standing at it. */
+function RegisterIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <rect x="5" y="2.5" width="10" height="6" rx="1" />
+      <path d="M2.5 11.5h15v5a1 1 0 01-1 1h-13a1 1 0 01-1-1z" strokeLinejoin="round" />
+      <path d="M2.5 11.5L5 8.5h10l2.5 3M8 14.5h4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A ticket with a run of marks on it: one number after another. */
+function NumberingIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <rect x="2.5" y="5" width="15" height="10" rx="1.5" />
+      <path d="M6 8v4M9 8v4M12 8v4M15 8v4" strokeLinecap="round" />
     </svg>
   );
 }
