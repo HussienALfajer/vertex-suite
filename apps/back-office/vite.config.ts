@@ -52,5 +52,5 @@ export default defineConfig({
       { find: /^@vertex\/platform$/, replacement: source('platform') },
     ],
   },
-  server: { port: 5181 },
+  server: { port: Number(process.env.PORT) || 5181 },
 });
