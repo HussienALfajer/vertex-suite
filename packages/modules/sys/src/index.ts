@@ -24,6 +24,7 @@ import {
   OrganisationAdministration,
   SYS_PERMISSION_SEEDS,
   SYS_PERMISSIONS,
+  type GeoPoint,
   type RecordSession,
   type SeriesScope,
   type NewBranch,
@@ -49,6 +50,10 @@ import {
   registerCompany,
   registerIn,
   registersIn,
+  locateBranch,
+  locateLocation,
+  readdressBranch,
+  readdressLocation,
   renameBranch,
   renameCompany,
   renameLocation,
@@ -239,6 +244,17 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
               guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
                 renameBranch(session, by.tenant, id, name),
               ),
+            // Where a branch is is an edit to the branch, judged at the branch
+            // — so a manager confined to Aleppo (SEC-04) can say where Aleppo
+            // is and cannot move Damascus.
+            readdress: (by: CommandContext, id: BranchId, address: string) =>
+              guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
+                readdressBranch(session, by.tenant, id, address),
+              ),
+            locate: (by: CommandContext, id: BranchId, point: GeoPoint | null) =>
+              guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
+                locateBranch(session, by.tenant, id, point),
+              ),
             deactivate: (by: CommandContext, id: BranchId) =>
               guarded(by, SYS_PERMISSIONS.branch.withdraw, { branch: id }, (session) =>
                 setBranchActive(session, by.tenant, id, false),
@@ -256,6 +272,14 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
             rename: async (by: CommandContext, id: LocationId, name: string) =>
               guarded(by, SYS_PERMISSIONS.location.edit, await placeOfLocation(by, id), (session) =>
                 renameLocation(session, by.tenant, id, name),
+              ),
+            readdress: async (by: CommandContext, id: LocationId, address: string) =>
+              guarded(by, SYS_PERMISSIONS.location.edit, await placeOfLocation(by, id), (session) =>
+                readdressLocation(session, by.tenant, id, address),
+              ),
+            locate: async (by: CommandContext, id: LocationId, point: GeoPoint | null) =>
+              guarded(by, SYS_PERMISSIONS.location.edit, await placeOfLocation(by, id), (session) =>
+                locateLocation(session, by.tenant, id, point),
               ),
             deactivate: async (by: CommandContext, id: LocationId) =>
               guarded(

@@ -65,6 +65,10 @@ export const catalogue = {
   'refusal.sys.branch-inactive': 'الفرع «{branch}» مسحوب من الخدمة. أعِده إلى الخدمة أولًا.',
   'refusal.sys.not-permitted':
     'هذا الإجراء يحتاج صلاحية «{right}»، وهي غير ممنوحة لك. راجع مالك المتجر.',
+  'refusal.sys.point-out-of-range':
+    'الإحداثي «{lat}, {lng}» ليس موقعًا على الأرض. تحقّق من رقم زائد أو ناقص.',
+  'refusal.sys.location-kind-has-no-place':
+    'سيارة التوزيع مكانها يتحرّك معها، فلا يُثبَّت لها موقع على الخريطة — موقع ثابت لها يجيب عن سؤال «أين البضاعة» بمكان كانت فيه.',
 
   /**
    * The rights `SYS` declares, named the way an administrator would say them.
@@ -106,6 +110,71 @@ export const catalogue = {
   'action.dismiss': 'إخفاء',
   'action.rename': 'تغيير الاسم',
   'action.retry': 'إعادة المحاولة',
+  'action.save': 'حفظ',
+
+  /**
+   * `SYS-14` — the address, the map, and the picker.
+   *
+   * The map's own controls are named rather than left as symbols, because an
+   * icon-only control with no name is invisible to a screen reader (§11) and a
+   * `+` on a map is only obvious to somebody who has used one before.
+   */
+  'map.zoomIn': 'تقريب',
+  'map.zoomOut': 'تبعيد',
+  'map.reset': 'إعادة الإطار',
+  /** The number in the marker itself. It goes through the locale, so §5.5's per-tenant digits reach it. */
+  'map.marker.count': '{count, number}',
+  'map.marker.many': '{count, number} أماكن هنا',
+  /** Over the tenant's own places rather than the world: instant, and offline. */
+  'map.search': 'ابحث في أماكنك',
+  'map.search.results': 'نتائج البحث في أماكنك',
+
+  'place.title': 'موقع «{name}»',
+  'place.address': 'العنوان',
+  'place.address.description':
+    'كما يقوله أهل المنطقة: «مقابل جامع الرحمن، فوق صيدلية النور». لا يُشتقّ من الخريطة ولا تُشتقّ منه.',
+  'place.map': 'الموقع على الخريطة',
+  'place.map.label': 'خريطة المواقع',
+  'place.saved': 'حُفظ موقع «{name}».',
+  'place.moves':
+    'سيارة التوزيع مكانها يتحرّك معها، فلا نثبّت لها نقطة — يبقى لها عنوان إن كان لها مرآب ثابت.',
+
+  /**
+   * The one thing here that needs a line, and the only place that says so.
+   *
+   * One sentence for every failure, deliberately: somebody who typed a street
+   * name does not need to know whether the line is down, the service is busy or
+   * the answer came back malformed — only that typing is not the way in today
+   * and that the map below still is.
+   */
+  'picker.search': 'ابحث عن مكان بالاسم',
+  'picker.search.placeholder': 'مثل: حلب، شارع التلل',
+  'picker.search.searching': 'جارٍ البحث…',
+  'picker.search.empty': 'لا نتائج بهذا الاسم. جرّب اسمًا أقرب، أو حدّد الموقع على الخريطة.',
+  'picker.search.failed':
+    'تعذّر البحث بالاسم الآن — يحتاج اتصالًا بالإنترنت. حدّد الموقع على الخريطة أو ألصق رابطًا.',
+
+  'picker.placeHere': 'ضع النقطة هنا',
+  'picker.useMyLocation': 'موقعي الحالي',
+  'picker.locating': 'جارٍ التحديد…',
+  'picker.clear': 'أزل النقطة',
+  'picker.paste': 'ألصق رابط خرائط أو إحداثيًا',
+  'picker.paste.description': 'مثل «36.1997, 37.1637» أو رابط خرائط جوجل الكامل.',
+  'picker.paste.shortened':
+    'هذا رابط مختصر يخفي إحداثياته خلف تحويل. افتحه في المتصفّح وانسخ الرابط الكامل — لا نتبعه من هنا حتى لا نسأل طرفًا خارجيًا عن مواقع متجرك.',
+  'picker.paste.unreadable': 'لم نتعرّف على موقع في هذا النص.',
+  /**
+   * Four outcomes, four sentences. One of them is a fact about how this system
+   * was installed rather than about the person reading it, and saying so is
+   * what sends the right person to fix the right thing.
+   */
+  'picker.device.insecure':
+    'المتصفّح لا يكشف موقع الجهاز إلا عبر اتصال مؤمَّن. اطلب من مثبّت عقدة المتجر تشغيل HTTPS، أو حدّد الموقع على الخريطة.',
+  'picker.device.unsupported': 'هذا المتصفّح لا يعرف موقع الجهاز.',
+  'picker.device.refused':
+    'رُفض إذن الموقع لهذه الصفحة. امنحه من إعدادات المتصفّح، أو حدّده يدويًا.',
+  'picker.device.unavailable':
+    'تعذّر تحديد موقع الجهاز الآن — جهاز بلا GPS يسأل الإنترنت، وهذا المتجر قد يكون بلا اتصال. حدّده على الخريطة.',
 
   /** Named by `TextInput` itself for any field of type `password`. */
   'password.show': 'إظهار كلمة المرور',
@@ -169,6 +238,9 @@ export const catalogue = {
   'branches.description':
     'مواقع العمل التي تُدار بها الحركة: لكل فرع مواقعه وصناديقه وصلاحياته وسلاسل ترقيمه.',
   'branches.table': 'الفروع',
+  'branches.map': 'الفروع على الخريطة',
+  'branches.map.empty':
+    'لم يُحدَّد موقع أي فرع بعد. افتح «موقع» من صفّ أي فرع لتضع نقطته، فتظهر هنا.',
   'branches.search': 'ابحث في الفروع',
   'branches.open': 'فتح فرع',
   'branches.column.name': 'الفرع',
@@ -215,6 +287,10 @@ export const catalogue = {
   'locations.column.kind': 'النوع',
   'locations.column.status': 'الحالة',
   'locations.column.actions': 'إجراءات',
+  'locations.map': 'مواقع «{branch}» على الخريطة',
+  'locations.map.branch': 'الفرع',
+  'locations.map.empty':
+    'لا شيء هنا بعد: المواقع داخل الفرع تكون عند نقطته، ولا تُفرَد بنقطة إلا إن كانت في مكان آخر — كمستودع خارج المدينة.',
   'locations.empty': 'لا مواقع في هذا الفرع بعد',
   'locations.empty.explanation':
     'افتح صالة بيع ومستودعًا على الأقل، حتى تستقرّ البضاعة في مكان معلوم.',

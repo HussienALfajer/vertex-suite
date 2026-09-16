@@ -141,6 +141,7 @@ export {
   type ThemeSwitchProps,
   type TwoToneTheme,
 } from './components/ThemeSwitch.js';
+export { Popover, type PopoverProps } from './components/Popover.js';
 export { WithTooltip, type WithTooltipProps } from './components/Tooltip.js';
 export {
   BreadcrumbTrail,

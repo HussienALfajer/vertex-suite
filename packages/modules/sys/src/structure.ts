@@ -6,13 +6,15 @@ import type {
   RegisterId,
   TenantId,
 } from '@vertex/contracts';
-import { newId, ok, refuse, type Result } from '@vertex/kernel';
+import { isErr, newId, ok, refuse, type Result } from '@vertex/kernel';
 
 import type {
   Branch,
   Company,
+  GeoPoint,
   Listing,
   Location,
+  LocationKind,
   NewBranch,
   NewLocation,
   NewRegister,
@@ -20,6 +22,7 @@ import type {
   Register,
 } from './contract.js';
 import type { RecordSession } from './contract.js';
+import { normalisePoint, writtenAddress } from './place.js';
 import { readRecord, scanRecords, writeRecord } from './records.js';
 
 /**
@@ -50,6 +53,29 @@ type Outcome<T> = Result<T, OrganisationRefusal>;
  * a receipt at a counter.
  */
 const PREFIX = /^[A-Za-z0-9]{1,8}$/;
+
+/**
+ * A point as it will be stored, or the refusal that stops the write.
+ *
+ * Absent and `null` both mean unplaced, and they arrive from different
+ * directions: `undefined` is an administrator who did not say, `null` is one
+ * who said "not here any more". Nothing downstream distinguishes them, so
+ * neither does the record.
+ */
+function placeFrom(point: GeoPoint | null | undefined): Outcome<GeoPoint | null> {
+  return point === undefined || point === null ? ok(null) : normalisePoint(point);
+}
+
+/**
+ * Whether this kind of location may be given the point offered.
+ *
+ * Only when one is actually offered. Clearing a point a van does not have is a
+ * no-op rather than a mistake, and `SYN-02` replays commands — so a command
+ * that refused its own second application would turn a sync into a failure.
+ */
+function mayHoldPoint(kind: LocationKind, point: GeoPoint | null): boolean {
+  return point === null || kind !== 'vehicle';
+}
 
 function named(value: string): string | null {
   const name = value.trim();
@@ -202,11 +228,16 @@ export function openBranch(
     return refuse('sys.name-taken', { of: 'branch', name: trimmed });
   }
 
+  const placed = placeFrom(input.point);
+  if (isErr(placed)) return placed;
+
   const branch: Branch = {
     id: newId<'branch'>(),
     tenant,
     company: company.id,
     name: trimmed,
+    address: writtenAddress(input.address ?? ''),
+    point: placed.value,
     active: true,
   };
   return ok(writeRecord(session, 'branch', tenant, [branch.id], branch));
@@ -228,12 +259,20 @@ export function openLocation(
     return refuse('sys.name-taken', { of: 'location', name: trimmed });
   }
 
+  const placed = placeFrom(input.point);
+  if (isErr(placed)) return placed;
+  if (!mayHoldPoint(input.kind, placed.value)) {
+    return refuse('sys.location-kind-has-no-place', { of: 'location', name: trimmed });
+  }
+
   const location: Location = {
     id: newId<'location'>(),
     tenant,
     branch: branch.id,
     name: trimmed,
     kind: input.kind,
+    address: writtenAddress(input.address ?? ''),
+    point: placed.value,
     active: true,
   };
   return ok(writeRecord(session, 'location', tenant, [location.id], location));
@@ -382,6 +421,87 @@ export function renameRegister(
     return refuse('sys.name-taken', { of: 'register', name: trimmed });
   }
   return ok(writeRecord(session, 'register', tenant, [id], { ...register, name: trimmed }));
+}
+
+/**
+ * Where a branch is, in words (`SYS-14`).
+ *
+ * There is no refusal for an empty address and there should not be: clearing
+ * one is how a shop that moved says it no longer knows, and an administrator
+ * who has to type something untrue to get past a form types something untrue.
+ */
+export function readdressBranch(
+  session: RecordSession,
+  tenant: TenantId,
+  id: BranchId,
+  address: string,
+): Outcome<Branch> {
+  const branch = branchIn(session, tenant, id);
+  if (branch === null) return refuse('sys.branch-not-found', { branch: id });
+  return ok(
+    writeRecord(session, 'branch', tenant, [id], { ...branch, address: writtenAddress(address) }),
+  );
+}
+
+/**
+ * Where a branch is, on the map (`SYS-14`).
+ *
+ * A withdrawn branch may still be placed, and a withdrawn one keeps the point
+ * it had. `SYS-09` deactivates rather than deletes precisely so that the
+ * documents that name it stay readable, and a shop that closed is still a shop
+ * that was somewhere — a report of last year's sales by branch is a report
+ * about places, and wiping the place would make it a report about names.
+ */
+export function locateBranch(
+  session: RecordSession,
+  tenant: TenantId,
+  id: BranchId,
+  point: GeoPoint | null,
+): Outcome<Branch> {
+  const branch = branchIn(session, tenant, id);
+  if (branch === null) return refuse('sys.branch-not-found', { branch: id });
+  const placed = placeFrom(point);
+  if (isErr(placed)) return placed;
+  return ok(writeRecord(session, 'branch', tenant, [id], { ...branch, point: placed.value }));
+}
+
+export function readdressLocation(
+  session: RecordSession,
+  tenant: TenantId,
+  id: LocationId,
+  address: string,
+): Outcome<Location> {
+  const location = locationIn(session, tenant, id);
+  if (location === null) return refuse('sys.location-not-found', { location: id });
+  return ok(
+    writeRecord(session, 'location', tenant, [id], {
+      ...location,
+      address: writtenAddress(address),
+    }),
+  );
+}
+
+/**
+ * Where a stock location is, when it is not simply at its branch (`SYS-14`).
+ *
+ * `null` puts it back at the branch rather than marking it unknown, which is
+ * the state almost every location is in: a shop floor and the store room behind
+ * it share a doorstep, and only the warehouse across town needs its own.
+ */
+export function locateLocation(
+  session: RecordSession,
+  tenant: TenantId,
+  id: LocationId,
+  point: GeoPoint | null,
+): Outcome<Location> {
+  const location = locationIn(session, tenant, id);
+  if (location === null) return refuse('sys.location-not-found', { location: id });
+  const placed = placeFrom(point);
+  if (isErr(placed)) return placed;
+  if (!mayHoldPoint(location.kind, placed.value)) {
+    return refuse('sys.location-kind-has-no-place', { of: 'location', name: location.name });
+  }
+  return ok(writeRecord(session, 'location', tenant, [id], { ...location, point: placed.value }));
 }
 
 /**

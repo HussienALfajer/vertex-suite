@@ -15,7 +15,11 @@
     "./theme.css": "./src/tokens/theme.generated.css",
     "./fonts.css": "./src/tokens/fonts.generated.css",
     "./tailwind.css": "./src/tokens/tailwind.generated.css",
-    "./scrollbar.css": "./src/styles/scrollbar.css"
+    "./scrollbar.css": "./src/styles/scrollbar.css",
+    "./map": {
+      "types": "./dist/geo/index.d.ts",
+      "default": "./dist/geo/index.js"
+    }
   },
   "files": [
     "dist",
@@ -27,19 +31,25 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tokens": "tsc -p tsconfig.build.json && node dist/tokens/build.js"
+    "tokens": "tsc -p tsconfig.build.json && node dist/tokens/build.js",
+    "atlas": "tsc -p tsconfig.build.json && node dist/geo/build-atlas.js"
   },
   "devDependencies": {
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
+    "@types/d3-geo": "3.1.1",
+    "@types/geojson": "7946.0.16",
     "@types/node": "24.13.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/topojson-client": "3.1.5",
+    "@types/topojson-specification": "1.0.5",
     "happy-dom": "20.14.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "6.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "world-atlas": "2.0.2"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",
@@ -48,6 +58,8 @@
     "@vertex/i18n": "workspace:*",
     "@vertex/kernel": "workspace:*",
     "clsx": "2.1.1",
-    "react-aria-components": "1.21.1"
+    "d3-geo": "3.1.1",
+    "react-aria-components": "1.21.1",
+    "topojson-client": "3.1.0"
   }
 }

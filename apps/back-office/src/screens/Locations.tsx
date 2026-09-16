@@ -19,15 +19,24 @@ import {
   type DataTableColumn,
   type SelectOption,
 } from '@vertex/ui';
+import type { MapPlace, PickedPoint } from '@vertex/ui/map';
 import type { Result } from '@vertex/kernel';
-import type { Branch, Location, LocationKind, OrganisationRefusal } from '@vertex/sys/contract';
+import type {
+  Branch,
+  GeoPoint,
+  Location,
+  LocationKind,
+  OrganisationRefusal,
+} from '@vertex/sys/contract';
 
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
 import type { OrganisationOfRecord } from '../system.js';
 import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
+import { PlaceDialog, PlaceFields, PlacesMap } from './place.js';
 import {
   ListingBar,
   NameDialog,
+  PlaceIcon,
   RenameIcon,
   RestoreIcon,
   StaleBanner,
@@ -77,6 +86,7 @@ export function Locations(): ReactNode {
   const [renaming, setRenaming] = useState<Location | null>(null);
   const [withdrawing, setWithdrawing] = useState<Location | null>(null);
   const [restoring, setRestoring] = useState<Location | null>(null);
+  const [placing, setPlacing] = useState<Location | null>(null);
 
   const openBranches = useMemo(() => branches.filter((one) => one.active), [branches]);
   const chosen = useMemo(
@@ -105,6 +115,51 @@ export function Locations(): ReactNode {
         (one) => (includeWithdrawn || one.active) && matchesQuery(one.name, query),
       ),
     [locations.value, includeWithdrawn, query],
+  );
+
+  /**
+   * The branch, and the locations that are somewhere other than the branch.
+   *
+   * A shop floor and the store room behind it share the branch's doorstep and
+   * carry no point of their own, so they are not drawn twice — what appears
+   * beside the branch is the warehouse across town, which is the case `SYS-14`
+   * gives a location its own point for.
+   */
+  const placed = useMemo((): readonly MapPlace[] => {
+    const here: MapPlace[] =
+      chosen?.point == null
+        ? []
+        : [
+            {
+              id: chosen.id,
+              label: chosen.name,
+              kind: 'branch',
+              lat: chosen.point.lat,
+              lng: chosen.point.lng,
+              isActive: chosen.active,
+              address: chosen.address,
+            },
+          ];
+
+    for (const one of locations.value ?? []) {
+      if (one.point === null) continue;
+      here.push({
+        id: one.id,
+        label: one.name,
+        kind: 'store',
+        lat: one.point.lat,
+        lng: one.point.lng,
+        isActive: one.active,
+        address: one.address,
+      });
+    }
+    return here;
+  }, [chosen, locations.value]);
+
+  const elsewhere = useMemo(
+    (): readonly PickedPoint[] =>
+      placed.flatMap((one) => (one.id === placing?.id ? [] : [{ lat: one.lat, lng: one.lng }])),
+    [placed, placing],
   );
 
   /** Every command here changes this branch's own list, which the shared reload does not hold. */
@@ -147,11 +202,19 @@ export function Locations(): ReactNode {
       id: 'actions',
       header: translator.format('locations.column.actions'),
       align: 'end',
-      // Two: the rename, and whichever of withdraw and restore this row is in
-      // a state to offer.
-      width: actionsColumnWidth(2),
+      // Three: where it is, the rename, and whichever of withdraw and restore
+      // this row is in a state to offer.
+      width: actionsColumnWidth(3),
       render: (location) => (
         <TableRowActions>
+          <TableRowAction
+            aria-label={translator.format('place.title', { name: location.name })}
+            onPress={() => {
+              setPlacing(location);
+            }}
+          >
+            <PlaceIcon />
+          </TableRowAction>
           <TableRowAction
             aria-label={translator.format('locations.rename.title')}
             onPress={() => {
@@ -298,13 +361,57 @@ export function Locations(): ReactNode {
       )}
 
       {chosen === null ? null : (
+        <PlacesMap
+          label={translator.format('locations.map', { branch: chosen.name })}
+          places={placed}
+          emptyMessage={translator.format('locations.map.empty')}
+          renderDetails={(place) => {
+            const location = (locations.value ?? []).find((one) => one.id === place.id);
+            const of = location ?? chosen;
+            return (
+              <div className="flex flex-col items-start gap-[var(--vx-gap-xs)]">
+                <span className="font-body-semibold text-fg">{of.name}</span>
+                <span className="text-footnote text-fg-secondary">
+                  {translator.format(
+                    location === undefined ? 'locations.map.branch' : KIND_KEYS[location.kind],
+                  )}
+                </span>
+                {of.address === '' ? null : (
+                  <span className="text-footnote text-fg-secondary">{of.address}</span>
+                )}
+                <StatusBadge isActive={of.active} />
+              </div>
+            );
+          }}
+        />
+      )}
+
+      {chosen === null ? null : (
         <NewLocationDialog
           branch={chosen}
           isOpen={isOpening}
           onOpenChange={setIsOpening}
           onOpened={locations.reload}
+          around={elsewhere}
         />
       )}
+
+      <PlaceDialog
+        subject={placing}
+        around={elsewhere}
+        canHoldPoint={placing?.kind !== 'vehicle'}
+        commands={{
+          readdress: (of, id, address) => of.locations.readdress(id as Location['id'], address),
+          locate: (of, id, point) => of.locations.locate(id as Location['id'], point),
+        }}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setPlacing(null);
+        }}
+        onSaved={() => {
+          setPlacing(null);
+          locations.reload();
+        }}
+      />
 
       <NameDialog
         title={translator.format('locations.rename.title')}
@@ -374,6 +481,8 @@ interface NewLocationDialogProps {
   readonly isOpen: boolean;
   readonly onOpenChange: (isOpen: boolean) => void;
   readonly onOpened: () => void;
+  /** What is already placed in this branch, drawn faintly under the picker. */
+  readonly around: readonly PickedPoint[];
 }
 
 /** Opening a location: what it is called, and what kind of place it is. */
@@ -382,6 +491,7 @@ function NewLocationDialog({
   isOpen,
   onOpenChange,
   onOpened,
+  around,
 }: NewLocationDialogProps): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
@@ -393,6 +503,10 @@ function NewLocationDialog({
   // often opened first. A default that is right most of the time is a field
   // most people never touch.
   const [kind, setKind] = useState<LocationKind>('shop-floor');
+  // `SYS-14`. Empty is the ordinary answer for a location: a shop floor is at
+  // its branch, and only the warehouse across town needs a point of its own.
+  const [address, setAddress] = useState('');
+  const [point, setPoint] = useState<PickedPoint | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [isMissing, setIsMissing] = useState(false);
@@ -401,6 +515,8 @@ function NewLocationDialog({
     if (!isOpen) return;
     setName('');
     setKind('shop-floor');
+    setAddress('');
+    setPoint(null);
     setRefused(null);
     setIsMissing(false);
     setIsWorking(false);
@@ -417,8 +533,18 @@ function NewLocationDialog({
     setIsWorking(true);
     setRefused(null);
     const chosen = name.trim();
+    // A van is never placed, so nothing is sent for one — the command would
+    // refuse it, and a refusal over something the screen never offered would
+    // be this screen's mistake rather than the administrator's.
+    const where: GeoPoint | undefined = kind === 'vehicle' ? undefined : (point ?? undefined);
     const delivery = await run((of) =>
-      of.locations.open({ branch: branch.id, name: chosen, kind }),
+      of.locations.open({
+        branch: branch.id,
+        name: chosen,
+        kind,
+        address,
+        ...(where === undefined ? {} : { point: where }),
+      }),
     );
     setIsWorking(false);
 
@@ -442,6 +568,7 @@ function NewLocationDialog({
       title={translator.format('locations.new.title')}
       isOpen={isOpen}
       onOpenChange={onOpenChange}
+      className="max-w-[40rem]"
       footer={
         <>
           <Button
@@ -490,8 +617,21 @@ function NewLocationDialog({
           value={kind}
           onChange={(key) => {
             const picked = KINDS.find((one) => one === key);
-            if (picked !== undefined) setKind(picked);
+            if (picked === undefined) return;
+            setKind(picked);
+            // A van holds no point, and clearing it here rather than only
+            // hiding the field is what stops switching back to a placeable
+            // kind from silently restoring a point nobody re-confirmed.
+            if (picked === 'vehicle') setPoint(null);
           }}
+        />
+        <PlaceFields
+          address={address}
+          onAddress={setAddress}
+          point={point}
+          onPoint={setPoint}
+          around={around}
+          canHoldPoint={kind !== 'vehicle'}
         />
         <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
       </form>

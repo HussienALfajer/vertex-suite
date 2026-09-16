@@ -51,6 +51,9 @@
   --vx-switch-track-on: var(--vx-fill-primary);
   --vx-switch-knob: var(--vx-surface-2);
   --vx-switch-knob-on: var(--vx-on-primary);
+  --vx-map-land: var(--vx-border);
+  --vx-map-land-home: var(--vx-border-strong);
+  --vx-map-line: var(--vx-text-muted);
 
   /* Accent roles. A screen names a role, never a hue. */
   /* accent */
@@ -197,6 +200,9 @@
   --vx-switch-track-on: var(--vx-fill-primary);
   --vx-switch-knob: var(--vx-text-secondary);
   --vx-switch-knob-on: var(--vx-on-primary);
+  --vx-map-land: var(--vx-border);
+  --vx-map-land-home: var(--vx-border-strong);
+  --vx-map-line: var(--vx-text-muted);
 
   /* §5.4: one named weight down at body size and above, on a dark ground */
   --vx-weight-regular: 400;
@@ -248,6 +254,9 @@
   --vx-switch-track-on: var(--vx-fill-primary);
   --vx-switch-knob: var(--vx-text-secondary);
   --vx-switch-knob-on: var(--vx-on-primary);
+  --vx-map-land: var(--vx-border);
+  --vx-map-land-home: var(--vx-border-strong);
+  --vx-map-line: var(--vx-text-muted);
 
   /* §5.4: one named weight down at body size and above, on a dark ground */
   --vx-weight-regular: 400;

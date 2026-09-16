@@ -44,7 +44,15 @@ export function Page({ children, banner, nav, className }: PageProps): ReactNode
         // Inside a frame the page no longer scrolls as one piece: the banner and
         // the navigation stay put and the content moves under them, which is
         // what keeps "where am I" and "where can I go" on screen at row 300.
-        hasChrome ? 'min-w-0 flex-1 overflow-auto' : '',
+        //
+        // `[&>*]:shrink-0` is what makes that scroll mean anything. A flex item
+        // shrinks by default, so a column whose contents are taller than it
+        // **compresses them instead of scrolling** — and a section with
+        // `overflow-hidden` compresses by having its content cut off. That is
+        // how a listing and a map on one screen ended up as a listing and a
+        // sliver: nothing was wrong with either, they were simply being made to
+        // share a height neither had asked for.
+        hasChrome ? 'min-w-0 flex-1 overflow-auto [&>*]:shrink-0' : '',
       )}
     >
       {children}

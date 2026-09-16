@@ -426,9 +426,15 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      d3-geo:
+        specifier: 3.1.1
+        version: 3.1.1
       react-aria-components:
         specifier: 1.21.1
         version: 1.21.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      topojson-client:
+        specifier: 3.1.0
+        version: 3.1.0
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -436,6 +442,12 @@ importers:
       '@testing-library/user-event':
         specifier: 14.6.7
         version: 14.6.7(@testing-library/dom@10.4.2)
+      '@types/d3-geo':
+        specifier: 3.1.1
+        version: 3.1.1
+      '@types/geojson':
+        specifier: 7946.0.16
+        version: 7946.0.16
       '@types/node':
         specifier: 24.13.4
         version: 24.13.4
@@ -445,6 +457,12 @@ importers:
       '@types/react-dom':
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
+      '@types/topojson-client':
+        specifier: 3.1.5
+        version: 3.1.5
+      '@types/topojson-specification':
+        specifier: 1.0.5
+        version: 1.0.5
       happy-dom:
         specifier: 20.14.5
         version: 20.14.5
@@ -460,6 +478,9 @@ importers:
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@types/node@24.13.4)(happy-dom@20.14.5)(vite@8.3.0(@types/node@24.13.4)(jiti@2.7.0))
+      world-atlas:
+        specifier: 2.0.2
+        version: 2.0.2
 
 packages:
 
@@ -865,6 +886,9 @@ packages:
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
+  '@types/d3-geo@3.1.1':
+    resolution: {integrity: sha512-65Emv9fQiQQqphLlRkuQ5ypPsOmWPhtBGCMv61JDPEPMvsx+gzhGf74yw1a78xFKPj6zw4AgQICJoQv0vK9M2w==}
+
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
@@ -873,6 +897,9 @@ packages:
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
+
+  '@types/geojson@7946.0.16':
+    resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -890,6 +917,12 @@ packages:
 
   '@types/react@19.3.0':
     resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
+
+  '@types/topojson-client@3.1.5':
+    resolution: {integrity: sha512-C79rySTyPxnQNNguTZNI1Ct4D7IXgvyAs3p9HPecnl6mNrJ5+UhvGNYcZfpROYV2lMHI48kJPxwR+F9C6c7nmw==}
+
+  '@types/topojson-specification@1.0.5':
+    resolution: {integrity: sha512-C7KvcQh+C2nr6Y2Ub4YfgvWvWCgP2nOQMtfhlnwsRL4pYmmwzBS7HclGiS87eQfDOU/DLQpX6GEscviaz4yLIQ==}
 
   '@types/whatwg-mimetype@3.0.2':
     resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
@@ -1059,6 +1092,9 @@ packages:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
     engines: {node: '>=6'}
 
+  commander@2.20.3:
+    resolution: {integrity: sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==}
+
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
@@ -1068,6 +1104,14 @@ packages:
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
+
+  d3-array@3.2.4:
+    resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
+    engines: {node: '>=12'}
+
+  d3-geo@3.1.1:
+    resolution: {integrity: sha512-637ln3gXKXOwhalDzinUgY83KzNWZRKbYubaG+fGVuc/dxO64RRljtCTnf5ecMyE1RIdtqpkVcq0IbtU2S8j2Q==}
+    engines: {node: '>=12'}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -1235,6 +1279,10 @@ packages:
   imurmurhash@0.1.4:
     resolution: {integrity: sha512-JmXMZ6wuvDmLiHEml9ykzqO6lwFbof0GG4IkcGaENdCRDDmMVnny7s5HsIgHCbaq0w2MyPhDqkhTUgS2LU2PHA==}
     engines: {node: '>=0.8.19'}
+
+  internmap@2.0.3:
+    resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
+    engines: {node: '>=12'}
 
   intl-messageformat@11.2.15:
     resolution: {integrity: sha512-W4VNytsXyWgW5lvVchmsb9xgA5rSKqoflu3/IQ9UCtB0z4R+Bx9MoEkwFT/+30RCl/KzUoH0QGGe9lppF5SuvQ==}
@@ -1601,6 +1649,10 @@ packages:
     resolution: {integrity: sha512-yau8yJdTt989Mm0Bd/236QnzEiPf2xLLTqUZRUJOo/3CB078LSwzei343DgtJVmfJKJE3TMINY1u42SQsP6mXw==}
     engines: {node: '>=14.0.0'}
 
+  topojson-client@3.1.0:
+    resolution: {integrity: sha512-605uxS6bcYxGXw9qi62XyrV6Q3xwbndjachmNxu8HWTtVPxZfEJN9fd/SZS1Q54Sn2y0TMyMxFj/cJINqGHrKw==}
+    hasBin: true
+
   ts-api-utils@2.5.0:
     resolution: {integrity: sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==}
     engines: {node: '>=18.12'}
@@ -1745,6 +1797,9 @@ packages:
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
+
+  world-atlas@2.0.2:
+    resolution: {integrity: sha512-IXfV0qwlKXpckz1FhwXVwKRjiIhOnWttOskm5CtxMsjgE/MXAYRHWJqgXOpM8IkcPBoXnyTU5lFHcYa5ChG0LQ==}
 
   ws@8.21.3:
     resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
@@ -2070,11 +2125,17 @@ snapshots:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
 
+  '@types/d3-geo@3.1.1':
+    dependencies:
+      '@types/geojson': 7946.0.16
+
   '@types/deep-eql@4.0.2': {}
 
   '@types/esrecurse@4.3.1': {}
 
   '@types/estree@1.0.9': {}
+
+  '@types/geojson@7946.0.16': {}
 
   '@types/json-schema@7.0.15': {}
 
@@ -2093,6 +2154,15 @@ snapshots:
   '@types/react@19.3.0':
     dependencies:
       csstype: 3.2.3
+
+  '@types/topojson-client@3.1.5':
+    dependencies:
+      '@types/geojson': 7946.0.16
+      '@types/topojson-specification': 1.0.5
+
+  '@types/topojson-specification@1.0.5':
+    dependencies:
+      '@types/geojson': 7946.0.16
 
   '@types/whatwg-mimetype@3.0.2': {}
 
@@ -2296,6 +2366,8 @@ snapshots:
 
   clsx@2.1.1: {}
 
+  commander@2.20.3: {}
+
   convert-source-map@2.0.0: {}
 
   cross-spawn@7.0.6:
@@ -2305,6 +2377,14 @@ snapshots:
       which: 2.0.2
 
   csstype@3.2.3: {}
+
+  d3-array@3.2.4:
+    dependencies:
+      internmap: 2.0.3
+
+  d3-geo@3.1.1:
+    dependencies:
+      d3-array: 3.2.4
 
   debug@4.4.3:
     dependencies:
@@ -2471,6 +2551,8 @@ snapshots:
   ignore@7.0.9: {}
 
   imurmurhash@0.1.4: {}
+
+  internmap@2.0.3: {}
 
   intl-messageformat@11.2.15:
     dependencies:
@@ -2778,6 +2860,10 @@ snapshots:
 
   tinyrainbow@3.1.1: {}
 
+  topojson-client@3.1.0:
+    dependencies:
+      commander: 2.20.3
+
   ts-api-utils@2.5.0(typescript@6.0.2):
     dependencies:
       typescript: 6.0.2
@@ -2914,6 +3000,8 @@ snapshots:
       stackback: 0.0.2
 
   word-wrap@1.2.5: {}
+
+  world-atlas@2.0.2: {}
 
   ws@8.21.3: {}
 

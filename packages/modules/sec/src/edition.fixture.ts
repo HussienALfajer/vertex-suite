@@ -266,6 +266,11 @@ function bring(
         tenant: owner,
         company,
         name,
+        // `SYS-14`'s address and point, unset: nothing `SEC` decides depends on
+        // where a branch is, only on which one it is. A fixture that filled
+        // them in would be inventing a fact these suites never read.
+        address: '',
+        point: null,
         active: true,
       };
       places.branches.set(branch.id, branch);
@@ -280,6 +285,8 @@ function bring(
         branch,
         name,
         kind,
+        address: '',
+        point: null,
         active: true,
       };
       places.locations.set(location.id, location);
