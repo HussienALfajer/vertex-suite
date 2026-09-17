@@ -194,6 +194,7 @@ export const catalogue = {
   'permission.sys.branch.view': 'الاطلاع على الفروع',
   'permission.sys.branch.create': 'فتح فرع',
   'permission.sys.branch.edit': 'تعديل بيانات الفروع',
+  'permission.sys.branch.rezone': 'تغيير المنطقة الزمنية للفرع',
   'permission.sys.branch.delete': 'سحب فرع من الخدمة',
   'permission.sys.location.view': 'الاطلاع على المواقع',
   'permission.sys.location.create': 'فتح موقع',

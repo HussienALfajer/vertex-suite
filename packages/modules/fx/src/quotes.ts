@@ -6,6 +6,7 @@ import {
   type QuoteForm,
   type RateQuote,
   type RateRefusal,
+  type RateSide,
 } from './contract.js';
 
 /**
@@ -25,7 +26,7 @@ export interface SettledQuote {
   readonly quoted: RateQuote;
 }
 
-type Side = 'buy' | 'sell';
+type Side = RateSide;
 
 /** A quote's fields as they may actually arrive: typed by a person, or read off a wire. */
 type Arriving = { readonly [Field in keyof RateQuote]: unknown };
@@ -64,6 +65,36 @@ function settledSide(form: QuoteForm, side: Side, typed: unknown): Result<Decima
   // and every amount converted at it would be nothing.
   if (canonical.isZero()) return refuse('fx.rate-invalid', { side, rate: typed });
   return ok(canonical);
+}
+
+/** One rate as it will be recorded: the canonical figure, and the form it was typed in. */
+export interface SettledRate {
+  readonly canonical: Decimal;
+  readonly form: QuoteForm;
+}
+
+/**
+ * One rate, in canonical form: the single figure an override of `FX-06`
+ * replaces a side of the board with.
+ *
+ * The same function the pair goes through, exported rather than reimplemented —
+ * an override judged by a second copy of these rules is an override that comes
+ * to accept a figure a board would be refused for, and the two would drift
+ * apart in the one place nobody reads twice.
+ *
+ * It hands the form back, narrowed. The caller has to store what was typed
+ * beside what was computed, as a recorded rate does, and reading the form off
+ * the input a second time would be reading a field nothing had judged.
+ */
+export function settleRate(
+  form: unknown,
+  side: Side,
+  typed: unknown,
+): Result<SettledRate, RateRefusal> {
+  if (!isQuoteForm(form)) return refuse('fx.rate-form-unknown', { form: String(form) });
+  const settled = settledSide(form, side, typed);
+  if (!settled.ok) return settled;
+  return ok({ canonical: settled.value, form });
 }
 
 /**

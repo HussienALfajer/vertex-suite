@@ -461,10 +461,59 @@ export type RateRefusalCode =
    * has to tell somebody to go and enter.
    */
   | 'fx.rate-missing'
+  /**
+   * The branch's today is a day it has already traded past.
+   *
+   * A rate is filed under the branch's own day, and a branch's day only ever
+   * moves forward. It can be made to move backwards three ways — the zone is
+   * revised, the machine clock is corrected the wrong way, an hour is handed
+   * back at the end of summer time — and each of them would file a rate under a
+   * day that has closed, beneath the documents already stamped on it (`FX-05`).
+   *
+   * The values name the branch, the day being asked for and the latest day it
+   * has recorded, so the prompt can say what is wrong rather than that
+   * something is. Refused rather than accepted and marked: `SYS` decides who
+   * may move a branch's zone, and this decides what a moved zone cannot do.
+   */
+  | 'fx.rate-day-behind'
   /** Nothing the tenant suggested was published on this branch's today. */
   | 'fx.suggested-rate-missing'
   /** A last-known rate is confirmed at a register in the branch, by somebody standing at it. */
   | 'fx.not-at-register'
+  /**
+   * An override was typed with nothing written in the reason (`FX-06`).
+   *
+   * The log answers "who" and "what" on its own; only the person overriding can
+   * answer "why", and an override nobody can explain a month later is a figure
+   * an auditor has to treat as an error. Judged as the exemption comments in
+   * `tools/` are judged — a reason is words, so a dash or a full stop is a shrug
+   * with punctuation.
+   */
+  | 'fx.override-reason-required'
+  /**
+   * An override on the far side of the day's other rate: receiving the currency
+   * at fewer units per functional unit than the branch pays it out at, or paying
+   * it out at more than it receives it at.
+   *
+   * The same judgement `fx.rate-spread-inverted` makes about a board, made about
+   * one document: every exchange at that pair loses. The right to override is
+   * the right to trade away from the board, not the right to trade at a certain
+   * loss, and almost always this is a figure entered on the wrong side. Equal to
+   * the other side is allowed, exactly as it is on a board.
+   */
+  | 'fx.override-crosses-spread'
+  /**
+   * The direction of the money is not one of the two there are.
+   *
+   * Checked rather than trusted, for the reason every other field arriving from
+   * outside this module is checked: the type is gone at run time, and a command
+   * reaches here off a wire and out of a queue `SYN-02` replays. Read on trust,
+   * anything that was not exactly `received` selects the sell rate — so a
+   * direction misspelt by one character stamps every receipt at the far side of
+   * the spread, on every document, with nothing refusing and nothing logged,
+   * because nothing was overridden.
+   */
+  | 'fx.cash-direction-unknown'
   /** Today's rates are all here; there is nothing a last-known rate would stand in for. */
   | 'fx.rates-current'
   /** The caller does not hold the right this command declares (`SEC-02`). */
@@ -545,6 +594,194 @@ export interface RateAdministration {
 export const ExchangeRates = contractKey<ExchangeRates>('fx.exchange-rates');
 
 export const RateAdministration = contractKey<RateAdministration>('fx.rate-administration');
+
+/**
+ * Which way the money is moving, which is the whole of what a caller has to say
+ * for `FX-06` to pick a side.
+ *
+ * `received` is the shop taking the currency in — a sale settled in euros, a
+ * customer paying down an account in pounds, a receivable that will be
+ * collected in them. `paid-out` is the shop letting it go — change given, a
+ * supplier paid, a refund. Named for the money and not for the document,
+ * because `FX` does not know what a document is and must not learn.
+ */
+export const CASH_DIRECTIONS = Object.freeze(['received', 'paid-out'] as const);
+
+export type CashDirection = (typeof CASH_DIRECTIONS)[number];
+
+/** Which of a revision's two figures a direction selects. */
+export type RateSide = 'buy' | 'sell';
+
+export type RateStampId = Id<'rate-stamp'>;
+
+export type RateOverrideId = Id<'rate-override'>;
+
+/**
+ * A rate typed over the one that would have applied (`FX-06`).
+ *
+ * One figure and not a pair: an override replaces the side the direction of the
+ * cash selected, and leaves the other side of the board alone. It is typed in
+ * either of the two forms of `RateQuote`, for the reason a board is — the person
+ * overriding is reading a rate off something, and it says what it says.
+ */
+export interface RateOverrideQuote {
+  readonly form: QuoteForm;
+  readonly rate: string;
+  /** Why. Required: see `fx.override-reason-required`. */
+  readonly reason: string;
+}
+
+/**
+ * What a caller tells `FX` about the money, and nothing else.
+ *
+ * No amount, because the rate does not depend on one; no document, because `FX`
+ * would then have to know what documents there are, and `modules.md` §5 is a
+ * list of what that costs. The caller keeps the stamp it is handed.
+ */
+export interface Stamping {
+  readonly branch: BranchId;
+  readonly currency: CurrencyCode;
+  readonly direction: CashDirection;
+  /** Present only when somebody is deliberately replacing the applied rate. */
+  readonly override?: RateOverrideQuote;
+}
+
+/**
+ * The rate one transaction used, stored permanently on that transaction
+ * (`FX-05`).
+ *
+ * **The figure is copied here**, not read through the revision it came from.
+ * That is the whole feature: a stamp that only named a revision would read
+ * whatever the revision reads today, and a revision is superseded whenever a
+ * mistyped rate is corrected. `revision` is kept beside the figure for
+ * provenance — which rate this was, and what else was entered that day — and
+ * nothing ever recomputes from it.
+ *
+ * `day` is the branch's day the document was stamped on. `rateDay` is the day
+ * the rate itself was recorded for, and the two differ only under `FX-04`'s one
+ * exception, where a register cut off from the store node trades on the most
+ * recent rate it holds. Both are here so that sync can flag that document for
+ * review without having to work out which case it was.
+ */
+export interface RateStamp extends TenantOwned {
+  readonly id: RateStampId;
+  readonly branch: BranchId;
+  readonly currency: CurrencyCode;
+  /** What "one unit of the functional currency" meant when this was stamped. */
+  readonly functional: CurrencyCode;
+  readonly day: LocalDate;
+  readonly direction: CashDirection;
+  /** The side the direction selected: buy on receipt, sell on disbursement. */
+  readonly side: RateSide;
+  /** The rate applied, canonical: units of the currency per one unit of `functional`. */
+  readonly rate: string;
+  readonly revision: RateRevisionId;
+  readonly rateDay: LocalDate;
+  /** The log entry, when `rate` is not what the revision said; otherwise null. */
+  readonly override: RateOverrideId | null;
+  /** `FX-04`'s exception this was stamped under, or null. */
+  readonly lastKnown: LastKnownRatesId | null;
+  readonly stampedBy: UserId | null;
+  readonly stampedAt: Instant;
+}
+
+/**
+ * An override, in `FX`'s own log (`FX-06`: "an override is logged").
+ *
+ * Its own record rather than three more fields on the stamp, because it is read
+ * for a different reason and by somebody else: a stamp is read one at a time,
+ * with the document it belongs to, and this is read a day or a month at a time
+ * by whoever is checking what the tills did. It is keyed by branch and day so
+ * that reading it is that question, and not a scan of every stamp ever taken.
+ *
+ * It holds **both** figures. One that recorded only what was applied would not
+ * say what was departed from, and the difference is the entire subject of the
+ * review.
+ */
+export interface RateOverride extends TenantOwned {
+  readonly id: RateOverrideId;
+  readonly stamp: RateStampId;
+  readonly branch: BranchId;
+  readonly currency: CurrencyCode;
+  readonly day: LocalDate;
+  readonly side: RateSide;
+  /** What `FX-06` would have applied: the revision's own figure for this side. */
+  readonly automatic: string;
+  /** What was applied instead, canonical. */
+  readonly applied: string;
+  /** What was typed, and in which form — `applied` is a figure nobody may have typed. */
+  readonly quoted: { readonly form: QuoteForm; readonly rate: string };
+  readonly reason: string;
+  /** The revision departed from, so the board it departed from can be read beside it. */
+  readonly revision: RateRevisionId;
+  readonly by: UserId | null;
+  readonly at: Instant;
+}
+
+/**
+ * A stamp worked out and not yet written, with the log entry that goes with it.
+ *
+ * Everything that could refuse has been decided by the time this exists, which
+ * is what lets `stamp` be an ordinary write with no answer but the stamp. The
+ * identifier is settled here too, so the caller can put it on the document it is
+ * building before either of them is committed.
+ */
+export interface PreparedStamp {
+  readonly stamp: RateStamp;
+  readonly override: RateOverride | null;
+}
+
+/**
+ * Stamping a transaction with the rate it used (`FX-05`), at the side the
+ * direction of the money selects (`FX-06`).
+ *
+ * **Two calls, and the split is the point.** A rate has to be worked out before
+ * the caller's transaction opens — it reads the branch from `SYS`, it reads the
+ * clock, and an override asks `SEC` for a right — and none of those may happen
+ * with a transaction already open, for the reason the rest of this module gives:
+ * one command never holds two transactions at once. But the stamp has to be
+ * *written* inside the caller's transaction, or a document and the rate it was
+ * priced at commit separately and either can be left without the other.
+ *
+ * So `prepare` does everything that can refuse, outside; `stamp` does the write,
+ * inside. Between the two, a correction may arrive for the day's rate, and the
+ * document is still stamped with what it was priced at — which is what `FX-04`
+ * means by "documents already stamped keep the revision they used".
+ */
+export interface RateStamps {
+  /**
+   * Works out the rate this movement will be stamped with, and refuses here if
+   * it is going to be refused at all.
+   *
+   * Asks nothing of the caller unless there is an override, because stamping is
+   * a read: a cashier stamps the rate of every sale they ring up, whether or
+   * not they may open the rates screen.
+   */
+  prepare(by: CommandContext, stamping: Stamping): Rated<PreparedStamp>;
+
+  /**
+   * Writes the stamp, and its log entry, into the transaction the caller
+   * already has open.
+   *
+   * Synchronous and with no answer of its own: it awaits nothing, so it cannot
+   * open a second transaction inside the caller's, and everything it could have
+   * refused was refused by `prepare`. Stamping under a tenant other than the one
+   * that prepared it raises — that is a defect in a caller, not a refusal
+   * anybody can act on.
+   */
+  stamp(by: CommandContext, session: RecordSession, prepared: PreparedStamp): RateStamp;
+
+  /** One stamp, by the identifier the document carries. */
+  stamped(by: CommandContext, id: RateStampId): Promise<RateStamp | null>;
+
+  /**
+   * Every override at a branch on one day, in the order they were made: the log
+   * of `FX-06`, as whoever reviews the day reads it.
+   */
+  overrides(by: CommandContext, branch: BranchId, day: LocalDate): Promise<readonly RateOverride[]>;
+}
+
+export const RateStamps = contractKey<RateStamps>('fx.rate-stamps');
 
 /** The four rights over a thing that is made, read, revised and taken out of use. */
 export interface StructuralRights {
@@ -660,6 +897,8 @@ export interface RateRights {
   readonly view: PermissionId;
   /** Recording today's rate, correcting it, and adopting the tenant's suggestion. */
   readonly record: PermissionId;
+  /** Stamping a document at a rate other than the one `FX-06` selected. */
+  readonly override: PermissionId;
 }
 
 /** The rates the tenant suggests to every branch. */
@@ -697,6 +936,14 @@ export const FX_PERMISSIONS: FxPermissions = Object.freeze({
   rate: Object.freeze({
     view: rightTo('rate', 'view', EVERYONE),
     record: rightTo('rate', 'create', MANAGER),
+    // Sensitive, and the manager's. `FX-04` gives a branch's rates to the owner
+    // or to its manager, and a rate typed over the board on one document is
+    // that same authority at the smallest scale — the one figure on the
+    // document nobody else checked. The floor supervisor holds the last-known
+    // confirmation below and not this: confirming the board's own rate for a
+    // till that cannot reach the store node is not inventing a rate, and the
+    // two are not the same trust.
+    override: rightTo('rate', operation('override'), MANAGER, true),
   }),
   // Publishing a rate to every branch at once is a decision about the group,
   // and the owner's. The accountant reads it beside the managers who adopt it.

@@ -265,11 +265,14 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
               guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
                 locateBranch(session, by.tenant, id, point),
               ),
-            // The zone a branch trades in is an edit to the branch, judged at
-            // the branch, like where it is: the manager who runs it says which
-            // day it is trading on.
+            // Its own right, and not the one that renames and readdresses:
+            // moving a branch's zone moves which day it is trading on, and
+            // backwards it reopens a day that has closed. Still judged at the
+            // branch, so a grant confined to Aleppo (`SEC-04`) reaches Aleppo's
+            // calendar and not Damascus's — what changed is who is seeded to
+            // hold it at all, which is the owner alone.
             rezone: (by: CommandContext, id: BranchId, timeZone: string) =>
-              guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
+              guarded(by, SYS_PERMISSIONS.branch.rezone, { branch: id }, (session) =>
                 rezoneBranch(session, by.tenant, id, timeZone),
               ),
             deactivate: (by: CommandContext, id: BranchId) =>

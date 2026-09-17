@@ -1,10 +1,12 @@
 import type { TenantId } from '@vertex/contracts';
-import type { CurrencyCode, Instant } from '@vertex/kernel';
+import type { CurrencyCode, Instant, LocalDate } from '@vertex/kernel';
 
 import type {
   LastKnownRates,
+  RateOverride,
   RateRevision,
   RateRevisionId,
+  RateStamp,
   RecordSession,
   SuggestedRate,
   SuggestedRateId,
@@ -61,6 +63,24 @@ export interface SuggestionHead {
   readonly suggestion: SuggestedRateId;
 }
 
+/**
+ * The furthest day a branch has recorded a rate for.
+ *
+ * A pointer rather than a scan of the branch's revisions for the highest day,
+ * for the reason `RevisionHead` is one and for a second of its own: the scan
+ * grows with every day the shop trades, and this is read before every rate
+ * recorded anywhere.
+ *
+ * Written only when the day advances, so the ordinary case — several
+ * currencies entered on the day already open — reads this key and writes
+ * nothing, and two such commands do not collide over it. Two commands opening
+ * the *same* new day do collide, and one of them is refused at commit and
+ * succeeds on the retry, which is the correct answer rather than a cost.
+ */
+export interface LatestRateDay {
+  readonly day: LocalDate;
+}
+
 export interface StoredShapes {
   readonly currency: TenantCurrency;
   readonly functional: FunctionalRecord;
@@ -74,6 +94,19 @@ export interface StoredShapes {
   readonly 'suggestion-head': SuggestionHead;
   /** `fx/last-known/<tenant>/<branch>/<day>/<device>`: one confirmation per register per day. */
   readonly 'last-known': LastKnownRates;
+  /** `fx/latest-day/<tenant>/<branch>` */
+  readonly 'latest-day': LatestRateDay;
+  /**
+   * `fx/stamp/<tenant>/<id>`
+   *
+   * By identifier alone, because that is how it is read: a document carries the
+   * identifier and asks for that one stamp. Nothing lists a branch's stamps —
+   * what a review reads is the override log below, which is much smaller and
+   * keyed for exactly that question.
+   */
+  readonly stamp: RateStamp;
+  /** `fx/override/<tenant>/<branch>/<day>/<id>` */
+  readonly override: RateOverride;
 }
 
 export type Collection = keyof StoredShapes;

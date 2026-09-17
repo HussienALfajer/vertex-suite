@@ -189,7 +189,7 @@ describe('Organisation structure — SYS-09', () => {
       [
         'branches.rezone',
         () => sys.admin.branches.rezone(sys.by, branch.id, 'Europe/Istanbul'),
-        b.edit,
+        b.rezone,
         here,
       ],
       [
@@ -741,6 +741,39 @@ describe('A branch keeps the time zone its days are counted in — SYS-09', () =
     const rezoned = taken(await sys.admin.branches.rezone(sys.by, branch.id, 'UTC'));
 
     expect(rezoned).toMatchObject({ timeZone: 'UTC', active: false });
+  });
+
+  it('keeps the zone behind a right of its own, which nobody but the owner is seeded', () => {
+    // A branch's zone decides which day it is trading on, and every "today" in
+    // the product is a branch's today. Under `branch.edit` it travelled with
+    // renaming and readdressing — so the manager seeded to run a shop could
+    // move the shop's calendar, and `FX-04`'s "two rates per day for that
+    // branch" became two rates for whichever day the manager chose.
+    const declared = sys.registry.permissions;
+
+    expect(SYS_PERMISSIONS.branch.rezone).not.toBe(SYS_PERMISSIONS.branch.edit);
+    expect(declared.find((one) => one.id === SYS_PERMISSIONS.branch.rezone)?.seededFor).toEqual([]);
+    // The right it was split out of still reaches the manager: this took the
+    // calendar away from them and left them the shop.
+    expect(declared.find((one) => one.id === SYS_PERMISSIONS.branch.edit)?.seededFor).toContain(
+      'manager',
+    );
+  });
+
+  it('refuses a rezone to somebody who may edit the branch but not its zone', async () => {
+    const branch = await aBranch();
+    // A branch manager exactly as `SEC-01` seeds one: everything over this
+    // branch except the one right that was split out.
+    sys.answers((_by, right) => right !== SYS_PERMISSIONS.branch.rezone);
+
+    const refused = await sys.admin.branches.rezone(sys.by, branch.id, 'Europe/Istanbul');
+
+    expect(refusalOf(refused)).toBe('sys.not-permitted');
+    expect(refused.ok ? null : refused.error.values['right']).toBe(SYS_PERMISSIONS.branch.rezone);
+    expect((await sys.read.branch(sys.by, branch.id))?.timeZone).toBe(DEFAULT_TIME_ZONE);
+    // Renaming it is still theirs, which is what says the split is a split and
+    // not a lock on the branch.
+    expect(taken(await sys.admin.branches.rename(sys.by, branch.id, 'Homs')).name).toBe('Homs');
   });
 
   it('refuses to rezone a branch of another tenant', async () => {
