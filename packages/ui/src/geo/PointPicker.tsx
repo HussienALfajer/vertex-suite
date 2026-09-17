@@ -73,9 +73,6 @@ const PLACES = 6;
 /** Long enough for a search to mean something. Two letters match half a country. */
 const SHORTEST_SEARCH = 3;
 
-/** A pause long enough to be a word rather than a keystroke. */
-const SEARCH_AFTER_MS = 500;
-
 /**
  * What the browser said when asked where the device is.
  *
@@ -156,58 +153,69 @@ export function PointPicker({
     [onChange],
   );
 
-  const gestures = useMapGestures({ view, viewport, onChange: setMoved, onPick: pick });
+  const gestures = useMapGestures({
+    surface,
+    view,
+    maxZoom: zoomCeilingOf(basemap),
+    viewport,
+    onChange: setMoved,
+    onPick: pick,
+  });
 
   /**
-   * Searching for a place by name.
+   * Searching for a place by name — **when asked, not as somebody types**.
    *
-   * Debounced and abortable, which is not politeness: a request per keystroke
-   * is both a worse experience — answers arriving out of order and overwriting
-   * each other — and an abuse of a service that asks callers not to do it. One
-   * search is in flight at a time, and the one before it is cancelled rather
-   * than left to land late and replace a newer answer.
+   * It once searched on every pause in typing. The service behind it forbids
+   * exactly that: no autocomplete from a client, no more than one request a
+   * second, and results cached by the caller. A shop typing an address with
+   * ordinary pauses sent several requests in a few seconds from its own address,
+   * and every installation of the product did the same — which is how a service
+   * blocks an address, after which search fails for the shop with the line up.
+   * So a search is sent on Enter, and the one in flight is abandoned if another
+   * is asked for.
    */
   const [looking, setLooking] = useState('');
   const [found, setFound] = useState<readonly FoundPlace[]>([]);
   const [searchState, setSearchState] = useState<'idle' | 'searching' | 'empty' | 'failed'>('idle');
+  const inFlight = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    const wanted = looking.trim();
-    if (search === undefined || wanted.length < SHORTEST_SEARCH) {
-      setFound([]);
-      setSearchState('idle');
-      return;
-    }
+  useEffect(
+    () => () => {
+      inFlight.current?.abort();
+    },
+    [],
+  );
 
+  function searchFor(text: string): void {
+    const wanted = text.trim();
+    if (search === undefined || wanted.length < SHORTEST_SEARCH) return;
+    inFlight.current?.abort();
     const abandon = new AbortController();
-    const waiting = setTimeout(() => {
-      setSearchState('searching');
-      void search(wanted, abandon.signal)
-        .then((places) => {
-          if (abandon.signal.aborted) return;
-          setFound(places);
-          setSearchState(places.length === 0 ? 'empty' : 'idle');
-        })
-        .catch(() => {
-          // Every failure is one sentence, on purpose. A person who typed a
-          // place name does not need to know whether the line is down, the
-          // service is busy or the answer was malformed — only that typing is
-          // not the way in today, and that the map below still is.
-          if (abandon.signal.aborted) return;
-          setFound([]);
-          setSearchState('failed');
-        });
-    }, SEARCH_AFTER_MS);
-
-    return () => {
-      clearTimeout(waiting);
-      abandon.abort();
-    };
-  }, [looking, search]);
+    inFlight.current = abandon;
+    setSearchState('searching');
+    void search(wanted, abandon.signal)
+      .then((places) => {
+        if (abandon.signal.aborted) return;
+        setFound(places);
+        setSearchState(places.length === 0 ? 'empty' : 'idle');
+      })
+      .catch(() => {
+        // Every failure is one sentence, on purpose. A person who typed a
+        // place name does not need to know whether the line is down, the
+        // service is busy or the answer was malformed — only that typing is
+        // not the way in today, and that the map below still is.
+        if (abandon.signal.aborted) return;
+        setFound([]);
+        setSearchState('failed');
+      });
+  }
 
   function takeFound(place: FoundPlace): void {
-    onChange({ lat: place.lat, lng: place.lng });
-    setMoved({ centre: { lat: Number(place.lat), lng: Number(place.lng) }, zoom: closeZoom });
+    // Through the same six places a click is written with. The geocoder's own
+    // strings carried seven, and were stored as they came.
+    const at = { lat: Number(place.lat), lng: Number(place.lng) };
+    onChange(pointAt(at));
+    setMoved({ centre: at, zoom: closeZoom });
     setLooking('');
     setFound([]);
     setSearchState('idle');
@@ -297,7 +305,14 @@ export function PointPicker({
             isLabelVisible
             placeholder={translator.format('picker.search.placeholder')}
             value={looking}
-            onChange={setLooking}
+            onChange={(next) => {
+              setLooking(next);
+              if (next.trim() === '') {
+                setFound([]);
+                setSearchState('idle');
+              }
+            }}
+            onSubmit={searchFor}
           />
           {found.length === 0 ? null : (
             <ul className="border-line rounded-card flex max-h-[11rem] flex-col overflow-auto border">
@@ -328,7 +343,8 @@ export function PointPicker({
         </div>
       )}
 
-      <div className="border-line rounded-card relative isolate h-[20rem] overflow-hidden border">
+      {/* `overflow-clip`, for the reason `GeoMap` gives. */}
+      <div className="border-line rounded-card relative isolate h-[20rem] overflow-clip border">
         <div
           ref={surface}
           dir="ltr"
@@ -339,7 +355,7 @@ export function PointPicker({
             'bg-surface-1 relative h-full w-full cursor-crosshair touch-none',
             focusRing,
           )}
-          {...gestures}
+          {...gestures.handlers}
         >
           <BaseLayer view={view} viewport={viewport} basemap={basemap} />
 
@@ -355,14 +371,15 @@ export function PointPicker({
             );
           })}
 
-          {marker === null ? (
-            /*
-             * No point yet, so the middle of the map is the proposal and the
-             * button below takes it. The crosshair is the mobile idiom for a
-             * reason: on a touch screen the finger is over whatever it is
-             * pointing at, and a marker dragged under a fingertip is a marker
-             * placed blind.
-             */
+          {/*
+           * The middle of the map is the proposal, and "place here" takes it.
+           * The crosshair is the mobile idiom for a reason: on a touch screen
+           * the finger is over whatever it is pointing at, and a marker dragged
+           * under a fingertip is a marker placed blind. It stays once a point
+           * exists — it once went, and somebody moving an existing point from
+           * the keyboard was pressing "place here" on a centre they could not see.
+           */}
+          {
             <span
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
@@ -376,7 +393,8 @@ export function PointPicker({
                 <circle cx="20" cy="20" r="3" strokeWidth="1.5" />
               </svg>
             </span>
-          ) : (
+          }
+          {marker === null ? null : (
             <span
               aria-hidden="true"
               style={{ left: `${String(marker.x)}px`, top: `${String(marker.y)}px` }}

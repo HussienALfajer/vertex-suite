@@ -74,8 +74,39 @@ export interface NominatimOptions {
  * no branch names, no identifiers. The answer is rendered as text by React,
  * which escapes it; nothing here interprets it as markup.
  */
+/**
+ * The service's own terms, kept here rather than trusted to the screen: at most
+ * one request a second, and results cached by the caller. A repeated search is
+ * answered from memory, and a new one waits its turn.
+ */
+const SPACING_MS = 1000;
+
 export function nominatimSearch({ locale }: NominatimOptions): PlaceSearch {
+  const answered = new Map<string, readonly FoundPlace[]>();
+  let nextAllowed = 0;
+
   return async (query: string, signal: AbortSignal): Promise<readonly FoundPlace[]> => {
+    const key = query.normalize('NFC').trim().toLowerCase();
+    const cached = answered.get(key);
+    if (cached !== undefined) return cached;
+
+    // Spaced by the time the page has been open, which is a duration and not a
+    // moment — no business fact rests on it, only the gap between two requests.
+    const now = performance.now();
+    const wait = Math.max(0, nextAllowed - now);
+    nextAllowed = Math.max(now, nextAllowed) + SPACING_MS;
+    if (wait > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, wait);
+        signal.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(
+            signal.reason instanceof Error ? signal.reason : new Error('The search was abandoned.'),
+          );
+        });
+      });
+    }
+
     const [southWest, northEast] = homeExtent();
     const url = new URL('https://nominatim.openstreetmap.org/search');
     url.searchParams.set('format', 'jsonv2');
@@ -98,9 +129,12 @@ export function nominatimSearch({ locale }: NominatimOptions): PlaceSearch {
     if (!response.ok) throw new Error(`The geocoder answered ${String(response.status)}.`);
 
     const body: unknown = await response.json();
-    if (!Array.isArray(body)) return [];
-    return body
-      .map((row, index) => rowToPlace(row as NominatimRow, index))
-      .filter((place): place is FoundPlace => place !== null);
+    const places = Array.isArray(body)
+      ? body
+          .map((row, index) => rowToPlace(row as NominatimRow, index))
+          .filter((place): place is FoundPlace => place !== null)
+      : [];
+    answered.set(key, places);
+    return places;
   };
 }

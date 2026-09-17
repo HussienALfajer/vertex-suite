@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { isHome, regionOutlines, worldOutlines } from './atlas.js';
 import { cluster } from './cluster.js';
+import { matchesPlace } from './match.js';
 import { parsePlace } from './parse.js';
 import { pathFor } from './path.js';
 import {
@@ -330,5 +331,34 @@ describe('Properties of the projection — SYS-14', () => {
       }
     }
     expect(worst).toBeLessThan(1e-6);
+  });
+});
+
+describe('Reading a place out of what was pasted, as it was really pasted — SYS-14', () => {
+  it('reads a pair wrapped in the invisible marks an Arabic interface copies with it', () => {
+    expect(parsePlace('\u200f33.5138, 36.2765\u200f')).toEqual({
+      kind: 'point',
+      lat: '33.5138',
+      lng: '36.2765',
+    });
+  });
+
+  it('reads a link whose comma was encoded, and an OpenStreetMap link', () => {
+    for (const link of [
+      'https://maps.google.com/maps?q=33.5138386%2C36.2765279&z=17',
+      'https://www.openstreetmap.org/#map=17/33.5138/36.2765',
+      'https://www.openstreetmap.org/?mlat=33.5138&mlon=36.2765',
+    ]) {
+      expect(parsePlace(link).kind, link).toBe('point');
+    }
+  });
+});
+
+describe('Finding a place by the way its name is usually typed — SYS-14', () => {
+  it('matches across hamza seats, taa marbuta, alef maksura and accents', () => {
+    expect(matchesPlace('احمد', 'مكتبة أحمد')).toBe(true);
+    expect(matchesPlace('مكتبه', 'مكتبة أحمد')).toBe(true);
+    expect(matchesPlace('مستشفي', 'مستشفى الرازي')).toBe(true);
+    expect(matchesPlace('cafe', 'Café Central')).toBe(true);
   });
 });
