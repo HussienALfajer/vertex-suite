@@ -61,6 +61,38 @@
  * a pure function leaves no trace of what it knows, so the rule has nothing to
  * read. Those are cheap to move and cheap to notice; this catches the expensive
  * case, which is the one that arrives already wired into a screen.
+ *
+ * ---
+ *
+ * **`FX-07`** is the third rule here, and it is about one imported name.
+ *
+ * "Rounding is applied at defined points only, and the residual is posted to a
+ * rounding account so totals never drift." A point is defined by `FX`, which is
+ * the only module that knows a tenant's currencies — what each one's step is,
+ * which way it leans, and how many places it is stored at, all of it data the
+ * owner revises (`FX-01`). `round` in the kernel is the arithmetic those rules
+ * are applied *with*, and it takes the currency record as its second argument.
+ *
+ * Anywhere else, that second argument has to come from somewhere, and the
+ * somewhere is a literal: a module that reaches for `round` is a module about to
+ * write `'0.01'` into a shop whose smallest note is ten pounds. Nothing fails
+ * when it does. The totals simply stop agreeing with the till by a few pounds a
+ * day, in a place no report points at, and the residual `FX-07` requires is
+ * discarded on the floor instead of being posted anywhere.
+ *
+ * So `round` from `@vertex/kernel` belongs to `FX` and to the kernel's own
+ * suite. Everyone else settles an amount by asking `FX` to, which hands back the
+ * residual with the account it goes to.
+ *
+ * It is matched on the **binding** and not on the word, and it follows a rename
+ * (`round as settle`), which is the obvious way past a check that reads names.
+ * `allocate` and `isRounded` are deliberately not here: neither invents a
+ * rounding point — `allocate` distributes a figure that is already settled and
+ * refuses one that is not, and `isRounded` only asks.
+ *
+ * Like the §4 rules and unlike altitude, it carries **no exemption**. A rounding
+ * point nobody can find is not a judgement with local exceptions; it is a figure
+ * that stops adding up.
  */
 import { posix } from 'node:path';
 
@@ -78,6 +110,11 @@ import { isCatalogue } from './policy.mjs';
 const MODULE_ROOT = 'packages/modules/';
 const APP_ROOT = 'apps/';
 const CONTRACT = './contract';
+
+/** The kernel, and the one export of it that belongs to a single module. */
+const KERNEL = '@vertex/kernel';
+const ROUNDS_MONEY = 'round';
+const ROUNDING_OWNER = 'packages/modules/fx';
 
 /** A package under `packages/modules/` is one of the sixteen (modules.md §2). */
 function isModule(pkg) {
@@ -151,6 +188,75 @@ function resolveBare(packages, specifier) {
     }
   }
   return null;
+}
+
+/**
+ * The names a file binds from one import statement, following renames.
+ *
+ * Only the named form — `import { a, b as c } from 'x'` — because that is the
+ * only form that binds a specific export. A namespace import (`import * as k`)
+ * is not read here: it binds the whole module and reaches `round` through a
+ * property, which no import-line check can see. That is a gap and it is stated
+ * rather than papered over; it is also not the shape anybody writes by accident,
+ * which is the shape this catches.
+ */
+function* bindingsFrom(source, from) {
+  const pattern = new RegExp(
+    String.raw`import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]` +
+      from.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`) +
+      String.raw`['"]`,
+    'g',
+  );
+  const lineOf = (index) => source.slice(0, index).split('\n').length;
+
+  for (const match of source.matchAll(pattern)) {
+    for (const clause of match[1].split(',')) {
+      // `round as settle` binds `round`; the name on the left is the export.
+      const name = clause
+        .trim()
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)[0]
+        ?.trim();
+      if (name !== undefined && name !== '') yield { name, line: lineOf(match.index) };
+    }
+  }
+}
+
+/**
+ * `FX-07`: `round` from the kernel, imported by something that is not `FX`.
+ *
+ * Multi-line import statements are matched as written, so the line reported is
+ * the `import` keyword's rather than the clause's — which is the statement a
+ * reader has to change, and the same line every other rule here reports.
+ */
+function findStrayRounding(packages, files) {
+  /** @type {Finding[]} */
+  const findings = [];
+
+  for (const { file, source } of files) {
+    if (contains(ROUNDING_OWNER, file) || contains('packages/kernel', file)) continue;
+    const home = ownerOf(packages, file);
+    if (home === null) continue;
+
+    for (const { name, line } of bindingsFrom(source, KERNEL)) {
+      if (name !== ROUNDS_MONEY) continue;
+      findings.push({
+        file,
+        line,
+        rule: 'FX-07',
+        message:
+          `${home.name} imports "round" from ${KERNEL}. Rounding happens at the points FX ` +
+          'defines and nowhere else, because the rules it rounds by — the step, the direction, ' +
+          'the precision — are one tenant’s data and not a constant anybody here can supply. ' +
+          'A literal increment written beside this call is a till that comes up short every ' +
+          'day in a place no report points at, and a residual that FX-07 says must be posted ' +
+          'and that this would discard. Ask @vertex/fx to settle the amount: it answers with ' +
+          'the figure and with the residual, and with the account the residual goes to.',
+      });
+    }
+  }
+
+  return findings;
 }
 
 /**
@@ -267,6 +373,7 @@ export function findBoundaryBreaches(input) {
   }
 
   findings.push(...findMisplaced(packages, files));
+  findings.push(...findStrayRounding(packages, files));
   return findings;
 }
 

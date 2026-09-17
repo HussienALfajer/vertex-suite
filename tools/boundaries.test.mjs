@@ -6,8 +6,10 @@ const PACKAGES = [
   { name: '@vertex/kernel', dir: 'packages/kernel', exported: ['.'] },
   { name: '@vertex/contracts', dir: 'packages/contracts', exported: ['.'] },
   { name: '@vertex/platform', dir: 'packages/platform', exported: ['.'] },
+  { name: '@vertex/ui', dir: 'packages/ui', exported: ['.'] },
   { name: '@vertex/sys', dir: 'packages/modules/sys', exported: ['.', './contract'] },
   { name: '@vertex/sec', dir: 'packages/modules/sec', exported: ['.', './contract'] },
+  { name: '@vertex/fx', dir: 'packages/modules/fx', exported: ['.', './contract'] },
   { name: '@vertex/store-node', dir: 'apps/store-node', exported: ['.'] },
 ];
 
@@ -247,5 +249,74 @@ describe('altitude — an app may not hold a file that knows nothing about the a
         'altitude',
       ]);
     }
+  });
+});
+
+describe('FX-07 — the kernel rounds money only where FX says it is rounded', () => {
+  it('refuses `round` imported from the kernel by a module that is not FX', () => {
+    const found = breaches(
+      'packages/modules/sec/src/credentials.ts',
+      "import { money, round } from '@vertex/kernel';",
+    );
+
+    expect(rules(found)).toEqual(['FX-07']);
+    expect(found[0].line).toBe(1);
+    expect(found[0].message).toContain('@vertex/fx');
+  });
+
+  it('refuses it in an app, in the design system, and in the platform alike', () => {
+    for (const file of [
+      'apps/store-node/src/totals.ts',
+      'packages/ui/src/components/Money.tsx',
+      'packages/platform/src/unit-of-work.ts',
+    ]) {
+      const found = breaches(file, "import { round } from '@vertex/kernel';");
+      // `toContain`, not `toEqual`: a file in an app that names only the kernel
+      // is also the altitude rule's business, and this one is asserting its own.
+      expect(rules(found), file).toContain('FX-07');
+    }
+  });
+
+  it('sees it renamed on the way in, which is the obvious way past a name check', () => {
+    const found = breaches(
+      'packages/modules/sec/src/credentials.ts',
+      "import { round as settle } from '@vertex/kernel';",
+    );
+
+    expect(rules(found)).toEqual(['FX-07']);
+  });
+
+  it('leaves FX alone, which is the module that owns the rounding rules', () => {
+    for (const file of [
+      'packages/modules/fx/src/currencies.ts',
+      'packages/modules/fx/src/currencies.test.ts',
+    ]) {
+      const found = breaches(file, "import { round } from '@vertex/kernel';");
+      expect(found, file).toEqual([]);
+    }
+  });
+
+  it('leaves the kernel’s own use of it alone', () => {
+    const found = breaches(
+      'packages/kernel/src/money.test.ts',
+      "import { round } from './money.js';\nimport { allocate } from '@vertex/kernel';",
+    );
+
+    expect(found).toEqual([]);
+  });
+
+  it('is about the binding and not about the word', () => {
+    // `roundTrip`, a property called `round`, prose in a comment: a check that
+    // fired on any of these is a check somebody switches off in a week.
+    const found = breaches(
+      'packages/modules/sec/src/credentials.ts',
+      [
+        "import { roundTrip, isRounded, allocate } from '@vertex/kernel';",
+        '// the other way round: see round() in FX',
+        'const shape = { round: 1 };',
+      ].join('\n'),
+    );
+
+    expect(found).toEqual([]);
   });
 });
