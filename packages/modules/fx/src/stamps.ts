@@ -223,17 +223,40 @@ export function prepareStamp(
 }
 
 /**
+ * Raises unless the stamp belongs to the tenant whose command is holding it.
+ *
+ * A stamp is the one value in this module that crosses back in from a caller: a
+ * document carries it, and a document being written, valued or printed hands it
+ * to `FX` again. It is deliberately **not** read back out of the store when it
+ * does — a caller building a document holds a stamp that has not been committed
+ * yet, which is the whole reason `prepare` and `stamp` are apart — so what can
+ * be checked about it is checked here, and the tenant is the one that matters.
+ *
+ * It raises rather than refusing. A caller that prepared its own stamp under its
+ * own context cannot reach this, so arriving here is a defect in a caller and
+ * not a choice anybody made; and the alternative is one tenant's figures
+ * computed from another tenant's rate, which is the one mistake this system
+ * must never make quietly.
+ *
+ * One function for the three places that need it, so that a fourth cannot be
+ * added holding a different opinion about it.
+ */
+export function ownedBy(stamp: RateStamp, tenant: TenantId): RateStamp {
+  if (stamp.tenant !== tenant) {
+    throw new Error(
+      'This stamp belongs to another tenant. A command reads and writes its own tenant’s ' +
+        'records and nobody else’s.',
+    );
+  }
+  return stamp;
+}
+
+/**
  * Writes a prepared stamp into a transaction the caller already has open.
  *
  * No `Result`: there is nothing left that could refuse, and a refusal here
  * would reach a caller that has already written half a document and has no
  * sensible answer to it.
- *
- * Raises when the tenant of the command and the tenant of the stamp differ.
- * That cannot happen to a caller that prepared its own stamp under its own
- * context, so it is a defect rather than a refusal — and the alternative is
- * writing one tenant's record from another's command, which is the one mistake
- * this system must never make quietly.
  */
 export function writeStamp(
   session: RecordSession,
@@ -241,12 +264,7 @@ export function writeStamp(
   prepared: PreparedStamp,
 ): RateStamp {
   const { stamp, override } = prepared;
-  if (stamp.tenant !== tenant) {
-    throw new Error(
-      'This stamp was prepared for another tenant. A command writes its own tenant’s records ' +
-        'and nobody else’s.',
-    );
-  }
+  ownedBy(stamp, tenant);
   if (override !== null) {
     writeRecord(session, 'override', tenant, [stamp.branch, stamp.day, override.id], override);
   }

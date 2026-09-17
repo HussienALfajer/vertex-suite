@@ -305,6 +305,45 @@ describe('FX-07 — the kernel rounds money only where FX says it is rounded', (
     expect(found).toEqual([]);
   });
 
+  it('does not read a comment as code, which is the shrug this rule invites', () => {
+    // A signpost is the natural thing to write beside the call that does it
+    // properly, and a check that failed on one would be a check with nothing to
+    // fix but the comment — which is the state every other rule in this file
+    // takes pains to avoid.
+    const found = breaches(
+      'packages/modules/sec/src/credentials.ts',
+      [
+        "import { money } from '@vertex/kernel';",
+        "// Not this: import { round } from '@vertex/kernel'; \u2014 ask FX to settle instead.",
+        '/**',
+        " * Never `import { round } from '@vertex/kernel'`: FX owns the points.",
+        ' */',
+      ].join('\n'),
+    );
+
+    expect(found).toEqual([]);
+  });
+
+  it('points at the line the import is on, comments above it and all', () => {
+    // The line is the whole of what makes a finding actionable: taking comments
+    // out must not move the code that follows them, or every finding in a file
+    // with a licence header points somewhere else.
+    const found = breaches(
+      'packages/modules/sec/src/credentials.ts',
+      [
+        '/**',
+        ' * A comment of several lines.',
+        ' */',
+        '',
+        '// and a line comment',
+        "import { round } from '@vertex/kernel';",
+      ].join(String.fromCharCode(10)),
+    );
+
+    expect(rules(found)).toEqual(['FX-07']);
+    expect(found[0].line).toBe(6);
+  });
+
   it('is about the binding and not about the word', () => {
     // `roundTrip`, a property called `round`, prose in a comment: a check that
     // fired on any of these is a check somebody switches off in a week.

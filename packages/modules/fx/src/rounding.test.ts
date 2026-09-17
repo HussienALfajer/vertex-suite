@@ -392,6 +392,21 @@ describe('Presentation currency switching — FX-03', () => {
     });
   });
 
+  it('refuses a stamp whose rate is per a unit of some other currency', async () => {
+    const stamp = await stampFor('SYP');
+
+    // The rate on a stamp means "so many pounds per one unit of *this*", and
+    // which currency that is, is on the stamp. Converting it against a different
+    // one would be arithmetic in units the figure beside it does not name — and
+    // the rate shown would be a true sentence about a number nobody computed.
+    const stale = { ...stamp, functional: 'EUR' };
+
+    expect(
+      refused(await fx.presentation.presentStamped(fx.by, money('1310000', 'SYP'), 'USD', stale))
+        .code,
+    ).toBe('fx.stamp-functional-mismatch');
+  });
+
   it('refuses to present a figure between two currencies that are neither of them the books’', async () => {
     // `FX-03` asks for a figure shown "at a stated rate with the rate shown",
     // and there is no single stated rate between the pound and the euro: there
@@ -443,5 +458,38 @@ describe('Presentation currency switching — FX-03', () => {
       day: '2026-09-17',
       lastKnown: confirmation.id,
     });
+  });
+});
+
+describe('A stamp belongs to the tenant whose command is holding it — FX-05', () => {
+  it('raises rather than valuing one tenant’s document at another tenant’s stamp', async () => {
+    const stamp = await stampFor('SYP');
+    // A stamp is not read back out of the store when a document is valued: a
+    // caller building a document holds one that is not committed yet, which is
+    // the whole point of `prepare` and `stamp` being apart. So what can be
+    // checked about it is checked, and the tenant is the one that matters.
+    const theirs = { ...stamp, tenant: fx.otherTenant };
+
+    await expect(
+      fx.rounding.value(fx.by, {
+        stamp: theirs,
+        total: money('1310000', 'SYP'),
+        lines: [money('1310000', 'SYP')],
+      }),
+    ).rejects.toThrow(/tenant/i);
+
+    await expect(
+      fx.presentation.presentStamped(fx.by, money('1310000', 'SYP'), 'USD', theirs),
+    ).rejects.toThrow(/tenant/i);
+  });
+
+  it('raises the same way the stamp was written, so there is one rule and not three', async () => {
+    const prepared = taken(
+      await fx.stamps.prepare(fx.by, { branch: aleppo, currency: 'SYP', direction: 'received' }),
+    );
+
+    await expect(
+      fx.asCaller(fx.byOther, (session) => fx.stamps.stamp(fx.byOther, session, prepared)),
+    ).rejects.toThrow(/tenant/i);
   });
 });

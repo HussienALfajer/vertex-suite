@@ -31,6 +31,7 @@ import {
 } from './contract.js';
 import { currencyIn, functionalIn } from './currencies.js';
 import { rateInForce } from './rates.js';
+import { ownedBy } from './stamps.js';
 
 /**
  * The two points a figure is rounded at, and the one place a figure is shown in
@@ -140,6 +141,7 @@ export function valueDocument(
   document: StampedDocument,
 ): Rounded<DocumentValue> {
   const { stamp, total, lines } = document;
+  ownedBy(stamp, tenant);
 
   const mismatched = [total, ...lines].find((amount) => amount.currency !== stamp.currency);
   if (mismatched !== undefined) {
@@ -158,6 +160,11 @@ export function valueDocument(
     });
   }
 
+  // The stamp's own functional currency, not the tenant's current one. The two
+  // are the same today — `makeFunctional` locks once a rate exists — and taking
+  // it from the stamp is what keeps this correct if they ever stop being: the
+  // rate is expressed per one unit of what the stamp names, so every figure here
+  // is in those terms and says so.
   const functional = currencyIn(session, tenant, stamp.functional);
   if (functional === null) {
     return refuse('fx.currency-not-found', { currency: stamp.functional });
@@ -312,6 +319,8 @@ export function presentAtStamp(
   into: CurrencyCode,
   stamp: RateStamp,
 ): Rounded<Presented> {
+  ownedBy(stamp, tenant);
+
   const pair = pairFor(session, tenant, amount.currency, into);
   if (!pair.ok) return pair;
   if (amount.currency === into) return ok(asItStands(amount, pair.value.into));
@@ -320,6 +329,17 @@ export function presentAtStamp(
     return refuse('fx.stamp-currency-mismatch', {
       stamp: stamp.currency,
       amount: tradedOf(pair.value).code,
+    });
+  }
+  // Both ends of the conversion are now the stamp's own: the currency its rate
+  // is *of*, checked above, and the currency its rate is *per*, checked here.
+  // Without this the arithmetic would run through the tenant's functional
+  // currency while the rate shown beside it named the stamp's, and a figure
+  // whose units disagree with its own label is worse than one that refuses.
+  if (pair.value.functional.code !== stamp.functional) {
+    return refuse('fx.stamp-functional-mismatch', {
+      stamp: stamp.functional,
+      functional: pair.value.functional.code,
     });
   }
 

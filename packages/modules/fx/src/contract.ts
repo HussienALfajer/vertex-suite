@@ -522,6 +522,17 @@ export type RateRefusalCode =
   /** A document being valued at a stamp that was taken for another currency. */
   | 'fx.stamp-currency-mismatch'
   /**
+   * A stamp whose rate is expressed per one unit of a currency that is not the
+   * one being converted through.
+   *
+   * A rate means "so many units of this per one unit of *that*", and which
+   * currency *that* is, is on the stamp. Converting against a different one is
+   * arithmetic in units the figure beside it does not name — and the rate shown
+   * would be a true sentence about a number nobody computed, which is the one
+   * thing `FX-03`'s "with the rate shown" cannot tolerate.
+   */
+  | 'fx.stamp-functional-mismatch'
+  /**
    * Two currencies with the functional currency neither of them.
    *
    * `FX-03` asks for a figure shown "at a stated rate with the rate shown", and

@@ -156,18 +156,34 @@ const PATTERNS = [
 ];
 
 /**
- * Every import specifier in a file, with the line it sits on.
+ * The source with its comments taken out and its lines left where they were.
  *
- * Line by line, and comments stripped first, for the same reason
- * `check-policy.mjs` works that way: a checker that reads prose as code reports
- * a violation nobody can fix, and a checker like that gets switched off.
+ * Every check here reads it rather than the file, for the reason
+ * `check-policy.mjs` gives: a checker that reads prose as code reports a
+ * violation nobody can fix, and a checker like that gets switched off. The
+ * signpost this file's rules invite — "never import X here, ask Y instead" —
+ * is the most likely thing to be written, and failing on it would be failing on
+ * the comment that says what to do.
+ *
+ * One function, used by both readers below, so that a rule cannot come to read
+ * comments while its neighbour does not.
  */
+function codeOnly(source) {
+  return source
+    .split('\n')
+    .map((text) => {
+      const code = text.replace(/\/\/.*$/, '');
+      const trimmed = code.trim();
+      // A continuation line of a block comment, which carries no code at all.
+      return trimmed.startsWith('*') || trimmed.startsWith('/*') ? '' : code;
+    })
+    .join('\n');
+}
+
+/** Every import specifier in a file, with the line it sits on. */
 function* specifiersIn(source) {
-  const lines = source.split('\n');
-  for (const [index, text] of lines.entries()) {
-    const code = text.replace(/\/\/.*$/, '');
-    const trimmed = code.trim();
-    if (trimmed.startsWith('*') || trimmed.startsWith('/*')) continue;
+  const lines = codeOnly(source).split('\n');
+  for (const [index, code] of lines.entries()) {
     for (const pattern of PATTERNS) {
       // Every match on the line, not the first. Two import statements share a
       // line only when the formatter has not run, and a check that can be
@@ -193,6 +209,8 @@ function resolveBare(packages, specifier) {
 /**
  * The names a file binds from one import statement, following renames.
  *
+ * Over `codeOnly`, so a commented-out import is not a breach.
+ *
  * Only the named form — `import { a, b as c } from 'x'` — because that is the
  * only form that binds a specific export. A namespace import (`import * as k`)
  * is not read here: it binds the whole module and reaches `round` through a
@@ -207,9 +225,10 @@ function* bindingsFrom(source, from) {
       String.raw`['"]`,
     'g',
   );
-  const lineOf = (index) => source.slice(0, index).split('\n').length;
+  const code = codeOnly(source);
+  const lineOf = (index) => code.slice(0, index).split('\n').length;
 
-  for (const match of source.matchAll(pattern)) {
+  for (const match of code.matchAll(pattern)) {
     for (const clause of match[1].split(',')) {
       // `round as settle` binds `round`; the name on the left is the export.
       const name = clause
