@@ -1,5 +1,12 @@
 import type { Result } from '@vertex/kernel';
 import type {
+  CurrencyRefusal,
+  CurrencyRevision,
+  Listing as CurrencyListing,
+  NewCurrency,
+  TenantCurrency,
+} from '@vertex/fx/contract';
+import type {
   Assignment,
   Authenticated,
   NewAssignment,
@@ -71,6 +78,7 @@ type RegisterId = Register['id'];
 type UserId = User['id'];
 type RoleId = Role['id'];
 type PermissionId = Role['rights'][number];
+type CurrencyCode = TenantCurrency['code'];
 
 type Outcome<T> = Promise<Result<T, OrganisationRefusal>>;
 /**
@@ -186,6 +194,38 @@ export interface OrganisationOfRecord {
   };
 }
 
+type Rated<T> = Promise<Result<T, CurrencyRefusal>>;
+
+/**
+ * `FX-01` and `FX-02` as the currencies screen uses them.
+ *
+ * It is `Currencies` and `CurrencyAdministration` with the same thing taken
+ * out as `OrganisationOfRecord`: the `CommandContext`. `FX`, like `SYS`, is
+ * the real module hosted in this browser — nothing in it needs a runtime a
+ * browser does not have — so this port is answered by the genuine module from
+ * the moment `dev-system.ts` composes it, exactly the way `organisation`
+ * above already is.
+ *
+ * There is no `remove`, for the reason `CurrencyAdministration` itself gives:
+ * every amount ever recorded names its currency's code.
+ */
+export interface CurrenciesOfRecord {
+  /**
+   * `including: 'enabled' | 'all'` — `FX`'s own spelling, not `SYS`'s
+   * `'active' | 'all'`: the two modules chose different words for the same
+   * idea and this port keeps each in its own, rather than forcing one
+   * vocabulary onto a record that never asked for it.
+   */
+  list(listing?: CurrencyListing): Promise<readonly TenantCurrency[]>;
+  /** `FX-02`: null only for a tenant whose currencies were never set up. */
+  functional(): Promise<TenantCurrency | null>;
+  define(input: NewCurrency): Rated<TenantCurrency>;
+  revise(code: CurrencyCode, changes: CurrencyRevision): Rated<TenantCurrency>;
+  disable(code: CurrencyCode): Rated<TenantCurrency>;
+  enable(code: CurrencyCode): Rated<TenantCurrency>;
+  makeFunctional(code: CurrencyCode): Rated<TenantCurrency>;
+}
+
 /**
  * A right a module has declared, as the role editor needs it: the identifier
  * a grant names, and whether granting it is sensitive (`SEC-05`).
@@ -280,4 +320,5 @@ export interface SystemOfRecord {
 
   readonly organisation: OrganisationOfRecord;
   readonly users: UsersOfRecord;
+  readonly currencies: CurrenciesOfRecord;
 }

@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { Breadcrumb, Breadcrumbs, Link } from 'react-aria-components';
 
 import { focusRing } from './styles.js';
@@ -11,6 +11,20 @@ export interface NavItem {
   readonly icon?: ReactNode;
   /** A count worth seeing from the navigation — pending syncs, open exceptions. */
   readonly badge?: string;
+  /**
+   * A heading printed above this item when it differs from the item before
+   * it in the list.
+   *
+   * Stated by the caller rather than inferred, because grouping is a fact
+   * about what a shop's structure means to an owner — `FX-01`'s currency
+   * screen and `FX-04`'s rate board read as one section, "العملات", though
+   * they are two unrelated ports to the modules behind them — and not
+   * something this component could guess from an id or a route. Two adjacent
+   * items left ungrouped (the common case: every item before this one had no
+   * `group` at all) print no heading, so nothing changes for a caller that
+   * never sets it.
+   */
+  readonly group?: string;
 }
 
 export interface SideNavProps {
@@ -28,6 +42,7 @@ export interface SideNavProps {
  * colour is never the only channel is not limited to charts.
  */
 export function SideNav({ label, items, currentId, className }: SideNavProps): ReactNode {
+  let previousGroup: string | undefined;
   return (
     <nav
       aria-label={label}
@@ -39,28 +54,42 @@ export function SideNav({ label, items, currentId, className }: SideNavProps): R
     >
       {items.map((item) => {
         const isCurrent = item.id === currentId;
+        const heading =
+          item.group !== undefined && item.group !== previousGroup ? item.group : null;
+        previousGroup = item.group;
         return (
-          <Link
-            key={item.id}
-            href={item.href}
-            {...(isCurrent ? { 'aria-current': 'page' as const } : {})}
-            className={clsx(
-              'flex items-center gap-[var(--vx-gap-sm)] rounded',
-              'h-[var(--vx-h-control)] px-[var(--vx-pad-md)]',
-              'text-body cursor-pointer no-underline outline-none',
-              '[&_svg]:size-[var(--vx-icon)] [&_svg]:shrink-0',
-              isCurrent
-                ? 'bg-fill-ghost-hover text-fg font-body-medium'
-                : 'text-fg-secondary hover:bg-fill-ghost-hover hover:text-fg',
-              focusRing,
+          <Fragment key={item.id}>
+            {heading === null ? null : (
+              <span
+                className={clsx(
+                  'text-caption font-body-medium text-fg-muted px-[var(--vx-pad-md)] pt-[var(--vx-gap-sm)]',
+                  'first:pt-0',
+                )}
+              >
+                {heading}
+              </span>
             )}
-          >
-            {item.icon}
-            <span className="flex-1 truncate">{item.label}</span>
-            {item.badge === undefined ? null : (
-              <span className="text-caption text-fg-muted tabular-nums">{item.badge}</span>
-            )}
-          </Link>
+            <Link
+              href={item.href}
+              {...(isCurrent ? { 'aria-current': 'page' as const } : {})}
+              className={clsx(
+                'flex items-center gap-[var(--vx-gap-sm)] rounded',
+                'h-[var(--vx-h-control)] px-[var(--vx-pad-md)]',
+                'text-body cursor-pointer no-underline outline-none',
+                '[&_svg]:size-[var(--vx-icon)] [&_svg]:shrink-0',
+                isCurrent
+                  ? 'bg-fill-ghost-hover text-fg font-body-medium'
+                  : 'text-fg-secondary hover:bg-fill-ghost-hover hover:text-fg',
+                focusRing,
+              )}
+            >
+              {item.icon}
+              <span className="flex-1 truncate">{item.label}</span>
+              {item.badge === undefined ? null : (
+                <span className="text-caption text-fg-muted tabular-nums">{item.badge}</span>
+              )}
+            </Link>
+          </Fragment>
         );
       })}
     </nav>

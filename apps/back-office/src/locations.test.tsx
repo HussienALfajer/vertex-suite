@@ -107,6 +107,7 @@ describe('Stock locations — SYS-09', () => {
         },
       },
       users: real.users,
+      currencies: real.currencies,
     };
 
     const shop = await enterTheShop(gated);

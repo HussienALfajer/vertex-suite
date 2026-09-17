@@ -32,6 +32,7 @@ export const ROUTES = [
   'numbering',
   'users',
   'roles',
+  'currencies',
 ] as const;
 
 export type RouteName = (typeof ROUTES)[number];

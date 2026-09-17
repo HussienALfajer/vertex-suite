@@ -10,6 +10,8 @@ import { VertexProvider } from '../providers/VertexProvider.js';
 import { Badge } from './Badge.js';
 import { Button, IconButton } from './Button.js';
 import { Checkbox, Switch } from './Toggle.js';
+import { DataTable } from './DataTable.js';
+import { SideNav } from './Navigation.js';
 import { Page, PageHeader } from './Page.js';
 import { Panel } from './Panel.js';
 import { SearchInput } from './SearchInput.js';
@@ -196,6 +198,75 @@ describe('<Page>', () => {
     );
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1);
+  });
+});
+
+describe('<SideNav> grouping', () => {
+  it('prints a heading once, only where a `group` starts, and not over an ungrouped item', () => {
+    wrap(
+      <SideNav
+        label="nav"
+        items={[
+          { id: 'a', label: 'Alpha', href: '/a' },
+          { id: 'b', label: 'Beta', href: '/b', group: 'One' },
+          { id: 'c', label: 'Gamma', href: '/c', group: 'One' },
+          { id: 'd', label: 'Delta', href: '/d', group: 'Two' },
+        ]}
+      />,
+    );
+
+    // Named once each, though "One" covers two items — a caller repeating a
+    // group name for every item in it must not repeat the heading too.
+    expect(screen.getAllByText('One')).toHaveLength(1);
+    expect(screen.getAllByText('Two')).toHaveLength(1);
+    // Every link is still on screen, headings or not.
+    for (const label of ['Alpha', 'Beta', 'Gamma', 'Delta']) {
+      expect(screen.getByRole('link', { name: label })).toBeTruthy();
+    }
+  });
+
+  it('prints no heading at all when nothing sets `group`, unchanged from before it existed', () => {
+    wrap(
+      <SideNav
+        label="nav"
+        items={[
+          { id: 'a', label: 'Alpha', href: '/a' },
+          { id: 'b', label: 'Beta', href: '/b' },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByRole('link')).toHaveLength(2);
+  });
+});
+
+describe('<DataTable> rowKey', () => {
+  interface CodeKeyed {
+    readonly code: string;
+    readonly name: string;
+  }
+
+  it('keys a row by `rowKey` for a record with no `id`, rather than requiring one', () => {
+    const rows: readonly CodeKeyed[] = [
+      { code: 'SYP', name: 'Syrian pound' },
+      { code: 'USD', name: 'US dollar' },
+    ];
+
+    wrap(
+      <DataTable
+        label="currencies"
+        rows={rows}
+        rowKey={(row) => row.code}
+        emptyMessage="none"
+        columns={[
+          { id: 'code', header: 'Code', isRowHeader: true, render: (row) => row.code },
+          { id: 'name', header: 'Name', render: (row) => row.name },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole('rowheader', { name: 'SYP' })).toBeTruthy();
+    expect(screen.getByRole('rowheader', { name: 'USD' })).toBeTruthy();
   });
 });
 

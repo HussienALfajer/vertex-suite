@@ -8,6 +8,7 @@ import { hrefOf, useRoute, type RouteName } from './routing.js';
 import { BusinessProfile } from './screens/BusinessProfile.js';
 import { Branches } from './screens/Branches.js';
 import { Companies } from './screens/Companies.js';
+import { Currencies } from './screens/Currencies.js';
 import { Locations } from './screens/Locations.js';
 import { Numbering } from './screens/Numbering.js';
 import { Registers } from './screens/Registers.js';
@@ -86,6 +87,13 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       href: hrefOf('roles'),
       icon: <ScopeIcon />,
     },
+    {
+      id: 'currencies',
+      label: translator.format('nav.currencies'),
+      href: hrefOf('currencies'),
+      icon: <CurrencyIcon />,
+      group: translator.format('nav.group.fx'),
+    },
   ];
 
   return (
@@ -158,6 +166,8 @@ function Screen({ name }: { readonly name: RouteName }): ReactNode {
       return <Users />;
     case 'roles':
       return <Roles />;
+    case 'currencies':
+      return <Currencies />;
   }
 }
 
@@ -213,6 +223,20 @@ function NumberingIcon(): ReactNode {
     <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
       <rect x="2.5" y="5" width="15" height="10" rx="1.5" />
       <path d="M6 8v4M9 8v4M12 8v4M15 8v4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A coin with a mark on its face: value in a currency, not the amount itself. */
+function CurrencyIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <circle cx="10" cy="10" r="7.5" />
+      <path
+        d="M10 6v8M12.2 8.1a2.2 2.2 0 00-2.2-1.1c-1.3 0-2.3.7-2.3 1.7s1 1.4 2.3 1.6c1.3.2 2.3.6 2.3 1.6s-1 1.7-2.3 1.7a2.2 2.2 0 01-2.2-1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

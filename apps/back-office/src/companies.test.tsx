@@ -38,6 +38,7 @@ function shopWhere(
     signOut: real.signOut.bind(real),
     organisation: change(real),
     users: real.users,
+    currencies: real.currencies,
   };
 }
 

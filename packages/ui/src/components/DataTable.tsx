@@ -33,10 +33,7 @@ export interface DataTableColumn<T> {
   readonly render: (row: T) => ReactNode;
 }
 
-export interface DataTableProps<T extends { id: Key }> extends Omit<
-  TableProps,
-  'className' | 'children'
-> {
+export interface DataTableProps<T> extends Omit<TableProps, 'className' | 'children'> {
   readonly label: string;
   readonly columns: readonly DataTableColumn<T>[];
   readonly rows: readonly T[];
@@ -47,6 +44,18 @@ export interface DataTableProps<T extends { id: Key }> extends Omit<
    */
   readonly isVirtualised?: boolean;
   readonly className?: string;
+  /**
+   * What identifies a row, when it is not the row's own `id`.
+   *
+   * Optional for the row shape every platform-issued record already has —
+   * `Id<'branch'>`, `Id<'role'>`, and the rest name their record — and the
+   * type says so: only a row with no `id` field requires this. `FX`'s
+   * currency is the one record in this product with no issued identifier at
+   * all (`FX-01`: the code **is** the identity, and every amount ever
+   * recorded names it), so its screen supplies `rowKey={(currency) => currency.code}`
+   * instead of inventing a synthetic `id` nothing else in the module needs.
+   */
+  readonly rowKey?: T extends { id: Key } ? ((row: T) => Key) | undefined : (row: T) => Key;
 }
 
 /**
@@ -63,17 +72,21 @@ export interface DataTableProps<T extends { id: Key }> extends Omit<
  * roving `tabindex`: `Tab` enters and leaves the grid, arrows move inside it. A
  * table with a tab stop per row is not keyboard-operable, it is a trap (§11.1).
  */
-export function DataTable<T extends { id: Key }>({
+export function DataTable<T>({
   label,
   columns,
   rows,
   emptyMessage,
   isVirtualised = false,
   className,
+  rowKey,
   ...props
 }: DataTableProps<T>): ReactNode {
   const density = useDensity();
   const rowHeight = SIZE_TOKENS['h-row']?.[density === 'touch' ? 'touch' : 'compact'] ?? 32;
+  // The cast is what `rowKey`'s conditional type promises the caller already
+  // proved: a `T` with no `id` cannot reach here without supplying one.
+  const keyOf = rowKey ?? ((row: T) => (row as { id: Key }).id);
 
   const table = (
     <Table
@@ -113,7 +126,7 @@ export function DataTable<T extends { id: Key }>({
       <TableBody items={rows} renderEmptyState={() => <EmptyState message={emptyMessage} />}>
         {(row: T) => (
           <Row
-            id={row.id}
+            id={keyOf(row)}
             className={clsx(
               // §11.3: the row is not itself an action — only the controls
               // inside it are — so it keeps the arrow. A hand over
