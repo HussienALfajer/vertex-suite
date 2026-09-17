@@ -4,6 +4,7 @@ import { isOk, type Result } from '@vertex/kernel';
 import type { Authenticated, SecRefusal } from '@vertex/sec/contract';
 
 import type { Delivery } from './organisation.js';
+import { HOME, hrefOf, redirect } from './routing.js';
 import type { SignInAttempt, SystemOfRecord } from './system.js';
 
 /**
@@ -31,7 +32,7 @@ export interface Session {
 export interface SessionState {
   readonly session: Session | null;
   readonly signIn: (attempt: SignInAttempt) => Promise<Result<Authenticated, SecRefusal>>;
-  readonly signOut: () => void;
+  readonly signOut: () => Promise<void>;
   /**
    * `Credentials.changeOwnPassword`, wrapped the way every command in this
    * application is: a network failure is `unreachable` rather than a thrown
@@ -61,9 +62,18 @@ export function SessionProvider({ system, children }: SessionProviderProps): Rea
     [system],
   );
 
-  const signOut = useCallback((): void => {
+  const signOut = useCallback(async (): Promise<void> => {
     setSession(null);
-  }, []);
+    // The address names what the last person had open — a role, a person's
+    // record — and the next person at the terminal signed in straight onto it.
+    redirect(hrefOf(HOME));
+    try {
+      await system.signOut();
+    } catch {
+      // Nothing here is kept either way; a session the transport could not
+      // reach to end lapses on the other side, which `U23` owns.
+    }
+  }, [system]);
 
   const changeOwnPassword = useCallback(
     async (current: string, next: string): Promise<Delivery<void>> => {

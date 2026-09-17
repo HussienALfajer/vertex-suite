@@ -7,6 +7,8 @@ import { refuse } from '@vertex/kernel';
 import { App } from './App.js';
 import { catalogue } from './catalogue.js';
 import { developmentSystem } from './dev-system.js';
+import { HOME, hrefOf } from './routing.js';
+import { enterTheShop } from './screens.fixture.js';
 import type { SystemOfRecord } from './system.js';
 
 afterEach(cleanup);
@@ -33,6 +35,7 @@ function systemThatAnswers(signIn: SystemOfRecord['signIn']): SystemOfRecord {
   return {
     signIn,
     changeOwnPassword: real.changeOwnPassword.bind(real),
+    signOut: real.signOut.bind(real),
     organisation: real.organisation,
     users: real.users,
   };
@@ -176,5 +179,21 @@ describe('The sign-in screen is operable and readable — SYS-01', () => {
     open();
     expect(globalThis.localStorage.length).toBe(0);
     expect(globalThis.sessionStorage.length).toBe(0);
+  });
+});
+
+describe('Signing out — SEC-09', () => {
+  it('ends the session on the port and does not leave the next person on the last one’s record', async () => {
+    const system = developmentSystem({ people: PEOPLE });
+    const shop = await enterTheShop(system);
+    await shop.person.click(screen.getByRole('link', { name: catalogue['nav.users'] }));
+    expect(globalThis.location.pathname).not.toBe(hrefOf(HOME));
+
+    await shop.person.click(screen.getByRole('button', { name: catalogue['shell.signOut'] }));
+    await screen.findByRole('button', { name: catalogue['signIn.submit'] });
+
+    // The port answers for nobody now, as a store node's session would.
+    expect(() => system.organisation.companies.list()).toThrow();
+    expect(globalThis.location.pathname + globalThis.location.search).toBe(hrefOf(HOME));
   });
 });

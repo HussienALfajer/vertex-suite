@@ -11,6 +11,7 @@ import { Companies } from './screens/Companies.js';
 import { Locations } from './screens/Locations.js';
 import { Numbering } from './screens/Numbering.js';
 import { Registers } from './screens/Registers.js';
+import { ProfileIcon, ScopeIcon } from './screens/structure.js';
 import { Roles } from './screens/Roles.js';
 import { Users } from './screens/Users.js';
 import { useSession } from './session.js';
@@ -83,7 +84,7 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       id: 'roles',
       label: translator.format('nav.roles'),
       href: hrefOf('roles'),
-      icon: <RolesIcon />,
+      icon: <ScopeIcon />,
     },
   ];
 
@@ -113,7 +114,7 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
             >
               {translator.format('shell.account.action')}
             </Button>
-            <Button onPress={signOut}>{translator.format('shell.signOut')}</Button>
+            <Button onPress={() => void signOut()}>{translator.format('shell.signOut')}</Button>
           </div>
         </header>
       }
@@ -175,16 +176,6 @@ function CompanyIcon(): ReactNode {
   );
 }
 
-/** A sheet with lines on it: what a document is printed from. */
-function ProfileIcon(): ReactNode {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
-      <path d="M5 2.5h6.5L16 7v10.5H5z" strokeLinejoin="round" />
-      <path d="M11 2.5V7h4.5M7.5 10.5h5M7.5 13.5h3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 /** A shopfront under its awning: the trading site. */
 function BranchIcon(): ReactNode {
   return (
@@ -237,16 +228,6 @@ function UsersIcon(): ReactNode {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-/** A badge on a ribbon: what a role is, not who holds it. */
-function RolesIcon(): ReactNode {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
-      <circle cx="10" cy="7" r="4" />
-      <path d="M7.5 10.3L6 17.5l4-2 4 2-1.5-7.2" strokeLinejoin="round" />
     </svg>
   );
 }

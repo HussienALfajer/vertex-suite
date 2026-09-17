@@ -672,11 +672,14 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
 
       withdraw: (user, role) => {
         by();
-        const existing = assignments.find(
-          (one) => one.user === user && one.role === role && one.active,
-        );
+        const existing = assignments.find((one) => one.user === user && one.role === role);
         if (existing === undefined)
           return Promise.resolve(refuse('sec.assignment-not-found', { role }));
+        // Already withdrawn is done, as it is in `SEC` (`assignments.ts`): a
+        // replayed or repeated command succeeds over a state that is already
+        // what it asked for. The stand-in refused it, and taught the screen a
+        // refusal the real module never gives.
+        if (!existing.active) return Promise.resolve(ok(existing));
 
         // `assignments.ts`'s own `wouldStrandTheTenant`, one level out from the
         // role's: standing down the shop's last holder of `sec.role.edit` has no
@@ -702,6 +705,9 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
 
   return {
     signIn({ handle, password }: SignInAttempt) {
+      // A new attempt is nobody until it succeeds. A failed one once left the
+      // previous person in place, answering for whoever typed next.
+      actor = null;
       const wanted = foldHandle(handle);
       const found = [...users.entries()].find(([, user]) => user.handle === wanted);
 
@@ -723,6 +729,11 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
 
       actor = id;
       return Promise.resolve(ok({ user: id, tenant, at: clock.now() }));
+    },
+
+    signOut() {
+      actor = null;
+      return Promise.resolve();
     },
 
     // `Credentials.changeOwnPassword`, by hand: available to whoever is

@@ -81,22 +81,35 @@ test('opens a company from the keyboard alone, and shows focus at every stop', a
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'تخطَّ إلى المحتوى' })).toBeFocused();
 
-  // Every stop from here to the action shows focus. §7.3 asks for focus to be
-  // visible, not for one particular way of drawing it, so either the two-layer
-  // ring or the browser's own outline counts.
-  for (let step = 0; step < 8; step += 1) {
-    const visible = await page.evaluate(() => {
-      const element = document.activeElement;
-      if (element === null || element === document.body) return true;
-      const style = globalThis.getComputedStyle(element);
-      return style.boxShadow !== 'none' || style.outlineStyle !== 'none';
-    });
-    expect(
-      visible,
-      `a control on the way to the action shows no focus at step ${String(step)}`,
-    ).toBe(true);
+  // Every stop from here to the action shows focus, and the walk ends at the
+  // action rather than after a number of presses somebody once counted. §7.3
+  // asks for focus to be visible, not for one particular way of drawing it, so
+  // either the two-layer ring or the browser's own outline counts — and focus
+  // on nothing at all is not a stop that passes.
+  let reached = false;
+  for (let step = 0; step < 30 && !reached; step += 1) {
     await page.keyboard.press('Tab');
+    const stop = await page.evaluate(() => {
+      const element = document.activeElement;
+      if (element === null || element === document.body) return null;
+      const style = globalThis.getComputedStyle(element);
+      return {
+        name: (element.getAttribute('aria-label') ?? element.textContent).trim(),
+        visible: style.boxShadow !== 'none' || style.outlineStyle !== 'none',
+      };
+    });
+    expect(stop, `focus left every control at step ${String(step)}`).not.toBeNull();
+    expect(stop?.visible, `"${stop?.name ?? ''}" shows no focus`).toBe(true);
+    reached = stop?.name === 'تسجيل شركة';
   }
+  expect(reached, 'the register action was never reached by Tab').toBe(true);
+
+  // And it opens, and the company is registered, with no pointer at all.
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('اسم الشركة', { exact: true })).toBeFocused();
+  await page.keyboard.type('مؤسسة الشام');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('rowheader', { name: 'مؤسسة الشام' })).toBeVisible();
 });
 
 test('revises the business profile and says it was saved', async ({ page }) => {

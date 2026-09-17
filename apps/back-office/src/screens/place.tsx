@@ -94,7 +94,17 @@ export interface PlaceDialogProps {
    */
   readonly canHoldPoint?: boolean;
   readonly onOpenChange: (isOpen: boolean) => void;
-  readonly onSaved: () => void;
+  /**
+   * Something was stored, so a screen can refresh what it read for itself.
+   *
+   * **Not** a signal to close. Both screens once closed the dialog here, and it
+   * is called as soon as the address is stored — before the point is sent — so a
+   * refused or failed point was written into a dialog that had already gone, and
+   * the pin that never moved said nothing about it. The dialog closes itself
+   * when both commands have been accepted, and stays open with the refusal when
+   * one has not.
+   */
+  readonly onSaved?: () => void;
 }
 
 /**
@@ -147,7 +157,7 @@ export function PlaceDialog({
       // The address is committed the moment it is sent without refusal,
       // whether or not the point that follows it is. A later refusal of the
       // point must not read back as if the address change never happened.
-      if (addressMessage === null) onSaved();
+      if (addressMessage === null) onSaved?.();
 
       if (addressMessage === null && placeMessage === null) {
         toast.show(translator.format('place.saved', { name: of.name }), { tone: 'success' });

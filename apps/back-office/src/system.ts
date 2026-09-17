@@ -258,6 +258,16 @@ export interface SystemOfRecord {
   signIn(attempt: SignInAttempt): Promise<Result<Authenticated, SecRefusal>>;
 
   /**
+   * Ends the session this port acts for.
+   *
+   * On the port, and not only in the screen's state. Signing out once cleared
+   * what React held and nothing else, so the stand-in went on answering as the
+   * person who had left — and `U07`'s transport, built to this shape, would
+   * have had no call through which to end a session on the store node at all.
+   */
+  signOut(): Promise<void>;
+
+  /**
    * `Credentials.changeOwnPassword`, as the account screen uses it.
    *
    * On the signed-in person's own record rather than under `users`: this is

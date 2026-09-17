@@ -17,7 +17,7 @@ import {
 import type { Role } from '@vertex/sec/contract';
 import type { Branch } from '@vertex/sys/contract';
 
-import { useOrganisation } from '../organisation.js';
+import { useOrganisation, type Loaded } from '../organisation.js';
 
 /**
  * What the four structural screens of `SYS-09` have in common.
@@ -119,7 +119,7 @@ export function matchesQuery(name: string, query: string): boolean {
 export function roleLabel(translator: ReturnType<typeof useTranslator>, role: Role): string {
   if (role.name !== null) return role.name;
   return role.seeded === null
-    ? translator.format('permission.unknown')
+    ? translator.format('data.unknown')
     : translator.format(`role.${role.seeded}`);
 }
 
@@ -333,6 +333,38 @@ export function NameDialog({
 }
 
 /**
+ * What a screen shows for a read that has not answered, or cannot.
+ *
+ * Every per-record read on these screens — a branch's locations and tills, a
+ * person's roles, a role's holders, a series' specimen — once rendered nothing
+ * while it waited and nothing when it failed. Nothing is the one answer that is
+ * worse than either: a person was told they held no role when the question had
+ * never been answered, and granted one on that basis.
+ */
+export function ReadState({ loaded }: { readonly loaded: Loaded<unknown> }): ReactNode {
+  const translator = useTranslator();
+  if (loaded.unreachable) {
+    return (
+      <Banner
+        tone="warning"
+        title={translator.format('data.unreachable')}
+        actions={<Button onPress={loaded.reload}>{translator.format('action.retry')}</Button>}
+      >
+        {translator.format('data.unreachable.explanation')}
+      </Banner>
+    );
+  }
+  if (loaded.isLoading && loaded.value === null) {
+    return (
+      <p role="status" className="text-body text-fg-muted">
+        {translator.format('data.loading')}
+      </p>
+    );
+  }
+  return null;
+}
+
+/**
  * The banner a screen shows when the structure on it may be out of date.
  *
  * It says so rather than showing nothing, because a stale list and an empty
@@ -451,7 +483,6 @@ export function FormatIcon(): ReactNode {
   );
 }
 
-/** A sheet with lines on it: the profile a document is printed from. */
 /** A pin, which is what a map marker looks like everywhere a person has seen one. */
 export function PlaceIcon(): ReactNode {
   return (
@@ -462,6 +493,7 @@ export function PlaceIcon(): ReactNode {
   );
 }
 
+/** A sheet with lines on it: the profile a document is printed from. */
 export function ProfileIcon(): ReactNode {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">

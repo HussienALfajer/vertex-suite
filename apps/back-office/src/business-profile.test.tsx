@@ -2,14 +2,17 @@ import { cleanup, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogue } from './catalogue.js';
+import { developmentSystem } from './dev-system.js';
 import {
   chooseOption,
   enterTheShop,
   goTo,
+  PEOPLE,
   registerCompany,
   startAt,
   type OpenShop,
 } from './screens.fixture.js';
+import type { SystemOfRecord } from './system.js';
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -158,5 +161,84 @@ describe('The business profile — SYS-05', () => {
     // day; a frame still showing the old name would be the one place in the
     // product where the shop's name is out of date.
     expect(await screen.findAllByText('مؤسسة الشام للتجارة العامة')).toBeTruthy();
+  });
+});
+
+describe('The business profile, when the read has not answered — SYS-05', () => {
+  it('offers nothing to edit over a profile it could not read, and says so', async () => {
+    // It once opened a blank form, took whatever was typed, and saved every
+    // field of it: the address, phone, tax numbers and receipt lines of a
+    // company whose profile had simply not been reached were stored as blanks.
+    const base = developmentSystem({ people: PEOPLE });
+    const revised: unknown[] = [];
+    let lineDown = false;
+    const system: SystemOfRecord = {
+      ...base,
+      organisation: {
+        ...base.organisation,
+        profile: {
+          ...base.organisation.profile,
+          read: (company) =>
+            lineDown
+              ? Promise.reject(new Error('the store node is unreachable'))
+              : base.organisation.profile.read(company),
+          revise: (company, changes) => {
+            revised.push(changes);
+            return base.organisation.profile.revise(company, changes);
+          },
+        },
+      },
+    };
+    const shop = await enterTheShop(system);
+    await registerCompany(shop, 'مؤسسة الشام');
+    lineDown = true;
+    await goTo(shop, catalogue['nav.businessProfile']);
+
+    expect(await screen.findByText(catalogue['data.unreachable'])).toBeTruthy();
+    expect(screen.queryByLabelText(catalogue['profile.name'])).toBeNull();
+    expect(
+      screen.getByRole('button', { name: catalogue['profile.save'] }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(revised).toEqual([]);
+  });
+
+  it('sends only what was changed, so a field somebody else corrected stays corrected', async () => {
+    const base = developmentSystem({ people: PEOPLE });
+    const revised: unknown[] = [];
+    const system: SystemOfRecord = {
+      ...base,
+      organisation: {
+        ...base.organisation,
+        profile: {
+          ...base.organisation.profile,
+          revise: (company, changes) => {
+            revised.push(changes);
+            return base.organisation.profile.revise(company, changes);
+          },
+        },
+      },
+    };
+    const shop = await enterTheShop(system);
+    await registerCompany(shop, 'مؤسسة الشام');
+    await goTo(shop, catalogue['nav.businessProfile']);
+    await screen.findByLabelText(catalogue['profile.name']);
+
+    await retype(shop, catalogue['profile.phone'], '021-2345678');
+    await save(shop);
+
+    await waitFor(() => {
+      expect(revised).toEqual([{ phone: '021-2345678' }]);
+    });
+  });
+
+  it('saves on Enter, like every other form', async () => {
+    const shop = await aShopOnItsProfile('مؤسسة الشام');
+    await retype(shop, catalogue['profile.phone'], '021-2345678');
+    await shop.person.keyboard('{Enter}');
+
+    const [company] = await shop.system.organisation.companies.list();
+    await waitFor(async () => {
+      expect((await shop.system.organisation.profile.read(company!.id))?.phone).toBe('021-2345678');
+    });
   });
 });

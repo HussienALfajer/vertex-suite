@@ -130,6 +130,14 @@ describe('Registers and the machines at them — SYS-09', () => {
     );
     expect(await screen.findByRole('rowheader', { name: 'صندوق المدخل' })).toBeTruthy();
     expect(screen.getByText(catalogue['status.withdrawn'])).toBeTruthy();
+
+    // A withdrawn till takes no machine, and `SYS` refuses one, so the action
+    // is not offered for somebody to type an identifier into first.
+    expect(
+      screen
+        .getByRole('button', { name: catalogue['registers.device.action'] })
+        .hasAttribute('disabled'),
+    ).toBe(true);
   });
 });
 

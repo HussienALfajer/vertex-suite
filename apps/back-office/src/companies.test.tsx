@@ -35,6 +35,7 @@ function shopWhere(
   return {
     signIn: real.signIn.bind(real),
     changeOwnPassword: real.changeOwnPassword.bind(real),
+    signOut: real.signOut.bind(real),
     organisation: change(real),
     users: real.users,
   };
@@ -225,7 +226,9 @@ describe('The business profile arrives with the company — SYS-05', () => {
   });
 });
 
-describe('The organisation is read as the person who signed in — SEC-04', () => {
+// Not named for `SEC-04`: nothing here scopes an answer to a branch, and a
+// name is the claim that the feature behaves as specified.
+describe('The organisation is read only on behalf of somebody signed in', () => {
   it('refuses to read the shop on behalf of nobody', async () => {
     const system = developmentSystem({ people: PEOPLE });
 

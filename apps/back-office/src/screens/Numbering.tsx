@@ -34,7 +34,7 @@ import {
 import { messageForRefusal } from '../catalogue.js';
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
 import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
-import { FormatIcon, StaleBanner, matchesQuery } from './structure.js';
+import { FormatIcon, ReadState, StaleBanner, matchesQuery } from './structure.js';
 
 /**
  * `SYS-02` as an accountant configures it.
@@ -156,6 +156,10 @@ export function Numbering(): ReactNode {
       if (id === null) return translator.format('numbering.register.none');
       const till = tills.find((one) => one.id === id);
       if (till === undefined) {
+        // Three states and not two: a read that failed is neither still loading
+        // — which it once said for ever — nor a statement that the till is not
+        // this branch's. The banner above says what failed.
+        if (registers.unreachable) return translator.format('data.unknown');
         return translator.format(areTillsKnown ? 'numbering.register.unknown' : 'data.loading');
       }
       // A withdrawn till keeps its series, because the documents it issued keep
@@ -165,7 +169,7 @@ export function Numbering(): ReactNode {
         ? till.name
         : translator.format('numbering.register.withdrawn', { name: till.name });
     },
-    [tills, areTillsKnown, translator],
+    [tills, areTillsKnown, registers.unreachable, translator],
   );
 
   const rows = useMemo(
@@ -383,6 +387,8 @@ export function Numbering(): ReactNode {
         />
       </div>
 
+      <ReadState loaded={series} />
+      <ReadState loaded={registers} />
       {series.unreachable ? null : (series.value ?? []).length === 0 && !series.isLoading ? (
         <EmptyState
           message={translator.format('numbering.empty')}
@@ -515,6 +521,10 @@ function SeriesDialog({
     setFormat(subject?.format ?? '');
     setSuggested(null);
     setMissing({ documentType: false, fiscalYear: false, format: false });
+    // Asked again on every opening. The next number moves whenever a document
+    // is issued, and reopening the same series asks the same question — which
+    // a read keyed on the question does not ask twice.
+    preview.reload();
   });
 
   // The record rather than the key out of the listbox, so what is put in the
@@ -555,7 +565,16 @@ function SeriesDialog({
   const asked =
     scope === null
       ? null
-      : JSON.stringify([scope.documentType, scope.register, scope.fiscalYear, proposed]);
+      : // The branch as well: the same type, till and year in another branch is
+        // another series, and leaving it out showed one branch's next number
+        // for the other's from what was already held.
+        JSON.stringify([
+          scope.branch,
+          scope.documentType,
+          scope.register,
+          scope.fiscalYear,
+          proposed,
+        ]);
 
   const preview = useLoaded(asked, () =>
     scope === null

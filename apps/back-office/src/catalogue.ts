@@ -231,7 +231,7 @@ export const catalogue = {
    * `SEC-02`'s grid, read by column and by row rather than as full sentences:
    * `permission.action.*` names the five actions across the top, and
    * `permission.resource.*` names what each row is about. The full sentence
-   * above (`permission.sec.user.view`) still names every checkbox itself, so a
+   * above (`permission.sec.user.view`) still names every switch itself, so a
    * screen reader announces "الاطلاع على المستخدمين" rather than "عرض" bare —
    * only the visible header is this short.
    */
@@ -353,9 +353,9 @@ export const catalogue = {
    */
   'listing.includeWithdrawn': 'إظهار المسحوب من الخدمة',
   'listing.noMatch': 'لا شيء يطابق ما بحثت عنه.',
-  'listing.noMatch.explanation': 'جرّب اسمًا أقصر، أو أظهر ما سُحب من الخدمة.',
 
   'data.loading': 'جارٍ التحميل…',
+  'data.unknown': 'غير معروف',
   'data.unreachable': 'تعذّر الوصول إلى سجلّ المتجر',
   'data.unreachable.explanation':
     'لم يصل ردّ من سجلّ المتجر، فما تراه قد لا يكون الحالة الأحدث. تحقّق من الاتصال ثم أعد المحاولة.',
@@ -697,9 +697,6 @@ export const catalogue = {
   'users.security.forceSignOut': 'إنهاء كل الجلسات',
   'users.security.forceSignOut.description':
     'يُنهي دخول «{name}» على كل جهاز عند أول اتصال به بعد الآن. لا يوقف عملًا جاريًا على صندوق غير متصل حاليًا.',
-  'users.security.forceSignOut.confirm.title': 'إنهاء جلسات «{name}»',
-  'users.security.forceSignOut.confirm.message':
-    'سيُطلب من «{name}» تسجيل الدخول من جديد على كل جهاز، فور أن يتصل بعقدة المتجر.',
   'users.security.forceSignOut.done': 'أُنهيت جلسات «{name}».',
 
   /**
@@ -765,10 +762,9 @@ export const catalogue = {
   'roles.restored': 'أُعيد «{name}» إلى الخدمة.',
 
   'roles.empty': 'لا يوجد دور بعد',
-  'roles.empty.explanation': 'السبعة المهيّأة تُنشأ مع المتجر نفسه؛ إن غابت فحدّث الصفحة.',
 
   /**
-   * `SEC-02`'s grid: one checkbox per (resource, action) pair this role either
+   * `SEC-02`'s grid: one switch per (resource, action) pair this role either
    * holds or does not. Not a form saved all at once — each cell is its own
    * command (`grant` or `revoke`) that takes effect the moment it is toggled,
    * the same immediacy withdrawing a role or assigning one already has.

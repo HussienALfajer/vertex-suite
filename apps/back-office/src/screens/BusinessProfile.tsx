@@ -14,11 +14,11 @@ import {
   useTranslator,
   type SelectOption,
 } from '@vertex/ui';
-import type { BusinessProfile as Profile, Company } from '@vertex/sys/contract';
+import type { BusinessProfile as Profile, Company, ProfileRevision } from '@vertex/sys/contract';
 
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
 import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
-import { StaleBanner } from './structure.js';
+import { ReadState, StaleBanner } from './structure.js';
 
 /**
  * `SYS-05`: what every receipt and every printed document carries.
@@ -121,6 +121,12 @@ export function BusinessProfile(): ReactNode {
   const read = useCallback((company: Company['id']) => ofRecord.profile.read(company), [ofRecord]);
   const profile = useLoaded(chosen?.id ?? null, read);
 
+  // Only what was actually read. Before an answer arrives, or when none can,
+  // there is nothing to edit: the form once opened on `BLANK` while the read was
+  // slow or had failed, took whatever was typed, and saved every field of it —
+  // blanking the stored address, phone, tax numbers and receipt lines of a
+  // company whose profile had simply not been reached.
+  const isRead = profile.value !== null;
   const stored = useMemo(
     () => (profile.value === null ? BLANK : draftOf(profile.value)),
     [profile.value],
@@ -171,7 +177,7 @@ export function BusinessProfile(): ReactNode {
   }
 
   async function save(): Promise<void> {
-    if (isSaving || chosen === null) return;
+    if (isSaving || chosen === null || !isRead || !isDirty) return;
 
     const { identifiers, problems } = collect();
     if (problems.length > 0) {
@@ -180,21 +186,28 @@ export function BusinessProfile(): ReactNode {
       return;
     }
 
+    // What changed, and nothing else. `revise` is a patch because two people
+    // may be revising one profile, and sending every field would put back a
+    // phone number somebody else corrected a minute ago.
+    const changes: {
+      -readonly [K in keyof ProfileRevision]: ProfileRevision[K];
+    } = {};
+    if (draft.name !== stored.name) changes.name = draft.name.trim();
+    // Absent would mean "leave it" and null means "there is none"; an empty
+    // field is somebody saying there is none.
+    if (draft.logo !== stored.logo)
+      changes.logo = draft.logo.trim() === '' ? null : draft.logo.trim();
+    if (draft.address !== stored.address) changes.address = draft.address.trim();
+    if (draft.phone !== stored.phone) changes.phone = draft.phone.trim();
+    if (!isSame({ ...stored, taxIdentifiers: draft.taxIdentifiers }, stored)) {
+      changes.taxIdentifiers = identifiers;
+    }
+    if (draft.receiptHeader !== stored.receiptHeader) changes.receiptHeader = draft.receiptHeader;
+    if (draft.receiptFooter !== stored.receiptFooter) changes.receiptFooter = draft.receiptFooter;
+
     setIsSaving(true);
     setRefused(null);
-    const delivery = await run((of) =>
-      of.profile.revise(chosen.id, {
-        name: draft.name.trim(),
-        // Absent would mean "leave it" and null means "there is none"; an empty
-        // field is somebody saying there is none.
-        logo: draft.logo.trim() === '' ? null : draft.logo.trim(),
-        address: draft.address.trim(),
-        phone: draft.phone.trim(),
-        taxIdentifiers: identifiers,
-        receiptHeader: draft.receiptHeader,
-        receiptFooter: draft.receiptFooter,
-      }),
-    );
+    const delivery = await run((of) => of.profile.revise(chosen.id, changes));
     setIsSaving(false);
 
     const message = messageFor(delivery);
@@ -258,7 +271,7 @@ export function BusinessProfile(): ReactNode {
             </Button>
             <Button
               tone="primary"
-              isDisabled={!isDirty || isSaving || chosen === null}
+              isDisabled={!isDirty || isSaving || chosen === null || !isRead}
               onPress={() => {
                 void save();
               }}
@@ -298,6 +311,7 @@ export function BusinessProfile(): ReactNode {
         </Banner>
       )}
       {isDirty ? <Banner tone="info">{translator.format('profile.unsaved')}</Banner> : null}
+      <ReadState loaded={profile} />
 
       {/*
         A **field** has a measure; a page does not. Every field here is copied
@@ -313,83 +327,88 @@ export function BusinessProfile(): ReactNode {
         in it is printed across a receipt and is read as lines rather than as
         answers to questions.
       */}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-        className="grid w-full max-w-[96rem] gap-[var(--vx-gap-lg)] lg:grid-cols-2 lg:items-start"
-      >
-        <Panel title={translator.format('profile.section.identity')}>
-          <div className="grid gap-[var(--vx-gap-md)] md:grid-cols-2">
-            <TextInput
-              label={translator.format('profile.name')}
-              description={translator.format('profile.name.description')}
-              value={draft.name}
-              onChange={(next) => {
-                change('name', next);
-              }}
-              className="md:col-span-2"
-            />
-            <TextInput
-              label={translator.format('profile.phone')}
-              value={draft.phone}
-              type="tel"
-              onChange={(next) => {
-                change('phone', next);
-              }}
-            />
-            <TextInput
-              label={translator.format('profile.logo')}
-              description={translator.format('profile.logo.description')}
-              value={draft.logo}
-              onChange={(next) => {
-                change('logo', next);
-              }}
-            />
-            <TextArea
-              label={translator.format('profile.address')}
-              value={draft.address}
-              onChange={(next) => {
-                change('address', next);
-              }}
-              rows={2}
-              className="md:col-span-2"
-            />
-          </div>
-        </Panel>
+      {isRead ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+          className="grid w-full max-w-[96rem] gap-[var(--vx-gap-lg)] lg:grid-cols-2 lg:items-start"
+        >
+          {/* Save sits in the page header, outside the form, and a form with no
+            submit control of its own ignores Enter. This is that control. */}
+          <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
+          <Panel title={translator.format('profile.section.identity')}>
+            <div className="grid gap-[var(--vx-gap-md)] md:grid-cols-2">
+              <TextInput
+                label={translator.format('profile.name')}
+                description={translator.format('profile.name.description')}
+                value={draft.name}
+                onChange={(next) => {
+                  change('name', next);
+                }}
+                className="md:col-span-2"
+              />
+              <TextInput
+                label={translator.format('profile.phone')}
+                value={draft.phone}
+                type="tel"
+                onChange={(next) => {
+                  change('phone', next);
+                }}
+              />
+              <TextInput
+                label={translator.format('profile.logo')}
+                description={translator.format('profile.logo.description')}
+                value={draft.logo}
+                onChange={(next) => {
+                  change('logo', next);
+                }}
+              />
+              <TextArea
+                label={translator.format('profile.address')}
+                value={draft.address}
+                onChange={(next) => {
+                  change('address', next);
+                }}
+                rows={2}
+                className="md:col-span-2"
+              />
+            </div>
+          </Panel>
 
-        <Panel title={translator.format('profile.section.tax')}>
-          <TaxIdentifiers
-            rows={draft.taxIdentifiers}
-            onRows={(rows) => {
-              change('taxIdentifiers', rows);
-            }}
-          />
-        </Panel>
+          <Panel title={translator.format('profile.section.tax')}>
+            <TaxIdentifiers
+              rows={draft.taxIdentifiers}
+              onRows={(rows) => {
+                change('taxIdentifiers', rows);
+              }}
+            />
+          </Panel>
 
-        <Panel title={translator.format('profile.section.receipt')} className="lg:col-span-2">
-          <div className="flex flex-col gap-[var(--vx-gap-md)]">
-            <p className="text-footnote text-fg-muted">
-              {translator.format('profile.receipt.description')}
-            </p>
-            <TextArea
-              label={translator.format('profile.receiptHeader')}
-              value={draft.receiptHeader}
-              onChange={(next) => {
-                change('receiptHeader', next);
-              }}
-            />
-            <TextArea
-              label={translator.format('profile.receiptFooter')}
-              value={draft.receiptFooter}
-              onChange={(next) => {
-                change('receiptFooter', next);
-              }}
-            />
-          </div>
-        </Panel>
-      </form>
+          <Panel title={translator.format('profile.section.receipt')} className="lg:col-span-2">
+            <div className="flex flex-col gap-[var(--vx-gap-md)]">
+              <p className="text-footnote text-fg-muted">
+                {translator.format('profile.receipt.description')}
+              </p>
+              <TextArea
+                label={translator.format('profile.receiptHeader')}
+                value={draft.receiptHeader}
+                onChange={(next) => {
+                  change('receiptHeader', next);
+                }}
+              />
+              <TextArea
+                label={translator.format('profile.receiptFooter')}
+                value={draft.receiptFooter}
+                onChange={(next) => {
+                  change('receiptFooter', next);
+                }}
+              />
+            </div>
+          </Panel>
+        </form>
+      ) : null}
     </>
   );
 }

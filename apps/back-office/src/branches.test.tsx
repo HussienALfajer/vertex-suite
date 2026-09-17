@@ -120,6 +120,7 @@ describe('Branches — SYS-09', () => {
     const slow: SystemOfRecord = {
       signIn: real.signIn.bind(real),
       changeOwnPassword: real.changeOwnPassword.bind(real),
+      signOut: real.signOut.bind(real),
       organisation: {
         ...real.organisation,
         companies: {
