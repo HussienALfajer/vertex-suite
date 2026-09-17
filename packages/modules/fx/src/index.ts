@@ -6,6 +6,7 @@ import {
   type CurrencyCode,
   type Instant,
   type LocalDate,
+  type Money,
   type Result,
 } from '@vertex/kernel';
 import {
@@ -25,8 +26,10 @@ import {
   ExchangeRates,
   FX_PERMISSION_SEEDS,
   FX_PERMISSIONS,
+  Presentation,
   RateAdministration,
   RateStamps,
+  RoundingRules,
   type CurrencyRefusal,
   type CurrencyRevision,
   type Listing,
@@ -34,9 +37,11 @@ import {
   type PreparedStamp,
   type RateQuote,
   type RateRefusal,
+  type RateStamp,
   type RateStampId,
   type RecordSession,
   type Stamping,
+  type StampedDocument,
   type TenantCurrency,
 } from './contract.js';
 import {
@@ -59,6 +64,7 @@ import {
   suggestRate,
   type Recording,
 } from './rates.js';
+import { presentAtMid, presentAtStamp, settleAmount, valueDocument } from './rounding.js';
 import { directionOf, overridesOn, prepareStamp, stampIn, writeStamp } from './stamps.js';
 
 export * from './contract.js';
@@ -211,6 +217,58 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
           revisions: (by: CommandContext, id: BranchId, code: CurrencyCode, day: LocalDate) =>
             read(by, (session) => revisionsOn(session, by.tenant, id, code, day)),
         } satisfies ExchangeRates;
+      }),
+
+      provideContract(RoundingRules, (context: ModuleContext<Session>) => {
+        // Unguarded, as the module's other reads are: a cashier's sale settles
+        // its own total whether or not the cashier may open a screen about
+        // currencies. See `RoundingRules` in the contract.
+        const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
+          context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          settle: (by: CommandContext, amount: Money) =>
+            read(by, (session) => settleAmount(session, by.tenant, amount)),
+          value: (by: CommandContext, document: StampedDocument) =>
+            read(by, (session) => valueDocument(session, by.tenant, document)),
+        } satisfies RoundingRules;
+      }),
+
+      provideContract(Presentation, (context: ModuleContext<Session>) => {
+        const today = branchToday(context);
+        const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
+          context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          present: async (by: CommandContext, id: BranchId, amount: Money, into: CurrencyCode) => {
+            // Reading, not trading: a withdrawn branch's figures are its
+            // history, and history stays readable (`SYS-09`) — the same answer
+            // `ExchangeRates.board` gives for the same reason.
+            const here = await today(by, id, 'reading');
+            if (!here.ok) return here;
+            const { day } = here.value;
+
+            return read(by, (session) =>
+              presentAtMid(
+                session,
+                by.tenant,
+                { branch: id, day, device: by.device },
+                amount,
+                into,
+              ),
+            );
+          },
+
+          // No branch and no clock: the stamp carries the rate, the day it is
+          // from and the revision it came out of, which is the whole of what a
+          // document has to show beside its own figures.
+          presentStamped: (
+            by: CommandContext,
+            amount: Money,
+            into: CurrencyCode,
+            stamp: RateStamp,
+          ) => read(by, (session) => presentAtStamp(session, by.tenant, amount, into, stamp)),
+        } satisfies Presentation;
       }),
 
       provideContract(RateStamps, (context: ModuleContext<Session>) => {

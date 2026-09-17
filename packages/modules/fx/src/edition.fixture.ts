@@ -24,8 +24,10 @@ import {
   Currencies,
   CurrencyAdministration,
   ExchangeRates,
+  Presentation,
   RateAdministration,
   RateStamps,
+  RoundingRules,
 } from './contract.js';
 import { fxModule } from './index.js';
 
@@ -52,6 +54,8 @@ export interface Installed {
   readonly rates: ExchangeRates;
   readonly rateAdmin: RateAdministration;
   readonly stamps: RateStamps;
+  readonly rounding: RoundingRules;
+  readonly presentation: Presentation;
   /**
    * The shop's time, and the one thing about it a test may choose. It starts at
    * noon in Damascus on 17 September 2026, which is 09:00 UTC.
@@ -227,6 +231,8 @@ export function installFx(): Installed {
     rates: registry.require(ExchangeRates),
     rateAdmin: registry.require(RateAdministration),
     stamps: registry.require(RateStamps),
+    rounding: registry.require(RoundingRules),
+    presentation: registry.require(Presentation),
     clock,
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),

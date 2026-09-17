@@ -16,6 +16,7 @@ import type {
   Id,
   Instant,
   LocalDate,
+  Money,
   Refusal,
   Result,
   RoundingMode,
@@ -516,6 +517,32 @@ export type RateRefusalCode =
   | 'fx.cash-direction-unknown'
   /** Today's rates are all here; there is nothing a last-known rate would stand in for. */
   | 'fx.rates-current'
+  /** A document's lines do not come to its total, so no difference between them is rounding. */
+  | 'fx.lines-do-not-total'
+  /** A document being valued at a stamp that was taken for another currency. */
+  | 'fx.stamp-currency-mismatch'
+  /**
+   * A stamp whose rate is expressed per one unit of a currency that is not the
+   * one being converted through.
+   *
+   * A rate means "so many units of this per one unit of *that*", and which
+   * currency *that* is, is on the stamp. Converting against a different one is
+   * arithmetic in units the figure beside it does not name — and the rate shown
+   * would be a true sentence about a number nobody computed, which is the one
+   * thing `FX-03`'s "with the rate shown" cannot tolerate.
+   */
+  | 'fx.stamp-functional-mismatch'
+  /**
+   * Two currencies with the functional currency neither of them.
+   *
+   * `FX-03` asks for a figure shown "at a stated rate with the rate shown", and
+   * between the pound and the euro there is no single stated rate — there are
+   * two, through the dollar, and one number standing for both is a number
+   * nobody can check against a board. Moving value between two such currencies
+   * is `FX-09`, which is a first-class operation recording both amounts rather
+   * than a way of displaying one.
+   */
+  | 'fx.cross-rate-unsupported'
   /** The caller does not hold the right this command declares (`SEC-02`). */
   | 'fx.not-permitted';
 
@@ -782,6 +809,214 @@ export interface RateStamps {
 }
 
 export const RateStamps = contractKey<RateStamps>('fx.rate-stamps');
+
+/**
+ * A branch, the day it is on, and the machine the caller is standing at.
+ *
+ * What a command establishes before it reads anything: the clock is read once,
+ * so that a figure and the day it was read on can never straddle midnight
+ * between two readings.
+ */
+export interface BranchDay {
+  readonly branch: BranchId;
+  readonly day: LocalDate;
+  readonly device: DeviceId | null;
+}
+
+/**
+ * The account every rounding residual is posted to (`FX-07`).
+ *
+ * A code and not an account record, because `FIN` does not exist until `U06`
+ * and the account it will resolve this to is `FIN`'s to own. What `FX` owes is
+ * that every residual it produces names the same destination, stated in one
+ * place — the alternative is each caller inventing a destination and the
+ * residual arriving in four different accounts that nobody reconciles.
+ */
+export const ROUNDING_ACCOUNT = 'fx.rounding';
+
+/**
+ * The points at which a figure in this system is rounded, and there are two.
+ *
+ * `FX-07` says rounding happens "at defined points only". These are them, and
+ * they are defined here rather than left to each caller, because a rounding
+ * point that anybody can add is the drift the feature exists to stop.
+ *
+ * `settlement` is a figure becoming money somebody hands over: it moves onto
+ * the currency's own step — the smallest note or coin a cashier has — and what
+ * it moves by is money the till does not have.
+ *
+ * `ledger` is a figure becoming an entry in the books: it moves onto the
+ * functional currency's stored precision, which `FX-02` keeps finer than the
+ * cent for exactly this reason. What it moves by is not money anybody holds; it
+ * is the last place of a division, and across a document's lines it accumulates
+ * into a figure the two sides of an entry would otherwise disagree by.
+ *
+ * They are separate and a figure passes each at most once. An invoice total of
+ * 13,127 pounds is a perfectly good total that settles at the till, and valuing
+ * it in the books does not settle it first — running both points at one moment
+ * would settle figures nobody is handing over.
+ */
+export const ROUNDING_POINTS = Object.freeze(['settlement', 'ledger'] as const);
+
+export type RoundingPoint = (typeof ROUNDING_POINTS)[number];
+
+/**
+ * What rounding moved, and where it goes (`FX-07`).
+ *
+ * Carried out of every rounding point rather than discarded, which is the whole
+ * of "so totals never drift": a residual nobody is handed is a residual some
+ * account is short by, and the only way to know which is to be told.
+ */
+export interface RoundingResidual {
+  readonly account: typeof ROUNDING_ACCOUNT;
+  readonly point: RoundingPoint;
+  /** Signed: what must be added to the rounded figure to recover the original. */
+  readonly amount: Money;
+}
+
+/** An amount settled onto its currency's step, and what settling moved. */
+export interface Settled {
+  readonly value: Money;
+  readonly residual: RoundingResidual;
+}
+
+/**
+ * A document being stated in the books: its own total, its lines, and the stamp
+ * that says at what rate.
+ *
+ * The total is given as well as the lines, and is not assumed to be their sum,
+ * because in the document's own currency it **is** their sum and that is the
+ * thing being checked. A caller whose lines do not come to its total is refused
+ * rather than balanced: a difference that is not rounding, posted to a rounding
+ * account, is a caller's arithmetic buried where nobody would look for it.
+ */
+export interface StampedDocument {
+  readonly stamp: RateStamp;
+  readonly total: Money;
+  readonly lines: readonly Money[];
+}
+
+/**
+ * A document as the books take it: every figure in the functional currency, at
+ * the precision the functional currency is stored at.
+ *
+ * The total is converted from the document's own total, and each line from its
+ * own line. `residual` is the difference between the one and the sum of the
+ * others — a **balancing figure**, never an independently rounded amount, so
+ * that the entry `FIN` writes in `U06` balances by construction rather than by
+ * a tolerance.
+ */
+export interface DocumentValue {
+  readonly total: Money;
+  readonly lines: readonly Money[];
+  readonly residual: RoundingResidual;
+}
+
+/**
+ * Settling money, and stating it in the books: the two points of `FX-07`.
+ *
+ * Unguarded, for the reason the rest of this module's reads are: a cashier's
+ * sale settles its own total, and whether the cashier may open the currencies
+ * screen has nothing to do with it.
+ *
+ * **This is the only way anything outside `FX` rounds a figure.** The kernel's
+ * `round` takes the currency's rules as its second argument, and those rules
+ * are one tenant's data that only this module holds; a module reaching for it
+ * directly would supply a literal, and a literal increment is a till that comes
+ * up short every day in a place no report points at. `check:boundaries` refuses
+ * the import (`FX-07`), and this is what it refuses it in favour of.
+ */
+export interface RoundingRules {
+  /** Moves an amount onto the step its currency is handed over in, and says what moved. */
+  settle(by: CommandContext, amount: Money): Promise<Result<Settled, CurrencyRefusal>>;
+
+  /** States a document in the books at the rate it was stamped with (`FX-05`). */
+  value(by: CommandContext, document: StampedDocument): Rated<DocumentValue>;
+}
+
+export const RoundingRules = contractKey<RoundingRules>('fx.rounding-rules');
+
+/**
+ * The rate a figure was converted at for display, which `FX-03` requires to be
+ * shown beside it.
+ *
+ * `basis` is what kind of rate it is, and the distinction is the feature's:
+ * `mid` is the exact middle of the day's buy and sell, which is what a figure
+ * that is neither being received nor paid out is worth; `stamped` is a
+ * document's own rate, which never changes and is never today's.
+ */
+export interface PresentationRate {
+  readonly currency: CurrencyCode;
+  readonly functional: CurrencyCode;
+  /** Units of `currency` per one unit of `functional`. */
+  readonly rate: string;
+  readonly basis: 'mid' | 'stamped';
+  /** Which side a stamped rate came from; null for a mid, which came from both. */
+  readonly side: RateSide | null;
+  /** The day the rate is from — today's for a mid, the stamp's rate day otherwise. */
+  readonly day: LocalDate;
+  readonly revision: RateRevisionId;
+  /** Non-null when the branch is trading under `FX-04`'s exception, and shown. */
+  readonly lastKnown: LastKnownRatesId | null;
+}
+
+/**
+ * A figure in the currency somebody asked to read it in, and the rate it got
+ * there by.
+ *
+ * `rate` is null only when nothing was converted — the figure was already in
+ * that currency. That case is answered rather than refused, so that a screen
+ * offering every enabled currency has no case of its own for the one it is in.
+ */
+export interface Presented {
+  readonly amount: Money;
+  readonly rate: PresentationRate | null;
+}
+
+/**
+ * Showing a figure in another currency (`FX-03`).
+ *
+ * Presentation and nothing else: what comes out is for a screen, a report or a
+ * printed document to display, and no figure this produces is stored or posted.
+ * That is why it rounds to the currency's **stored precision** rather than onto
+ * the note it settles to — a report total moved onto the ten-pound note would
+ * be out by up to five pounds a line, and nobody is handing it over.
+ *
+ * Unguarded, as the module's other reads are.
+ */
+export interface Presentation {
+  /**
+   * Shows a figure at today's rate in this branch, at the exact middle of its
+   * buy and sell.
+   *
+   * Refused when there is no rate for today, exactly as trading is: `FX-04`
+   * blocks a currency-sensitive operation rather than quietly using yesterday's,
+   * and a figure on a screen with a wrong rate behind it is the most quietly
+   * wrong thing this system could produce.
+   */
+  present(
+    by: CommandContext,
+    branch: BranchId,
+    amount: Money,
+    into: CurrencyCode,
+  ): Rated<Presented>;
+
+  /**
+   * Shows a document's figure at the document's own rate.
+   *
+   * Never today's, whatever today's is: the document was priced at this rate and
+   * every figure printed on it has to agree with the figures beside it. No
+   * branch and no clock, because the stamp already carries everything.
+   */
+  presentStamped(
+    by: CommandContext,
+    amount: Money,
+    into: CurrencyCode,
+    stamp: RateStamp,
+  ): Rated<Presented>;
+}
+
+export const Presentation = contractKey<Presentation>('fx.presentation');
 
 /** The four rights over a thing that is made, read, revised and taken out of use. */
 export interface StructuralRights {
