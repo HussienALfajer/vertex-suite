@@ -54,6 +54,7 @@
   --vx-map-land: var(--vx-border);
   --vx-map-land-home: var(--vx-border-strong);
   --vx-map-line: var(--vx-text-muted);
+  --vx-dialog-scrim: color-mix(in srgb, var(--vx-neutral-900) 45%, transparent);
 
   /* Accent roles. A screen names a role, never a hue. */
   /* accent */
@@ -203,6 +204,7 @@
   --vx-map-land: var(--vx-border);
   --vx-map-land-home: var(--vx-border-strong);
   --vx-map-line: var(--vx-text-muted);
+  --vx-dialog-scrim: color-mix(in srgb, var(--vx-neutral-900) 45%, transparent);
 
   /* §5.4: one named weight down at body size and above, on a dark ground */
   --vx-weight-regular: 400;
@@ -257,6 +259,7 @@
   --vx-map-land: var(--vx-border);
   --vx-map-land-home: var(--vx-border-strong);
   --vx-map-line: var(--vx-text-muted);
+  --vx-dialog-scrim: color-mix(in srgb, var(--vx-neutral-900) 45%, transparent);
 
   /* §5.4: one named weight down at body size and above, on a dark ground */
   --vx-weight-regular: 400;

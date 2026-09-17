@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 
 /**
  * Where the back office is, and how it gets somewhere else.
@@ -48,9 +48,10 @@ export interface Route {
    * In the address rather than in a component's state, so that a row action on
    * one screen can open another already pointed at the right record, and so
    * that the address bar names what is on screen. Unvalidated here on purpose:
-   * whether this identifier means anything is a question for the store node,
-   * and a screen handed one that does not resolve says so rather than pretending
-   * nothing was asked for.
+   * whether this identifier means anything is a question for the store node.
+   * A screen handed one that does not resolve falls back to the first record it
+   * has and replaces the address with that one, so the address never names a
+   * record that is not on screen.
    */
   readonly subject: string | null;
 }
@@ -117,7 +118,18 @@ export function redirect(href: string): void {
 export function useRoute(): Route {
   const address = useSyncExternalStore(subscribe, addressNow, () => hrefOf(HOME));
   const [pathname = '', search = ''] = address.split('?');
-  return routeOf(pathname, search === '' ? '' : `?${search}`);
+  const route = routeOf(pathname, search === '' ? '' : `?${search}`);
+
+  // A path that names no screen falls back to the home screen, and the address
+  // follows it. It once stayed as typed while the companies screen was shown,
+  // so the address bar named a screen that does not exist.
+  const first = pathname.split('/').find((part) => part !== '');
+  const known = ROUTES.some((one) => one === first);
+  useEffect(() => {
+    if (!known) redirect(hrefOf(HOME));
+  }, [known]);
+
+  return route;
 }
 
 /** Navigates to a route by name, for a control that is not a link. */

@@ -265,10 +265,10 @@ describe('Document numbering series — SYS-02', () => {
     expect(screen.queryByLabelText(catalogue['numbering.documentType'])).toBeNull();
     expect(formatField().value).toBe('{prefix}-{generation}-{year}-{sequence:6}');
 
-    await typeFormat(shop, '{prefix}{generation}-{sequence:3}');
+    await typeFormat(shop, '{prefix}.{generation}/{year}/{sequence:3}');
     await save(shop);
 
-    expect(await screen.findByText('AL11-001')).toBeTruthy();
+    expect(await screen.findByText('AL1.1/2026/001')).toBeTruthy();
   });
 
   it('shows the series of the branch chosen and not of the one next door', async () => {

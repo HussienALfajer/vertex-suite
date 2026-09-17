@@ -138,6 +138,11 @@ describe('<VertexLogo> — §4.5', () => {
     // tagline ends up clipped by its own viewBox.
     expect(text?.getAttribute('lengthAdjust')).toBe('spacing');
     expect(Number(text?.getAttribute('textLength'))).toBeGreaterThan(200);
+
+    // Anchored as the Latin it is. Inherited from a right-to-left page, the
+    // start of the line is its right edge, and the whole tagline was drawn to
+    // the left of the viewBox and clipped away — in a browser, not in this DOM.
+    expect(text?.getAttribute('direction')).toBe('ltr');
   });
 
   it('builds the registered sign from the wordmark own R rather than a second design of one', () => {

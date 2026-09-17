@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { isStandardAction, partsOf, STANDARD_ACTIONS, type PermissionId } from '@vertex/contracts';
 import type { Result } from '@vertex/kernel';
@@ -26,9 +26,10 @@ import type { Assignment, Role, SecRefusal, User } from '@vertex/sec/contract';
 
 import { nameOfPermission } from '../catalogue.js';
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
-import { useNavigateTo, useRoute } from '../routing.js';
+import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
 import type { DeclaredRight, UsersOfRecord } from '../system.js';
 import {
+  ReadState,
   branchNames,
   ListingBar,
   NameDialog,
@@ -128,6 +129,13 @@ export function Roles(): ReactNode {
     () => roles.find((one) => one.id === route.subject) ?? null,
     [roles, route.subject],
   );
+
+  // An address naming a role this shop does not have — an old link, a role of
+  // another shop — was ignored, and the address went on naming it. It is
+  // replaced with the listing, which is what is on screen.
+  useEffect(() => {
+    if (!isLoading && route.subject !== null && opened === null) redirect(hrefOf('roles'));
+  }, [isLoading, route.subject, opened]);
 
   async function command(
     work: (of: UsersOfRecord) => Promise<Result<Role, SecRefusal>>,
@@ -421,7 +429,13 @@ function PermissionsGrid({ role, rights }: PermissionsGridProps): ReactNode {
         }
         const granted = role.rights.includes(id);
         return (
-          <Switch isSelected={granted} onChange={() => void toggle(id, granted)}>
+          <Switch
+            isSelected={granted}
+            // A withdrawn role takes no grant — `SEC` refuses it — so its grid
+            // is read, not edited, until the role is restored.
+            isDisabled={!role.active}
+            onChange={() => void toggle(id, granted)}
+          >
             <span className="sr-only">{nameOfPermission(translator, id)}</span>
           </Switch>
         );
@@ -455,7 +469,12 @@ function PermissionsGrid({ role, rights }: PermissionsGridProps): ReactNode {
           {extra.map((id) => {
             const granted = role.rights.includes(id);
             return (
-              <Switch key={id} isSelected={granted} onChange={() => void toggle(id, granted)}>
+              <Switch
+                key={id}
+                isSelected={granted}
+                isDisabled={!role.active}
+                onChange={() => void toggle(id, granted)}
+              >
                 {nameOfPermission(translator, id)}
               </Switch>
             );
@@ -494,6 +513,7 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
   const activeUsers = useMemo(() => users.filter((one) => one.active), [users]);
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
   const [reach, setReach] = useState<'tenant' | 'branches'>('tenant');
   const [chosenBranches, setChosenBranches] = useState<ReadonlySet<string>>(new Set());
   const [missing, setMissing] = useState({ user: false, branches: false });
@@ -556,8 +576,12 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
   }
 
   async function withdraw(assignment: Assignment): Promise<void> {
+    if (withdrawing !== null) return;
     const person = users.find((one) => one.id === assignment.user);
+    // One at a time, for the reason the person's own dialog gives.
+    setWithdrawing(assignment.user);
     const delivery = await run((of) => of.assignments.withdraw(assignment.user, role.id));
+    setWithdrawing(null);
     const message = messageFor(delivery);
     if (message === null) {
       holders.reload();
@@ -585,11 +609,15 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
       </h3>
       {refused === null ? null : <Banner tone="danger">{refused}</Banner>}
 
-      {(holders.value ?? []).length === 0 ? (
+      {/* As for a person's roles: "nobody holds this role" is a statement,
+          and it is not made about a read that has not answered. */}
+      {holders.value === null ? (
+        <ReadState loaded={holders} />
+      ) : holders.value.length === 0 ? (
         <p className="text-body text-fg-secondary">{translator.format('roles.holders.none')}</p>
       ) : (
         <ul className="flex flex-col gap-[var(--vx-gap-xs)]">
-          {(holders.value ?? []).map((assignment) => {
+          {holders.value.map((assignment) => {
             const person = users.find((one) => one.id === assignment.user);
             return (
               <li
@@ -598,7 +626,7 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
               >
                 <span className="flex flex-col">
                   <span className="font-body-medium">
-                    {person?.name ?? translator.format('permission.unknown')}
+                    {person?.name ?? translator.format('data.unknown')}
                   </span>
                   <span className="text-footnote text-fg-secondary">
                     {assignment.confinement.kind === 'tenant'
@@ -607,6 +635,7 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
                   </span>
                 </span>
                 <Button
+                  isDisabled={withdrawing !== null}
                   onPress={() => {
                     void withdraw(assignment);
                   }}

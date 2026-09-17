@@ -128,7 +128,8 @@ describe('arithmetic', () => {
   });
 });
 
-describe('round — the FX-07 invariants', () => {
+describe('round — the invariants', () => {
+  // What FX-07's residual account rests on, proven for any amount; not FX-07 itself.
   it('value plus residual is exactly the original amount', () => {
     fc.assert(
       fc.property(anyAmount, ([currency, original]) => {
@@ -219,7 +220,7 @@ describe('allocate — the invariants that keep a ledger balanced', () => {
     );
   });
 
-  it('is deterministic — the same inputs always give the same split (PRC-10)', () => {
+  it('is deterministic — the same inputs always give the same split', () => {
     fc.assert(
       fc.property(settledAmountWithWeights, ([currency, total, weights]) => {
         const first = allocate(total, weights, currency).map(toDecimalString);

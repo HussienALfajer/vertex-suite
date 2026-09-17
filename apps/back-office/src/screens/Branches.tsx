@@ -396,9 +396,6 @@ export function Branches(): ReactNode {
         onOpenChange={(isOpen) => {
           if (!isOpen) setPlacing(null);
         }}
-        onSaved={() => {
-          setPlacing(null);
-        }}
       />
 
       <NameDialog

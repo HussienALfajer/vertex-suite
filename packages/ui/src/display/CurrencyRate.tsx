@@ -43,12 +43,26 @@ export function CurrencyRate({
 }: CurrencyRateProps): ReactNode {
   const { formattingLocale } = useVertex();
   const translator = useTranslator();
-  const { text } = formatExact(rate, decimals, formattingLocale);
+  const { text, isRounded } = formatExact(rate, decimals, formattingLocale);
+  // The one of "per one" is a figure like any other, and was once a literal
+  // that stayed Western while the rate beside it was written in Arabic-Indic.
+  const one = formatExact('1', 0, formattingLocale).text;
 
   return (
-    <span className={clsx('inline-flex items-baseline gap-[0.4em] tabular-nums', className)}>
+    <span
+      className={clsx('inline-flex items-baseline gap-[0.4em] tabular-nums', className)}
+      // §12, as `Money` has it: a rate displayed at less precision than it is
+      // carried — which rates always are — is marked, and its full value is kept.
+      {...(isRounded ? { title: `${rate} ${currency} / 1 ${functionalCurrency}` } : {})}
+    >
       <span dir="ltr">
-        {text} {currency} / 1 {functionalCurrency}
+        {text}
+        {isRounded ? (
+          <span aria-hidden="true" className="text-fg-muted">
+            {' ≈'}
+          </span>
+        ) : null}{' '}
+        {currency} / {one} {functionalCurrency}
       </span>
       <DateTime value={asOf} timeZone={timeZone} precision="date" className="text-fg-muted" />
       {isCurrent ? null : (

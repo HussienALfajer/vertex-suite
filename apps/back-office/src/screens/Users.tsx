@@ -29,6 +29,7 @@ import type { Assignment, Role, SecRefusal, User } from '@vertex/sec/contract';
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
 import type { UsersOfRecord } from '../system.js';
 import {
+  ReadState,
   branchNames,
   ListingBar,
   NameDialog,
@@ -474,6 +475,7 @@ function EnrolDialog({ isOpen, onOpenChange, onEnrolled }: EnrolDialogProps): Re
         <TextInput
           label={translator.format('users.new.password')}
           type="password"
+          autoComplete="new-password"
           value={password}
           onChange={(next) => {
             setPassword(next);
@@ -488,6 +490,7 @@ function EnrolDialog({ isOpen, onOpenChange, onEnrolled }: EnrolDialogProps): Re
         <TextInput
           label={translator.format('users.new.password.confirm')}
           type="password"
+          autoComplete="new-password"
           value={confirm}
           onChange={(next) => {
             setConfirm(next);
@@ -593,33 +596,44 @@ function SecurityDialog({ user, onOpenChange }: SecurityDialogProps): ReactNode 
       onOpenChange={onOpenChange}
     >
       <div className="flex flex-col gap-[var(--vx-gap-lg)]">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void resetPassword();
-          }}
-          className="flex flex-col gap-[var(--vx-gap-sm)]"
-        >
-          {resetRefused === null ? null : <Banner tone="danger">{resetRefused}</Banner>}
-          <TextInput
-            label={translator.format('users.security.resetPassword')}
-            type="password"
-            value={password}
-            onChange={(next) => {
-              setPassword(next);
-              setIsMissing(false);
+        {/* A shared sign-in's password is never reset from one shop (`SEC-09`),
+            and `SEC` refuses it every time. The row already knows it is shared,
+            so the screen says why instead of offering a field that can only be
+            refused after somebody has typed a password into it. */}
+        {user?.shared === true ? (
+          <Banner tone="info">{translator.format('refusal.sec.identity-shared')}</Banner>
+        ) : (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void resetPassword();
             }}
-            {...(isMissing
-              ? { errorMessage: translator.format('users.new.password.required') }
-              : {})}
-          />
-          <div>
-            <Button tone="primary" isDisabled={isResetting} onPress={() => void resetPassword()}>
-              {translator.format('users.security.resetPassword.submit')}
-            </Button>
-          </div>
-          <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
-        </form>
+            className="flex flex-col gap-[var(--vx-gap-sm)]"
+          >
+            {resetRefused === null ? null : <Banner tone="danger">{resetRefused}</Banner>}
+            <TextInput
+              label={translator.format('users.security.resetPassword')}
+              type="password"
+              // Somebody else's new password. Without this a password manager
+              // offers the administrator's own saved one for the field.
+              autoComplete="new-password"
+              value={password}
+              onChange={(next) => {
+                setPassword(next);
+                setIsMissing(false);
+              }}
+              {...(isMissing
+                ? { errorMessage: translator.format('users.new.password.required') }
+                : {})}
+            />
+            <div>
+              <Button tone="primary" isDisabled={isResetting} onPress={() => void resetPassword()}>
+                {translator.format('users.security.resetPassword.submit')}
+              </Button>
+            </div>
+            <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
+          </form>
+        )}
 
         <div className="border-line flex flex-col gap-[var(--vx-gap-sm)] border-t pt-[var(--vx-gap-lg)]">
           {signOutRefused === null ? null : <Banner tone="danger">{signOutRefused}</Banner>}
@@ -667,6 +681,7 @@ function ScopeDialog({ user, onOpenChange }: ScopeDialogProps): ReactNode {
   const activeRoles = useMemo(() => roles.filter((one) => one.active), [roles]);
 
   const [roleId, setRoleId] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
   const [reach, setReach] = useState<'tenant' | 'branches'>('tenant');
   const [chosenBranches, setChosenBranches] = useState<ReadonlySet<string>>(new Set());
   const [missing, setMissing] = useState({ role: false, branches: false });
@@ -730,11 +745,16 @@ function ScopeDialog({ user, onOpenChange }: ScopeDialogProps): ReactNode {
   }
 
   async function withdraw(assignment: Assignment): Promise<void> {
-    if (user === null) return;
+    if (user === null || withdrawing !== null) return;
     const target = user;
     const role = roles.find((one) => one.id === assignment.role);
 
+    // One at a time. A second press while the first was still out sent the
+    // command twice, and a success toast arrived beside a refusal saying the
+    // assignment no longer existed.
+    setWithdrawing(assignment.role);
     const delivery = await run((of) => of.assignments.withdraw(target.id, assignment.role));
+    setWithdrawing(null);
     const message = messageFor(delivery);
     if (message === null) {
       assignments.reload();
@@ -769,11 +789,16 @@ function ScopeDialog({ user, onOpenChange }: ScopeDialogProps): ReactNode {
           <p className="text-footnote font-body-medium text-fg-secondary">
             {translator.format('users.scope.current')}
           </p>
-          {(assignments.value ?? []).length === 0 ? (
+          {/* "Holds no role" is a statement about this person, and it was shown
+              while the read was still out and after it had failed — somebody
+              was told a person held nothing and granted a role on that basis. */}
+          {assignments.value === null ? (
+            <ReadState loaded={assignments} />
+          ) : assignments.value.length === 0 ? (
             <p className="text-body text-fg-secondary">{translator.format('users.scope.none')}</p>
           ) : (
             <ul className="flex flex-col gap-[var(--vx-gap-xs)]">
-              {(assignments.value ?? []).map((assignment) => {
+              {assignments.value.map((assignment) => {
                 const role = roles.find((one) => one.id === assignment.role);
                 return (
                   <li
@@ -783,7 +808,7 @@ function ScopeDialog({ user, onOpenChange }: ScopeDialogProps): ReactNode {
                     <span className="flex flex-col">
                       <span className="font-body-medium">
                         {role === undefined
-                          ? translator.format('permission.unknown')
+                          ? translator.format('data.unknown')
                           : roleLabel(translator, role)}
                       </span>
                       <span className="text-footnote text-fg-secondary">
@@ -797,6 +822,7 @@ function ScopeDialog({ user, onOpenChange }: ScopeDialogProps): ReactNode {
                       </span>
                     </span>
                     <Button
+                      isDisabled={withdrawing !== null}
                       onPress={() => {
                         void withdraw(assignment);
                       }}

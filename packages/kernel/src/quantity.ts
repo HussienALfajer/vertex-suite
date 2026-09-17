@@ -21,6 +21,8 @@ export type UnitCode = string;
  */
 export type UnitKind = 'count' | 'weight' | 'volume' | 'length';
 
+const UNIT_KINDS: ReadonlySet<string> = new Set<UnitKind>(['count', 'weight', 'volume', 'length']);
+
 /** A unit of measure (`CAT-08`). Data, like currencies. */
 export interface Unit<U extends UnitCode = UnitCode> {
   readonly code: U;
@@ -52,6 +54,11 @@ export function defineUnit<U extends UnitCode>(unit: Unit<U>): Unit<U> {
   const { code, kind, decimals } = unit;
   if (code.trim() === '') {
     throw new InvalidUnitError('A unit code must not be empty.');
+  }
+  // Units are data (CAT-08) as currencies are, and the rules below branch on the
+  // kind: an unknown one would be treated as a measure and accepted.
+  if (!UNIT_KINDS.has(kind)) {
+    throw new InvalidUnitError(`Unit ${code} measures "${kind}", which is not a kind of unit.`);
   }
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 12) {
     throw new InvalidUnitError(
@@ -145,16 +152,4 @@ export function isZeroQuantity(a: Quantity): boolean {
 /** The exact stored value, with no locale applied. */
 export function quantityToDecimalString(a: Quantity): string {
   return a.amount.toFixed();
-}
-
-/**
- * The value at exactly the unit's stored precision.
- *
- * Used by the display layer: §12 requires a quantity never to be shown above
- * its stored precision, and a weight never to be shown as an integer count —
- * both of which are the same rule read from two directions.
- */
-export function atStoredPrecision(a: Quantity, unit: Unit): string {
-  assertSameUnit(a.unit, unit.code);
-  return a.amount.toFixed(unit.decimals);
 }

@@ -53,6 +53,18 @@ const noAmbientDate = {
 };
 
 /**
+ * The kernel's decimal is configured once, in `decimal.ts`, and every amount in
+ * a process is computed under that configuration. Its `set` and `config`
+ * methods throw at run time; a setting assigned directly is something only the
+ * linter can see.
+ */
+const noDecimalReconfiguration = {
+  selector: "AssignmentExpression[left.type='MemberExpression'][left.object.name='Dec']",
+  message:
+    'Dec is configured once, in @vertex/kernel decimal.ts. Assigning a setting changes how every amount in the process is computed.',
+};
+
+/**
  * `Math.random` is not unique enough to name a sale with, and `randomUUID`
  * produces a v4 — which carries no time, so nothing that relies on identifiers
  * sorting would hold. Identifiers come from the kernel.
@@ -130,6 +142,15 @@ export default tseslint.config(
         },
       ],
       'no-restricted-properties': ['error', ...noFloatOrigin, ...noAmbientTime, ...noWeakRandom],
+      'no-restricted-syntax': ['error', noAmbientDate, noDecimalReconfiguration],
+    },
+  },
+
+  {
+    // The one place the decimal is configured, and where its reconfiguration
+    // methods are withdrawn — which is itself an assignment.
+    files: ['packages/kernel/src/decimal.ts'],
+    rules: {
       'no-restricted-syntax': ['error', noAmbientDate],
     },
   },

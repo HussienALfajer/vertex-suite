@@ -58,17 +58,20 @@ export function Select({
     <AriaSelect
       {...props}
       validationBehavior="aria"
-      className={clsx('flex flex-col gap-[var(--vx-gap-xs)]', className)}
+      className={clsx('group flex flex-col gap-[var(--vx-gap-xs)]', className)}
       {...(errorMessage === undefined ? {} : { isInvalid: true })}
     >
-      <Label className="text-footnote font-body-medium text-fg-secondary">{label}</Label>
+      <Label className="text-footnote font-medium text-fg-secondary">{label}</Label>
       <AriaButton
         className={clsx(
           'h-[var(--vx-h-control)] w-full rounded px-[var(--vx-pad-md)]',
           'flex items-center justify-between gap-[var(--vx-gap-sm)]',
           'bg-fill-field text-fg text-body cursor-pointer text-start',
           'border border-line-strong',
-          'data-[invalid]:border-line-danger',
+          // React Aria marks the select invalid, not the button inside it, so the
+          // danger edge is read from the group. On the button itself it matched
+          // nothing, and an invalid select looked like a valid one.
+          'group-data-[invalid]:border-line-danger',
           'disabled:text-fg-disabled disabled:cursor-not-allowed',
           focusRing,
         )}
@@ -99,7 +102,9 @@ export function Select({
         className={clsx(
           'bg-surface-3 rounded-card border border-line shadow-lg',
           'min-w-(--trigger-width) overflow-auto p-[var(--vx-pad-xs)]',
-          'entering:duration-[var(--vx-dur-base)] entering:ease-out',
+          // §8, over `dur-base` — see `Dialog` for why these are the classes.
+          'transition-opacity duration-[var(--vx-dur-base)] ease-out starting:opacity-0',
+          'data-[exiting]:opacity-0 data-[exiting]:ease-in',
         )}
       >
         {/* policy-exempt: §7.3 — focus stays on the trigger, which carries the

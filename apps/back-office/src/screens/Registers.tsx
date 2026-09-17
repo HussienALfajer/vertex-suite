@@ -29,6 +29,7 @@ import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.
 import type { OrganisationOfRecord } from '../system.js';
 import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
 import {
+  ReadState,
   DeviceIcon,
   ListingBar,
   NameDialog,
@@ -208,6 +209,9 @@ export function Registers(): ReactNode {
         <TableRowActions>
           <TableRowAction
             aria-label={translator.format('registers.device.action')}
+            // A withdrawn till takes no machine — `SYS` refuses it — so it is
+            // not offered, rather than refused after somebody typed an identifier.
+            isDisabled={!register.active}
             onPress={() => {
               setPairing(register);
             }}
@@ -337,6 +341,7 @@ export function Registers(): ReactNode {
         />
       </ListingBar>
 
+      <ReadState loaded={registers} />
       {registers.unreachable ? null : (registers.value ?? []).length === 0 &&
         !registers.isLoading ? (
         <EmptyState

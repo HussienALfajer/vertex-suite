@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { contrastRatio, relativeLuminance } from './contrast.js';
 import { generatePalette, neutralAt } from './generate.js';
+import { BORDERS } from './semantic.js';
 import { ACCENT_ROLES, NEUTRAL_ROLES, ON_ROLE_HEX, type AccentName } from './spec.js';
 
 /**
@@ -177,6 +178,42 @@ describe('accents', () => {
         expect(border, `${name} ${theme}`).toBeLessThan(high);
       }
     }
+  });
+});
+
+describe('control boundaries — §4.6', () => {
+  /** An overlay token composited over an opaque surface, as a browser draws it. */
+  function composite(token: string, surface: string): string {
+    const found = /var\(--vx-neutral-(\d+)\) ([\d.]+)%/.exec(token);
+    if (found === null) throw new Error(`${token} is not a neutral overlay.`);
+    const ink = neutralAt(palette.neutral, Number(found[1]));
+    const share = Number(found[2]) / 100;
+    const channels = (hex: string): number[] =>
+      [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+    const [inkRgb, surfaceRgb] = [channels(ink), channels(surface)];
+    const mixed = inkRgb.map((value, index) =>
+      Math.round(value * share + (surfaceRgb[index] ?? 0) * (1 - share)),
+    );
+    return `#${mixed.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  it('border-strong measures what §14 records while its decision is open', () => {
+    // §4.6 holds control boundaries to 3:1 and names four exceptions, none of
+    // them this. The value was imported with the palette the tenant chose, and
+    // it was never measured: 1.57:1 in light, about 1.8:1 in dark. Raising it
+    // to 45% and 40% clears 3:1 and darkens every field edge in the product, so
+    // it is the tenant's decision rather than this file's (§14, item 4). Until
+    // then the numbers are pinned, so that neither a drift nor a quiet fix goes
+    // unrecorded.
+    const token = BORDERS['border-strong'];
+    if (token === undefined) throw new Error('No border-strong token.');
+    const measured = (theme: 'light' | 'dark'): number => {
+      const surface = neutralAt(palette.neutral, NEUTRAL_ROLES.surface1[theme]);
+      return contrastRatio(composite(token[theme], surface), surface);
+    };
+    expect(measured('light')).toBeCloseTo(1.57, 1);
+    expect(measured('dark')).toBeCloseTo(1.8, 1);
+    expect(measured('light')).toBeLessThan(GRAPHIC_TARGET);
   });
 });
 

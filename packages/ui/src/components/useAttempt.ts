@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * The state a dialog with a save button keeps regardless of what it saves: a
@@ -44,8 +44,18 @@ export function useAttempt(active: unknown, onReset: () => void): Attempt {
   const [isWorking, setIsWorking] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
 
+  // Which subject the dialog is on, and which of them has an attempt in flight.
+  // Refs, because both are read by an attempt that started renders ago: a save
+  // for branch A that resolved after the dialog had been reopened for branch B
+  // cleared B's working flag while B's own save was running, and wrote A's
+  // refusal under B's name.
+  const generation = useRef(0);
+  const running = useRef<number | null>(null);
+
   useEffect(() => {
     if (!active) return;
+    generation.current += 1;
+    running.current = null;
     setIsWorking(false);
     setRefused(null);
     onReset();
@@ -55,12 +65,26 @@ export function useAttempt(active: unknown, onReset: () => void): Attempt {
   }, [active]);
 
   async function attempt(action: () => Promise<string | null>): Promise<void> {
-    if (isWorking) return;
+    // Against the ref rather than the state, which is a render behind: two
+    // clicks inside one render both read `isWorking` as false.
+    if (running.current === generation.current) return;
+    const mine = generation.current;
+    running.current = mine;
     setIsWorking(true);
     setRefused(null);
-    const message = await action();
-    setIsWorking(false);
-    if (message !== null) setRefused(message);
+
+    let message: string | null;
+    try {
+      message = await action();
+    } finally {
+      // Settled whether the action answered or threw. A transport failure that
+      // escaped `action` once left the button disabled for good.
+      if (generation.current === mine) {
+        running.current = null;
+        setIsWorking(false);
+      }
+    }
+    if (generation.current === mine && message !== null) setRefused(message);
   }
 
   return { isWorking, refused, setRefused, attempt };

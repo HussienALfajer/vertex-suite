@@ -51,8 +51,15 @@ export function Dialog({
     <ModalOverlay
       className={clsx(
         'fixed inset-0 z-50 flex items-center justify-center p-[var(--vx-pad-lg)]',
-        'bg-[color-mix(in_srgb,var(--vx-neutral-900)_45%,transparent)]',
-        'entering:duration-[var(--vx-dur-slow)] entering:ease-out',
+        'bg-dialog-scrim',
+        // §8: a dialog enters over `dur-slow` and leaves faster than it came.
+        // `starting:` is the state it is drawn from on its first frame, and
+        // React Aria keeps an exiting overlay mounted until its transition ends.
+        // `entering:` and `exiting:` were written here before, and are not
+        // Tailwind variants at all — they compiled to nothing, and nothing moved.
+        // The durations are tokens, which reduced motion sets to zero.
+        'transition-opacity duration-[var(--vx-dur-slow)] ease-out starting:opacity-0',
+        'data-[exiting]:opacity-0 data-[exiting]:ease-in',
       )}
       {...(isOpen === undefined ? {} : { isOpen })}
       {...(onOpenChange === undefined ? {} : { onOpenChange })}
@@ -74,8 +81,11 @@ export function Dialog({
           confirm button was then unreachable: present, focusable, and off the
           viewport. The body scrolls; nothing else does.
         */}
+        {/* §11.1 moves focus to the first meaningful control, and a form says
+            which one that is with `autoFocus`; the header's close button comes
+            first in the markup and is not it. */}
         {/* policy-exempt: §7.3 — the dialog is a programmatic focus landing
-            point, not a control; focus moves on to the first control inside it. */}
+            point, not a control. */}
         <AriaDialog className="flex min-h-0 flex-col outline-none">
           {({ close }) => (
             <>
@@ -138,8 +148,12 @@ export interface ConfirmationDialogProps {
  * Every destructive action in this product goes through one: `POS-08` requires
  * a void to be authorised and recorded, `STK-09` requires a reason for an
  * adjustment. A dialog that can be dismissed by accident is not a
- * confirmation, so this one is **not** dismissable — it is answered, not
- * escaped.
+ * confirmation, so a click outside it does nothing. `Esc` still closes it,
+ * because §11.1 makes `Esc` close the top overlay everywhere and because here
+ * it is an answer — the same one as Cancel — rather than an accident.
+ *
+ * Focus opens on Cancel: of the two answers, the one that changes nothing is
+ * where a stray `Enter` should land.
  */
 export function ConfirmationDialog({
   title,
@@ -157,7 +171,9 @@ export function ConfirmationDialog({
     <ModalOverlay
       className={clsx(
         'fixed inset-0 z-50 flex items-center justify-center p-[var(--vx-pad-lg)]',
-        'bg-[color-mix(in_srgb,var(--vx-neutral-900)_45%,transparent)]',
+        'bg-dialog-scrim',
+        'transition-opacity duration-[var(--vx-dur-slow)] ease-out starting:opacity-0',
+        'data-[exiting]:opacity-0 data-[exiting]:ease-in',
       )}
       {...(isOpen === undefined ? {} : { isOpen })}
       {...(onOpenChange === undefined ? {} : { onOpenChange })}
@@ -174,7 +190,7 @@ export function ConfirmationDialog({
                 <p className="text-body text-fg-secondary">{message}</p>
               </div>
               <footer className="border-line flex items-center justify-end gap-[var(--vx-gap-sm)] border-t px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]">
-                <Button tone="secondary" onPress={close}>
+                <Button tone="secondary" onPress={close} autoFocus>
                   {translator.format('action.cancel')}
                 </Button>
                 <Button

@@ -1,5 +1,13 @@
 import type { BranchId, CompanyId, LocationId, SeededRole, UserId } from '@vertex/contracts';
-import { newId, orThrow, systemClock, type Id, type Refusal, type Result } from '@vertex/kernel';
+import {
+  newId,
+  orThrow,
+  systemClock,
+  type Clock,
+  type Id,
+  type Refusal,
+  type Result,
+} from '@vertex/kernel';
 import {
   commandContext,
   composeEdition,
@@ -172,14 +180,18 @@ function organisationStandIn(places: Places): ModuleDefinition<MemorySession> {
   });
 }
 
-export function installSec(): Installed {
+/**
+ * `clock` is the one thing a test may choose: a recovery lapses, and a suite
+ * that waited a week to prove it would not be run.
+ */
+export function installSec(options: { readonly clock?: Clock } = {}): Installed {
   const places: Places = { branches: new Map(), locations: new Map() };
   const store = createMemoryStore();
   const tenant = newId<'tenant'>();
   const otherTenant = newId<'tenant'>();
   const company = newId<'company'>();
 
-  return bring(places, store, tenant, otherTenant, company, []);
+  return bring(places, store, tenant, otherTenant, company, [], options.clock ?? systemClock);
 }
 
 /** One edition, brought up over whatever this shop already has in its store. */
@@ -190,6 +202,7 @@ function bring(
   otherTenant: Id<'tenant'>,
   company: CompanyId,
   bought: readonly ModuleDefinition<MemorySession>[],
+  clock: Clock,
 ): Installed {
   const catalogue = [organisationStandIn(places), secModule<MemorySession>(), ...bought];
   const plan = orThrow(
@@ -205,7 +218,7 @@ function bring(
   const transactor = createTransactor({
     driver: store.driver,
     bus,
-    clock: systemClock,
+    clock,
     onEffectFailure: (failure) => {
       throw new Error(`An effect failed: ${String(failure.cause)}`);
     },
@@ -219,7 +232,7 @@ function bring(
     plan,
     bus,
     transactor,
-    clock: systemClock,
+    clock,
     authorisedBy: Authorisation,
   });
 
@@ -322,7 +335,7 @@ function bring(
           seededFor: seededFor ?? [],
         })),
       });
-      return bring(places, store, tenant, otherTenant, company, [bought]);
+      return bring(places, store, tenant, otherTenant, company, [bought], clock);
     },
   };
 }

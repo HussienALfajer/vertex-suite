@@ -94,6 +94,7 @@ describe('Stock locations — SYS-09', () => {
     const gated: SystemOfRecord = {
       signIn: real.signIn.bind(real),
       changeOwnPassword: real.changeOwnPassword.bind(real),
+      signOut: real.signOut.bind(real),
       organisation: {
         ...real.organisation,
         locations: {

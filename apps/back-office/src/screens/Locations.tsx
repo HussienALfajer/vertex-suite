@@ -35,6 +35,7 @@ import type { OrganisationOfRecord } from '../system.js';
 import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
 import { PlaceDialog, PlaceFields, PlacesMap } from './place.js';
 import {
+  ReadState,
   ListingBar,
   NameDialog,
   PlaceIcon,
@@ -331,6 +332,7 @@ export function Locations(): ReactNode {
         />
       </ListingBar>
 
+      <ReadState loaded={locations} />
       {locations.unreachable ? null : (locations.value ?? []).length === 0 &&
         !locations.isLoading ? (
         <EmptyState
@@ -408,10 +410,7 @@ export function Locations(): ReactNode {
         onOpenChange={(isOpen) => {
           if (!isOpen) setPlacing(null);
         }}
-        onSaved={() => {
-          setPlacing(null);
-          locations.reload();
-        }}
+        onSaved={locations.reload}
       />
 
       <NameDialog

@@ -1,13 +1,6 @@
 export { Dec, isDecimalString, type Decimal, type Rounding } from './decimal.js';
 
-export {
-  defineCurrency,
-  incrementOf,
-  roundingOf,
-  type Currency,
-  type CurrencyCode,
-  type RoundingMode,
-} from './currency.js';
+export { defineCurrency, type Currency, type CurrencyCode, type RoundingMode } from './currency.js';
 
 export {
   absolute,
@@ -34,7 +27,6 @@ export {
 
 export {
   addQuantity,
-  atStoredPrecision,
   compareQuantity,
   defineUnit,
   InvalidUnitError,

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { catalogue } from '../src/catalogue.js';
 import { gotoThemed } from './theme.js';
 
 /**
@@ -58,17 +59,24 @@ test('every control on the screen is reachable by Tab, and shows focus when it i
     (document.activeElement as HTMLElement | null)?.blur();
   });
 
-  // One pass, five stops: the skip link, the theme control, the two fields and
-  // the submit.
+  // Walked until focus comes round to a stop it has already visited, so the
+  // walk is as long as the screen and not a number somebody counted once. It
+  // counted five, and when the password field gained its reveal control the
+  // fifth Tab no longer wrapped round to the skip link — the test failed for a
+  // control it should have been asking for, and would have passed without one.
   const reachable = new Set<string>();
-  for (let step = 0; step < 5; step += 1) {
+  const visited: string[] = [];
+  for (let step = 0; step < 20; step += 1) {
     await page.keyboard.press('Tab');
     const focused = await page.evaluate(() => {
       const element = document.activeElement;
       if (element === null || element === document.body) return null;
       const style = globalThis.getComputedStyle(element);
+      const labelled =
+        element instanceof HTMLInputElement ? element.labels?.[0]?.textContent : null;
       return {
         tag: element.tagName.toLowerCase(),
+        name: (element.getAttribute('aria-label') ?? labelled ?? element.textContent).trim(),
         // §7.3 asks for focus to be **visible**, not for one particular way of
         // drawing it. The controls carry the two-layer ring as a box-shadow; the
         // skip link is drawn by coming out of `sr-only` and keeps the browser's
@@ -79,16 +87,30 @@ test('every control on the screen is reachable by Tab, and shows focus when it i
         outline: style.outlineStyle,
       };
     });
-    if (focused !== null) {
-      const visible = focused.ring !== 'none' || focused.outline !== 'none';
-      expect(visible, `focus on <${focused.tag}> is not visible at all`).toBe(true);
-      reachable.add(focused.tag);
-    }
+    if (focused === null) continue;
+    if (visited.includes(focused.name)) break;
+    visited.push(focused.name);
+    const visible = focused.ring !== 'none' || focused.outline !== 'none';
+    expect(visible, `focus on "${focused.name}" is not visible at all`).toBe(true);
+    reachable.add(focused.tag);
   }
 
-  // Every kind of control on the screen is on the path: the skip link, the
-  // fields and the submit. A control reachable by pointer and not by keyboard
-  // is a defect rather than a preference (§11.1).
+  // Every control on the screen, by name: a set of tag kinds passed with the
+  // submit or the theme control unreachable, since each is one button of two.
+  // A control reachable by pointer and not by keyboard is a defect rather than
+  // a preference (§11.1) — the password's reveal control included.
+  for (const name of [
+    catalogue['a11y.skipToContent'],
+    catalogue['signIn.handle'],
+    catalogue['signIn.password'],
+    catalogue['password.show'],
+    catalogue['signIn.submit'],
+  ]) {
+    expect(visited, name).toContain(name);
+  }
+  // The theme control names its current state, so it is found by the words before it.
+  const themeControl = catalogue['theme.switch'].split('{')[0]?.trim() ?? '';
+  expect(visited.some((name) => name.startsWith(themeControl))).toBe(true);
   expect([...reachable].sort()).toEqual(['a', 'button', 'input']);
 });
 

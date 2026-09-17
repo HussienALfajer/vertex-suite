@@ -99,6 +99,13 @@ describe('Business profile — SYS-05', () => {
 
     expect(await sys.read.profile(sys.byOther, company.id)).toBeNull();
     const refused = await sys.admin.profile.revise(sys.byOther, company.id, { phone: '0' });
-    expect(refused.ok).toBe(false);
+    expect(refused.ok ? null : refused.error.code).toBe('sys.company-not-found');
+  });
+
+  it('refuses to blank the name printed on every receipt', async () => {
+    const { company } = await withProfile();
+    const refused = await sys.admin.profile.revise(sys.by, company.id, { name: '   ' });
+    expect(refused.ok ? null : refused.error.code).toBe('sys.name-required');
+    expect((await sys.read.profile(sys.by, company.id))?.name).not.toBe('   ');
   });
 });

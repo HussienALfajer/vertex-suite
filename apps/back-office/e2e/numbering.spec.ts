@@ -136,7 +136,11 @@ test('opens a till, names the machine at it, and shows the number it will print'
 
   await dialog.getByRole('button', { name: 'حفظ الصيغة' }).click();
   await expect(page.getByRole('rowheader', { name: 'pos.sale' })).toBeVisible();
-  await expect(page.getByText('AL1-1-2026-000001')).toBeVisible();
+  // In the table, by name: the dialog that showed the specimen fades out over
+  // §8's `dur-slow` and is still in the document for that long.
+  await expect(
+    page.getByRole('grid', { name: 'سلاسل الترقيم' }).getByText('AL1-1-2026-000001'),
+  ).toBeVisible();
 
   // And it is painted in the order it was written. In an RTL paragraph the
   // bidirectional algorithm resolves a bracket pair to the paragraph's

@@ -64,9 +64,10 @@ export const TEXT: Readonly<Record<string, ThemedToken>> = {
 };
 
 // The dark-theme percentages here used to run heavier than the light-theme
-// ones (12% and 22%, against 10% and 20%); both rows are now exactly double
-// the light-theme figure, matching the source palette's own symmetric alpha
-// scale. See `NEUTRAL_RAMP_HEX`.
+// ones (12% and 22%, against 10% and 20%); both themes now carry the same
+// figure, matching the source palette's own symmetric alpha scale. See
+// `NEUTRAL_RAMP_HEX`. What `border-strong` measures as a control's edge is
+// an open decision (`design-system.md` §14, item 4).
 export const BORDERS: Readonly<Record<string, ThemedToken>> = {
   border: { light: overlay(900, 10), dark: overlay(50, 10) },
   'border-strong': { light: overlay(900, 20), dark: overlay(50, 20) },
@@ -121,7 +122,7 @@ export const NEUTRAL_FILLS: Readonly<Record<string, ThemedToken>> = {
  * `surface-2`, the same white as the knob, and the knob disappears.
  */
 export const COMPONENT_TOKENS: Readonly<Record<string, ThemedToken>> = {
-  // `border-strong` as a fill: an overlay at 20% light and 22% dark is exactly
+  // `border-strong` as a fill: an overlay at 20% in both themes is exactly
   // the recessed grey a track wants, and it is already semantic — so the track
   // follows a theme change without a value of its own.
   'switch-track': { light: 'var(--vx-border-strong)', dark: 'var(--vx-border-strong)' },
@@ -151,6 +152,13 @@ export const COMPONENT_TOKENS: Readonly<Record<string, ThemedToken>> = {
   // A line, not a fill: `text-muted` is the quietest ink the palette measures,
   // which is what a coastline should be beside a marker that has to be seen.
   'map-line': { light: 'var(--vx-text-muted)', dark: 'var(--vx-text-muted)' },
+
+  /**
+   * What a modal dims the page with. Both dialogs once wrote the mixture out
+   * against `--vx-neutral-900` by name, which is a primitive in a component —
+   * the thing §3.1 says no component may reference.
+   */
+  'dialog-scrim': { light: overlay(900, 45), dark: overlay(900, 45) },
 };
 
 /**

@@ -125,8 +125,14 @@ export function emitTailwind(): string {
     push(`chart-${String(index + 1)}`, `chart-${String(index + 1)}`);
   });
 
+  // A size and the line height that goes with it travel together, which is
+  // what Tailwind's `--text-*--line-height` companion is for: `text-title` then
+  // sets both. Emitted only as `--leading-*`, the scale's line heights reached
+  // no utility anybody wrote, and every element inherited the body's — a 26px
+  // Arabic page title on a 22px line, wrapped lines overlapping (§5.2).
   const type = Object.keys(TYPE_SCALE).flatMap((role) => [
     `  --text-${role}: var(--vx-font-size-${role});`,
+    `  --text-${role}--line-height: var(--vx-line-height-${role});`,
     `  --leading-${role}: var(--vx-line-height-${role});`,
   ]);
 

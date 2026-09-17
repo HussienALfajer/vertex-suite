@@ -7,8 +7,10 @@
  * copy of itself — which is the same failure the checks built on top of it
  * exist to catch.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { filesUnder, posixPath, workspacePackages } from './workspace.mjs';
 
 const ROOT = process.cwd();
 
@@ -82,12 +84,20 @@ function expand(module, numbers, onProblem) {
  * disagreement found on the way. The disagreements matter as much as the data:
  * two tables in `modules.md` state the same mapping, and a specification whose
  * halves have drifted is worse than one that says nothing.
+ *
+ * The sources default to the documents on disk and can be handed in instead,
+ * which is how `spec.test.mjs` holds the parser to its word. This parser once
+ * lost three features without a sound, and a parser whose only test is the real
+ * specification can notice that only by somebody counting.
+ *
+ * @param {{ features?: string, modules?: string, delivered?: readonly string[] }} [sources]
  */
-export function readSpec() {
+export function readSpec(sources = {}) {
   const problems = [];
   const problem = (where, message) => problems.push({ where, message });
 
-  const featureSource = readFileSync(join(ROOT, 'docs/core-features.md'), 'utf8');
+  const featureSource =
+    sources.features ?? readFileSync(join(ROOT, 'docs/core-features.md'), 'utf8');
   const featureLines = featureSource.split('\n');
   const features = new Map();
 
@@ -117,7 +127,7 @@ export function readSpec() {
     features.set(id, { id, title, description: body.join(' '), acceptance });
   });
 
-  const moduleSource = readFileSync(join(ROOT, 'docs/modules.md'), 'utf8');
+  const moduleSource = sources.modules ?? readFileSync(join(ROOT, 'docs/modules.md'), 'utf8');
 
   // §7: the build order. Order of appearance is the order of work.
   const units = new Map();
@@ -194,7 +204,41 @@ export function readSpec() {
     }
   }
 
-  for (const unit of DELIVERED) {
+  // The counts the prose states, against the features actually specified. Both
+  // documents say how many features there are, and §3 says how many each module
+  // has; those figures were once written as 182 in three places and 183 in two,
+  // and nothing could notice, because nothing read them.
+  const perModule = new Map();
+  for (const id of features.keys()) {
+    const module = id.slice(0, id.indexOf('-'));
+    perModule.set(module, (perModule.get(module) ?? 0) + 1);
+  }
+  const stated = [
+    ['docs/core-features.md', featureSource, /^(\d+) features across/m],
+    ['docs/modules.md', moduleSource, /^The (\d+) features of/m],
+    ['docs/modules.md §8', coverage, /^Every one of the (\d+) features/m],
+  ];
+  for (const [where, source, pattern] of stated) {
+    const count = pattern.exec(source)?.[1];
+    if (count !== undefined && Number(count) !== features.size) {
+      problem(where, `states ${count} features; ${String(features.size)} are specified.`);
+    }
+  }
+  for (const line of moduleSource.split('\n')) {
+    // §3: | `SYS` | System foundations | **core** | Owns | Depends on | 14 |
+    const row = /^\|\s*`([A-Z]{2,3})`\s*\|.*\|\s*(\d+)\s*\|\s*$/.exec(line);
+    if (row === null || !MODULES.includes(row[1])) continue;
+    const [, module, count] = row;
+    const actual = perModule.get(module) ?? 0;
+    if (Number(count) !== actual) {
+      problem(
+        'docs/modules.md §3',
+        `${module} states ${count} features; ${String(actual)} are specified.`,
+      );
+    }
+  }
+
+  for (const unit of sources.delivered ?? DELIVERED) {
     if (!units.has(unit)) {
       problem('tools/spec.mjs', `DELIVERED names ${unit}, which modules.md §7 does not.`);
     }
@@ -203,53 +247,62 @@ export function readSpec() {
   return { features, units, owner, problems };
 }
 
-const SCANNED = ['packages', 'apps'];
-const SKIP = new Set(['node_modules', 'dist', '.turbo', 'coverage', 'test-results']);
-
-function* testFiles(dir) {
-  let entries;
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (SKIP.has(entry)) continue;
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      yield* testFiles(full);
-    } else if (/\.(test|spec)\.tsx?$/.test(entry)) {
-      yield full;
-    }
-  }
-}
+/**
+ * Modifiers under which a named test is evidence of nothing.
+ *
+ * `check:coverage` runs after the suites so that "proven" means a test that
+ * passed. A skipped test did not run, a `todo` has no body, and `fails` is green
+ * precisely when its assertions do not hold — each of them passes the run, and
+ * none of them is an assertion that the feature behaves as specified.
+ */
+const NOT_EVIDENCE = new Set(['skip', 'todo', 'fails']);
 
 /**
- * Every feature identifier that appears in the **name** of a test.
+ * Every feature identifier that appears in the **name** of a test, across a set
+ * of test files.
  *
  * The name, and not the file: a comment mentioning a feature explains why the
  * code is shaped as it is, which is a different and much lesser claim than
  * "this feature behaves as specified". Only an assertion that fails when the
  * feature breaks may count as proof of it.
+ *
+ * @param {readonly { file: string, source: string }[]} files
  */
-export function readProofs() {
+export function proofsIn(files) {
   const proofs = new Map();
-  const named = /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])((?:\.|(?!\1)[\s\S])*?)\1/g;
+  // The name runs to the closing quote, stepping over an escaped one: a name
+  // like 'the tenant\'s own term' is one name, not a name that ends at "tenant".
+  const named = /\b(?:it|test|describe)((?:\.\w+)*)\s*\(\s*(['"`])((?:\\[\s\S]|(?!\2)[^\\])*)\2/g;
 
-  for (const dir of SCANNED) {
-    for (const full of testFiles(join(ROOT, dir))) {
-      const file = relative(ROOT, full).split(sep).join('/');
-      const source = readFileSync(full, 'utf8');
+  for (const { file, source } of files) {
+    for (const match of source.matchAll(named)) {
+      const modifiers = match[1].split('.').filter((one) => one !== '');
+      if (modifiers.some((one) => NOT_EVIDENCE.has(one))) continue;
 
-      for (const match of source.matchAll(named)) {
-        const name = match[2];
-        const line = source.slice(0, match.index).split('\n').length;
-        for (const id of featureIdsIn(name)) {
-          proofs.set(id, [...(proofs.get(id) ?? []), { file, line, name }]);
-        }
+      const name = match[3];
+      const line = source.slice(0, match.index).split('\n').length;
+      for (const id of featureIdsIn(name)) {
+        proofs.set(id, [...(proofs.get(id) ?? []), { file, line, name }]);
       }
     }
   }
 
   return proofs;
+}
+
+/**
+ * Every proof in the workspace's own tests — every package the workspace
+ * declares, read from the same place the other checks read it, so a package
+ * added tomorrow has its tests counted without anybody remembering to.
+ */
+export function readProofs() {
+  const files = [];
+  for (const pkg of workspacePackages()) {
+    for (const full of filesUnder(join(ROOT, pkg.dir), (name) =>
+      /\.(test|spec)\.tsx?$/.test(name),
+    )) {
+      files.push({ file: posixPath(full), source: readFileSync(full, 'utf8') });
+    }
+  }
+  return proofsIn(files);
 }

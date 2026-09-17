@@ -7,6 +7,8 @@ import { refuse } from '@vertex/kernel';
 import { App } from './App.js';
 import { catalogue } from './catalogue.js';
 import { developmentSystem } from './dev-system.js';
+import { HOME, hrefOf } from './routing.js';
+import { enterTheShop } from './screens.fixture.js';
 import type { SystemOfRecord } from './system.js';
 
 afterEach(cleanup);
@@ -33,6 +35,7 @@ function systemThatAnswers(signIn: SystemOfRecord['signIn']): SystemOfRecord {
   return {
     signIn,
     changeOwnPassword: real.changeOwnPassword.bind(real),
+    signOut: real.signOut.bind(real),
     organisation: real.organisation,
     users: real.users,
   };
@@ -88,16 +91,17 @@ describe('Sign-in — SEC-09', () => {
   });
 
   it('renders a refusal the catalogue has no words for rather than a raw code', async () => {
-    // A real refusal `SEC` can return and this screen has never been given a
-    // sentence for — which is the ordinary way the two drift, since the domain
-    // grows and a catalogue lags. A screen that printed `sec.identity-not-found`
-    // at somebody would be showing them a symbol from a program they cannot
-    // read.
-    open(systemThatAnswers(() => Promise.resolve(refuse('sec.identity-not-found'))));
+    // A refusal `SEC` added after this catalogue was written — the ordinary
+    // way the two drift, since the domain grows and a catalogue lags. A screen
+    // that printed the code at somebody would be showing them a symbol from a
+    // program they cannot read. Named here by cast, because every refusal the
+    // contract knows today has its sentence.
+    const unworded = 'sec.added-after-this-catalogue' as 'sec.identity-not-found';
+    open(systemThatAnswers(() => Promise.resolve(refuse(unworded))));
     await signIn('owner', 'till-morning-1');
 
     expect(screen.getByRole('alert').textContent).toContain(catalogue['refusal.unknown']);
-    expect(screen.getByRole('alert').textContent).not.toContain('sec.identity-not-found');
+    expect(screen.getByRole('alert').textContent).not.toContain(unworded);
   });
 
   it('says so rather than failing silently when the store node cannot be reached', async () => {
@@ -175,5 +179,21 @@ describe('The sign-in screen is operable and readable — SYS-01', () => {
     open();
     expect(globalThis.localStorage.length).toBe(0);
     expect(globalThis.sessionStorage.length).toBe(0);
+  });
+});
+
+describe('Signing out — SEC-09', () => {
+  it('ends the session on the port and does not leave the next person on the last one’s record', async () => {
+    const system = developmentSystem({ people: PEOPLE });
+    const shop = await enterTheShop(system);
+    await shop.person.click(screen.getByRole('link', { name: catalogue['nav.users'] }));
+    expect(globalThis.location.pathname).not.toBe(hrefOf(HOME));
+
+    await shop.person.click(screen.getByRole('button', { name: catalogue['shell.signOut'] }));
+    await screen.findByRole('button', { name: catalogue['signIn.submit'] });
+
+    // The port answers for nobody now, as a store node's session would.
+    expect(() => system.organisation.companies.list()).toThrow();
+    expect(globalThis.location.pathname + globalThis.location.search).toBe(hrefOf(HOME));
   });
 });

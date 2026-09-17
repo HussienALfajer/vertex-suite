@@ -108,6 +108,7 @@ export function ChangePasswordDialog({
         <TextInput
           label={translator.format('account.changePassword.current')}
           type="password"
+          autoComplete="current-password"
           value={current}
           onChange={(value) => {
             setCurrent(value);
@@ -122,6 +123,7 @@ export function ChangePasswordDialog({
         <TextInput
           label={translator.format('account.changePassword.next')}
           type="password"
+          autoComplete="new-password"
           value={next}
           onChange={(value) => {
             setNext(value);
@@ -136,6 +138,7 @@ export function ChangePasswordDialog({
         <TextInput
           label={translator.format('account.changePassword.confirm')}
           type="password"
+          autoComplete="new-password"
           value={confirm}
           onChange={(value) => {
             setConfirm(value);

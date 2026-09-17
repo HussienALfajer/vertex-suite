@@ -1,7 +1,7 @@
 import { newId, systemClock } from '@vertex/kernel';
 import { describe, expect, it } from 'vitest';
 
-import { commandContext, type CommandContext } from './context.js';
+import { systemContext, type CommandContext } from './context.js';
 import { createEventBus } from './events.js';
 import { MigrationError } from './errors.js';
 import { memoryJournal, runMigrations } from './migrations.js';
@@ -35,7 +35,7 @@ function store(): {
         throw new Error('a migration defers nothing');
       },
     }),
-    context: commandContext({ tenant: newId<'tenant'>() }),
+    context: systemContext(newId<'tenant'>()),
   };
 }
 
@@ -108,6 +108,49 @@ describe('runMigrations', () => {
     expect(memory.committed().has('table:tenant')).toBe(true);
     expect(memory.committed().has('table:role')).toBe(false);
     expect([...memory.committed().keys()].some((key) => key.includes('sec.0002-role'))).toBe(false);
+  });
+
+  it('refuses a plan that no longer names a migration the store has applied', async () => {
+    // The journal cannot tell a renamed migration from a new one, so the rename
+    // would run it a second time against live data.
+    const { store: memory, transactor, context } = store();
+    const journal = memoryJournal();
+    await runMigrations({ plan, transactor, context, journal });
+
+    const renamed: readonly MigrationDeclaration<MemorySession>[] = [
+      { ...plan[0]!, id: 'sys.0001-tenants' },
+      plan[1]!,
+    ];
+
+    await expect(runMigrations({ plan: renamed, transactor, context, journal })).rejects.toThrow(
+      /sys\.0001-tenant/u,
+    );
+    expect(memory.committed().has('platform.migration.sys.0001-tenants')).toBe(false);
+  });
+
+  it('refuses to run a migration after one that follows it has already run', async () => {
+    const { transactor, context } = store();
+    const journal = memoryJournal();
+    const later: MigrationDeclaration<MemorySession> = {
+      id: 'sec.0003-grant',
+      target: 'both',
+      up: () => Promise.resolve(),
+    };
+    await runMigrations({ plan: [plan[1]!, later], transactor, context, journal });
+
+    const inserted: MigrationDeclaration<MemorySession> = { ...later, id: 'sec.0002-role' };
+    await expect(
+      runMigrations({ plan: [plan[1]!, inserted, later], transactor, context, journal }),
+    ).rejects.toThrow(MigrationError);
+  });
+
+  it('says nothing about the record of a module this edition no longer ships', async () => {
+    const { transactor, context } = store();
+    const journal = memoryJournal();
+    await runMigrations({ plan, transactor, context, journal });
+
+    const withoutSec = await runMigrations({ plan: [plan[0]!], transactor, context, journal });
+    expect(withoutSec.alreadyApplied).toEqual(['sys.0001-tenant']);
   });
 
   it('refuses a plan that names one migration twice', async () => {

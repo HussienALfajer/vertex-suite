@@ -43,7 +43,9 @@ export interface RecordSession {
 }
 
 /** Where stock sits. A branch has several, and they behave differently in `STK`. */
-export type LocationKind = 'shop-floor' | 'store-room' | 'vehicle';
+export const LOCATION_KINDS = ['shop-floor', 'store-room', 'vehicle'] as const;
+
+export type LocationKind = (typeof LOCATION_KINDS)[number];
 
 /**
  * A point on the Earth, as two exact decimal strings of degrees (`SYS-14`).
@@ -189,9 +191,18 @@ export interface Listing {
 /**
  * The read side, which is what other modules use.
  *
- * Reads are asynchronous and take a context for the same two reasons: the store
- * is reached through a transaction, and `SEC-04` will scope a user's sight to
- * particular branches — which is answerable only if the reader is known.
+ * Reads are asynchronous and take a context because the store is reached
+ * through a transaction, and a transaction knows who opened it.
+ *
+ * They are **not** guarded here, and that is where the line between a module and
+ * a person is drawn. These reads are what other modules build on: a sale moving
+ * stock out of a location reads that location under the cashier's context, and
+ * a cashier holds no right to view locations. Guarding module-to-module reads by
+ * the person who started the command would break every such command. What a
+ * *person* may see — `SEC-02`'s view rights, `SEC-04`'s branches — is decided
+ * where a person's request enters the system of record: the store node's own
+ * interface, `U07`, using the view rights declared below. The back office's
+ * development stand-in has no such gate, and does not ship.
  */
 export interface Organisation {
   company(by: CommandContext, id: CompanyId): Promise<Company | null>;
@@ -248,6 +259,8 @@ export type OrganisationRefusalCode =
    * somewhere it was, which is worse than having no answer at all.
    */
   | 'sys.location-kind-has-no-place'
+  /** A stock location of a kind this module does not know. */
+  | 'sys.location-kind-unknown'
   /**
    * Two of anything under one name, in the one place a person has to tell them
    * apart. A dropdown of three branches called "الفرع الرئيسي" is a stock
@@ -499,12 +512,29 @@ export type NumberingRefusalCode =
   | 'sys.series-format-invalid'
   | 'sys.series-format-must-carry-register'
   | 'sys.series-format-carries-absent-register'
+  /**
+   * A series is counted per fiscal year, so a format without the year prints
+   * the same numbers again every year under one series.
+   */
+  | 'sys.series-format-must-carry-year'
+  /**
+   * Two variable parts with nothing between them read as one: till `T1`'s 23rd
+   * number and till `T12`'s 3rd both print `T123`.
+   */
+  | 'sys.series-format-fields-adjacent'
+  /**
+   * A register series is numbered only by the machine standing at the till. A
+   * machine that has been replaced — set aside, not dead — counts under the
+   * generation it can see, from one, exactly as the replacement does.
+   */
+  | 'sys.register-held-elsewhere'
   | 'sys.register-not-found'
   | 'sys.register-inactive'
   | 'sys.register-has-no-device'
   | 'sys.register-outside-branch'
   | 'sys.branch-not-found'
   | 'sys.branch-inactive'
+  | 'sys.company-inactive'
   /**
    * Revising a format is a right (`SYS_PERMISSIONS.numberingSeries.edit`);
    * taking the next number is not, and never reaches this refusal — a document

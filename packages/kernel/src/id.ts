@@ -68,7 +68,10 @@ const RAND_B_MASK = (1n << 62n) - 1n;
 declare const crypto: { getRandomValues(array: Uint8Array): Uint8Array } | undefined;
 
 function systemRandomBytes(count: number): Uint8Array {
-  if (crypto === undefined) {
+  // `typeof`, not a comparison: where the global does not exist at all, reading
+  // it throws a ReferenceError, and the refusal below would never be the one
+  // anybody saw.
+  if (typeof crypto === 'undefined') {
     throw new EntropyUnavailableError(
       'No cryptographic random source is available, so no identifier can be issued. ' +
         'Two devices seeded alike would file two different sales under one number.',
@@ -127,6 +130,16 @@ export function createIdGenerator(options: IdGeneratorOptions = {}): IdGenerator
     next<E extends string = string>(): Id<E> {
       const observed = clock.now();
 
+      // Checked against the clock rather than against the last millisecond
+      // issued. That one starts at zero and never falls, so a clock reading
+      // before 1970 slid underneath it and issued identifiers stamped 1970
+      // without a word.
+      if (observed < 0 || observed > MAX_TIMESTAMP) {
+        throw new InvalidIdError(
+          `The clock reads ${String(observed)}, which a UUIDv7 timestamp cannot carry.`,
+        );
+      }
+
       if (observed > issuedAt) {
         issuedAt = observed;
         counter = seedCounter();
@@ -143,9 +156,11 @@ export function createIdGenerator(options: IdGeneratorOptions = {}): IdGenerator
         }
       }
 
-      if (issuedAt < 0 || issuedAt > MAX_TIMESTAMP) {
+      // Borrowing the next millisecond can carry past the last one a timestamp
+      // holds even when the clock itself did not.
+      if (issuedAt > MAX_TIMESTAMP) {
         throw new InvalidIdError(
-          `The clock reads ${String(issuedAt)}, which a UUIDv7 timestamp cannot carry.`,
+          `The generator has reached ${String(issuedAt)}, which a UUIDv7 timestamp cannot carry.`,
         );
       }
 

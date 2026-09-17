@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MissingMessageError, Translator } from './translator.js';
+import { formattingLocale, MissingMessageError, Translator } from './translator.js';
 
 const catalogue = {
   'item.count':
@@ -41,7 +41,8 @@ describe('Translator', () => {
     expect(arabic().format('item.title')).toBe('صنف');
   });
 
-  it('lets a tenant rename a concept without touching a message — SYS-08', () => {
+  it('lets a tenant rename a concept without touching a message', () => {
+    // The mechanism SYS-08 will be built on; the feature is U27's to prove.
     const t = arabic({ item: 'مادة' });
     expect(t.format('item.title')).toBe('مادة');
     // And the renaming reaches inside a plural, not just a bare label.
@@ -75,5 +76,39 @@ describe('Translator', () => {
     // Arabic-Indic digits are a per-tenant *display* setting and must never
     // affect a stored value or a parse.
     expect(arabic().format('item.count', { count: 100 })).toContain('100');
+  });
+});
+
+describe('Translator — what a plain object would answer by accident', () => {
+  it('answers only for its own keys and terms, not for what every object inherits', () => {
+    const t = arabic();
+    expect(t.has('toString')).toBe(false);
+    expect(() => t.format('constructor')).toThrow(MissingMessageError);
+
+    const naming = new Translator({ locale: 'ar', catalogue: { odd: '{term:constructor}' } });
+    expect(naming.format('odd')).toBe('constructor');
+  });
+});
+
+describe('Translator — §5.5 numerals', () => {
+  const counted = { 'items.count': '{count, number} صنف' };
+
+  it('writes Western digits by default even where the locale writes Arabic-Indic ones', () => {
+    // `ar-SY` is the market this product is sold in, and its ICU default is
+    // Arabic-Indic — a message printed `١٢` beside money printed `12`.
+    const t = new Translator({ locale: 'ar-SY', catalogue: counted });
+    expect(t.format('items.count', { count: 1234 })).toBe('1,234 صنف');
+  });
+
+  it('writes Arabic-Indic digits when the tenant chose them, and changes nothing else', () => {
+    const t = new Translator({ locale: 'ar', catalogue: counted }).withNumerals('arab');
+    expect(t.numerals).toBe('arab');
+    expect(t.format('items.count', { count: 12 })).toBe('١٢ صنف');
+  });
+
+  it('builds a formatting locale for a tag that already carries an extension', () => {
+    // Appending `-u-nu-latn` to `ar-u-ca-gregory` makes a tag Intl refuses.
+    expect(formattingLocale('ar-u-ca-gregory', 'latn')).toBe('ar-u-ca-gregory-nu-latn');
+    expect(() => new Intl.NumberFormat(formattingLocale('ar-u-ca-gregory', 'arab'))).not.toThrow();
   });
 });

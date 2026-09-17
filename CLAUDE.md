@@ -16,7 +16,7 @@ says a slice is already in progress on a branch, `pnpm test` shows what is left 
 
 The specification is three documents and nothing else:
 
-- `docs/core-features.md` — the 182 features, each with a permanent identifier
+- `docs/core-features.md` — the 183 features, each with a permanent identifier
 - `docs/modules.md` — modules, what each owns, what may depend on what, and the build order
 - `docs/design-system.md` — the interface layer
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, type ReactNode } from 'react';
 import { I18nProvider, RouterProvider } from 'react-aria-components';
 
 import { directionOf, type Translator } from '@vertex/i18n';
@@ -64,18 +64,26 @@ export function VertexProvider({
   root,
   children,
 }: VertexProviderProps): ReactNode {
+  const formatting = formattingLocaleFor(locale, numerals);
   const value = useMemo<VertexContextValue>(
     () => ({
       locale,
       numerals,
-      formattingLocale: formattingLocaleFor(locale, numerals),
+      formattingLocale: formatting,
       theme,
-      translator,
+      // In the provider's numerals. The translator an application built knows
+      // its catalogue and not the tenant's digits, so a count inside a sentence
+      // was written `١٢` or `12` by the locale's convention while the money
+      // beside it followed the setting.
+      translator: translator.withNumerals(numerals),
     }),
-    [locale, numerals, theme, translator],
+    [locale, numerals, formatting, theme, translator],
   );
 
-  useEffect(() => {
+  // Before the first paint rather than after it. The served document carries no
+  // theme, so an effect let a light interface paint one dark frame on a device
+  // set to dark before correcting itself.
+  useLayoutEffect(() => {
     const element = root ?? globalThis.document.documentElement;
 
     // `system` sets nothing: §3.2 makes the absence of the attribute the signal
@@ -110,8 +118,10 @@ export function VertexProvider({
     </VertexContext.Provider>
   );
 
+  // React Aria formats its own figures — a number field, a date — from this, so
+  // it takes the numeral choice as well.
   return (
-    <I18nProvider locale={locale}>
+    <I18nProvider locale={formatting}>
       {navigate === undefined ? (
         wired
       ) : (

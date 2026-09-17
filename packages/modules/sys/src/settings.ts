@@ -14,9 +14,8 @@ import { branchIn } from './structure.js';
  *
  * `SYS` stores the value and never interprets it. What a setting means belongs
  * to the module that declared it — `modules.md` §4 again — so the value is a
- * string and the reader parses it. That is also why a branch's address is a
- * setting rather than a column on the branch: a column here would be `SYS`
- * deciding which facts about a shop matter.
+ * string and the reader parses it. A fact `SYS` itself owns is a field instead:
+ * a branch's address and place are `SYS-14`'s, and live on the branch.
  */
 
 /** The tenant's own value sits under a scope that cannot be a branch identifier. */

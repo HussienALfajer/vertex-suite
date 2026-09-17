@@ -2,16 +2,19 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogue, createTranslator } from './catalogue.js';
+import { developmentSystem } from './dev-system.js';
 import {
   chooseOption,
   enrolUser,
   enterTheShop,
   firstButton,
   goTo,
+  PEOPLE,
   registerCompany,
   startAt,
   type OpenShop,
 } from './screens.fixture.js';
+import type { SystemOfRecord } from './system.js';
 
 /**
  * `SEC-09`: the people who work in a shop, added and staffed from the screen
@@ -293,5 +296,32 @@ describe('A cashier added, staffed and working — SEC-01, SEC-04, SEC-09', () =
     expect(
       await screen.findByText(say.format('users.security.forceSignOut.done', { name: 'أحمد' })),
     ).toBeTruthy();
+  });
+});
+
+describe('A person’s roles, when the read has not answered — SEC-09', () => {
+  it('says the read failed rather than that the person holds no role', async () => {
+    // Told a person held nothing when the question had never been answered,
+    // an administrator granted a role on that basis.
+    const base = developmentSystem({ people: PEOPLE });
+    const system: SystemOfRecord = {
+      ...base,
+      users: {
+        ...base.users,
+        assignments: {
+          ...base.users.assignments,
+          of: () => Promise.reject(new Error('the store node is unreachable')),
+        },
+      },
+    };
+    const shop = await enterTheShop(system);
+    await goTo(shop, catalogue['nav.users']);
+    await shop.person.click(
+      within(rowFor('owner')).getByRole('button', { name: catalogue['users.scope.action'] }),
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(catalogue['data.unreachable'])).toBeTruthy();
+    expect(within(dialog).queryByText(catalogue['users.scope.none'])).toBeNull();
   });
 });

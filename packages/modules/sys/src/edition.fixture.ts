@@ -1,3 +1,4 @@
+import type { DeviceId } from '@vertex/contracts';
 import { newId, orThrow, systemClock, type Id } from '@vertex/kernel';
 import {
   commandContext,
@@ -44,9 +45,13 @@ export interface Installed {
   /**
    * Numbering joins the caller's transaction, so a test has to be the caller.
    * This is the same `transactor.run` a sale would use, with nothing in the
-   * middle: what the test passes down is exactly what `POS` will pass down.
+   * middle: what the test passes down is exactly what `POS` will pass down —
+   * including the machine the command runs on, which a till's numbers depend on.
    */
-  inTransaction<T>(work: (uow: UnitOfWork<MemorySession>) => Promise<T>): Promise<T>;
+  inTransaction<T>(
+    work: (uow: UnitOfWork<MemorySession>) => Promise<T>,
+    device?: DeviceId | null,
+  ): Promise<T>;
   readonly tenant: Id<'tenant'>;
   /** An ordinary administrator of the tenant. No vendor, no system actor. */
   readonly by: CommandContext;
@@ -140,8 +145,11 @@ export function installSys(): Installed {
     read: registry.require(Organisation),
     admin: registry.require(OrganisationAdministration),
     numbering: registry.require(DocumentNumbering),
-    inTransaction: <T>(work: (uow: UnitOfWork<MemorySession>) => Promise<T>): Promise<T> =>
-      transactor.run(commandContext({ tenant, actor: newId<'user'>() }), work),
+    inTransaction: <T>(
+      work: (uow: UnitOfWork<MemorySession>) => Promise<T>,
+      device: DeviceId | null = null,
+    ): Promise<T> =>
+      transactor.run(commandContext({ tenant, actor: newId<'user'>(), device }), work),
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),
     system: systemContext(tenant),

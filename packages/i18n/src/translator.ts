@@ -29,15 +29,26 @@ export type Terminology = Readonly<Record<string, string>>;
 
 export type MessageValues = Readonly<Record<string, string | number | Date>>;
 
+/**
+ * Which digits a figure is **displayed** in.
+ *
+ * `design-system.md` §5.5: Western digits by default, Arabic-Indic as a
+ * per-tenant display setting that never affects a stored value or a parse.
+ */
+export type Numerals = 'latn' | 'arab';
+
 export interface TranslatorOptions {
   readonly locale: string;
   readonly catalogue: Catalogue;
   readonly terms?: Terminology;
   readonly tenantTerms?: Terminology;
+  /** Defaults to `latn`, whatever the locale's own convention is — see `formattingLocale`. */
+  readonly numerals?: Numerals;
   /**
-   * Called when a key is missing. Defaults to throwing in development and
-   * returning the key in production, because a missing string must be loud
-   * while it can still be fixed and harmless once a shop is trading.
+   * Called when a key is missing, and what it returns is shown. Defaults to
+   * throwing `MissingMessageError`: a missing string must be loud while it can
+   * still be fixed. A host that would rather degrade once a shop is trading
+   * says so here.
    */
   readonly onMissing?: (key: string) => string;
 }
@@ -53,16 +64,39 @@ export class MissingMessageError extends Error {
   }
 }
 
+/**
+ * The locale to hand to `Intl`, carrying the numeral choice.
+ *
+ * Stated explicitly for both choices rather than left to the locale. `ar`
+ * happens to default to Western digits in current ICU data, but `ar-SY`, `ar-EG`
+ * and `ar-SA` default to Arabic-Indic ones — so a translator built for the
+ * market this product is sold in printed `١٢` inside a message while the money
+ * beside it said `12`.
+ *
+ * Through `Intl.Locale` rather than by appending `-u-nu-…`: a locale that
+ * already carries a Unicode extension (`ar-u-ca-gregory`) would otherwise become
+ * a tag with two, which `Intl` refuses with a `RangeError` on every render.
+ */
+export function formattingLocale(locale: string, numerals: Numerals): string {
+  return new Intl.Locale(locale, { numberingSystem: numerals }).toString();
+}
+
 export class Translator {
   readonly locale: string;
+  readonly numerals: Numerals;
+  readonly #options: TranslatorOptions;
   readonly #catalogue: Catalogue;
+  readonly #formatting: string;
   readonly #terms: Terminology;
   readonly #onMissing: (key: string) => string;
   readonly #cache = new Map<string, IntlMessageFormat>();
 
   constructor(options: TranslatorOptions) {
     this.locale = options.locale;
+    this.numerals = options.numerals ?? 'latn';
+    this.#options = options;
     this.#catalogue = options.catalogue;
+    this.#formatting = formattingLocale(options.locale, this.numerals);
     // The tenant's renamings sit above the product's own terms, so a tenant
     // that overrides nothing still gets a complete vocabulary.
     this.#terms = { ...options.terms, ...options.tenantTerms };
@@ -73,9 +107,24 @@ export class Translator {
       });
   }
 
-  /** The tenant's name for a concept, or the product's own. */
+  /**
+   * The same catalogue and vocabulary, displaying figures in other digits.
+   *
+   * What a provider holding the tenant's numeral setting hands its screens, so
+   * that a count inside a sentence and the money beside it are written alike.
+   */
+  withNumerals(numerals: Numerals): Translator {
+    return numerals === this.numerals ? this : new Translator({ ...this.#options, numerals });
+  }
+
+  /**
+   * The tenant's name for a concept, or the product's own.
+   *
+   * Own keys only. A plain object answers `constructor` and `toString` through
+   * its prototype, and a message naming `{term:constructor}` printed a function.
+   */
   term(name: string): string {
-    return this.#terms[name] ?? name;
+    return Object.hasOwn(this.#terms, name) ? (this.#terms[name] ?? name) : name;
   }
 
   /**
@@ -86,14 +135,14 @@ export class Translator {
    * literal the rules cannot see.
    */
   format(key: string, values: MessageValues = {}): string {
-    const raw = this.#catalogue[key];
-    if (raw === undefined) return this.#onMissing(key);
+    if (!this.has(key)) return this.#onMissing(key);
+    const raw = this.#catalogue[key] ?? '';
 
     const resolved = raw.replace(TERM_PATTERN, (_, name: string) => this.term(name));
 
     let formatter = this.#cache.get(resolved);
     if (formatter === undefined) {
-      formatter = new IntlMessageFormat(resolved, this.locale);
+      formatter = new IntlMessageFormat(resolved, this.#formatting);
       this.#cache.set(resolved, formatter);
     }
 
@@ -101,8 +150,13 @@ export class Translator {
     return typeof output === 'string' ? output : String(output);
   }
 
-  /** True when the catalogue can answer for this key. */
+  /**
+   * True when the catalogue can answer for this key.
+   *
+   * Own keys, for the reason `term` gives: `has('toString')` was true, and
+   * `format('toString')` then failed on a function where a message should be.
+   */
   has(key: string): boolean {
-    return key in this.#catalogue;
+    return Object.hasOwn(this.#catalogue, key);
   }
 }

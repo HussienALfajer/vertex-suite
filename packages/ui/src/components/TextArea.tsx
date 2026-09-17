@@ -58,7 +58,7 @@ export function TextArea({
       className={clsx('flex flex-col gap-[var(--vx-gap-xs)]', className)}
       {...(errorMessage === undefined ? {} : { isInvalid: true })}
     >
-      <Label className="text-footnote font-body-medium text-fg-secondary">{label}</Label>
+      <Label className="text-footnote font-medium text-fg-secondary">{label}</Label>
       <AriaTextArea
         rows={rows}
         {...(placeholder === undefined ? {} : { placeholder })}

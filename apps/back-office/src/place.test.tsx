@@ -1,16 +1,21 @@
 import { cleanup, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { refuse } from '@vertex/kernel';
+
 import { catalogue } from './catalogue.js';
+import { developmentSystem } from './dev-system.js';
 import {
   chooseOption,
   enterTheShop,
   firstButton,
   goTo,
+  PEOPLE,
   registerCompany,
   startAt,
   type OpenShop,
 } from './screens.fixture.js';
+import type { SystemOfRecord } from './system.js';
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -153,5 +158,38 @@ describe('Placing a branch from the screens — SYS-14', () => {
     const map = await screen.findByRole('application', { name: catalogue['place.map.label'] });
     expect(within(map).getByRole('button', { name: 'فرع حلب' })).toBeTruthy();
     expect(within(map).getByRole('button', { name: 'مستودع الراموسة' })).toBeTruthy();
+  });
+});
+
+describe('A place that could not be stored — SYS-14', () => {
+  it('keeps the dialog open with the refusal when the point is refused after the address was stored', async () => {
+    // Both screens once closed the dialog as soon as the address was stored,
+    // before the point was even sent, so a refused point was written into a
+    // dialog that had already gone and a pin that never moved said nothing.
+    const base = developmentSystem({ people: PEOPLE });
+    const system: SystemOfRecord = {
+      ...base,
+      organisation: {
+        ...base.organisation,
+        branches: {
+          ...base.organisation.branches,
+          locate: () => Promise.resolve(refuse('sys.not-permitted', { right: 'sys.branch.edit' })),
+        },
+      },
+    };
+    const shop = await enterTheShop(system);
+    await registerCompany(shop, 'فيرتكس للتجزئة');
+    await goTo(shop, catalogue['nav.branches']);
+    await shop.person.click(firstButton(catalogue['branches.open']));
+    await shop.person.type(screen.getByLabelText(catalogue['branches.new.name']), 'فرع حلب');
+    await shop.person.click(screen.getByRole('button', { name: catalogue['branches.new.submit'] }));
+    await screen.findByRole('rowheader', { name: 'فرع حلب' });
+
+    await shop.person.click(screen.getByRole('button', { name: 'موقع «فرع حلب»' }));
+    await paste(shop, catalogue['picker.paste'], ALEPPO_LINK);
+    await shop.person.click(screen.getByRole('button', { name: catalogue['action.save'] }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByRole('alert')).toBeTruthy();
   });
 });

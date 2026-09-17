@@ -12,7 +12,7 @@ export interface DensityScopeProps {
 const rank = (density: DensityValue): number => DENSITIES.indexOf(density);
 
 /**
- * Whether this is a development build.
+ * Whether this runtime says, explicitly, that it is not production.
  *
  * `process` does not exist in a browser, and a bundler only replaces the dotted
  * `process.env.NODE_ENV` — a bracketed lookup survives to run time and throws a
@@ -20,11 +20,16 @@ const rank = (density: DensityValue): number => DENSITIES.indexOf(density);
  * and under a test runner, so the global is probed rather than assumed.
  *
  * This was a real crash: on a touch surface — the register — a nested compact
- * table took this branch and brought the whole tree down.
+ * table took this branch and brought the whole tree down. And the probe was then
+ * read the wrong way round: a browser has no `process` at all, "not production"
+ * was true there, and a shipped register warned on every render of every table.
+ * Silence is the answer when nothing says otherwise; the rule itself is enforced
+ * either way.
  */
-function isDevelopment(): boolean {
+function saysDevelopment(): boolean {
   const scope = globalThis as { process?: { env?: Record<string, string | undefined> } };
-  return scope.process?.env?.['NODE_ENV'] !== 'production';
+  const mode = scope.process?.env?.['NODE_ENV'];
+  return mode !== undefined && mode !== 'production';
 }
 
 /**
@@ -44,7 +49,7 @@ export function DensityScope({ value, children, className }: DensityScopeProps):
   const lowersBelowTouch = ambient === 'touch' && value !== 'touch';
   const effective = lowersBelowTouch ? ambient : value;
 
-  if (lowersBelowTouch && isDevelopment()) {
+  if (lowersBelowTouch && saysDevelopment()) {
     globalThis.console.warn(
       `[@vertex/ui] Density "${value}" was requested inside a touch surface and ignored. ` +
         'On a touch surface nothing interactive may fall below 48px (§6.1, §6.3).',

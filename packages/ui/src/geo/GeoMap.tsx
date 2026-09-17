@@ -121,7 +121,14 @@ export function GeoMap({
   const reset = useCallback(() => {
     setMoved(null);
   }, []);
-  const gestures = useMapGestures({ view, viewport, onChange: setMoved, onReset: reset });
+  const gestures = useMapGestures({
+    surface,
+    view,
+    maxZoom: ceiling,
+    viewport,
+    onChange: setMoved,
+    onReset: reset,
+  });
 
   /**
    * Finding a branch by name, without asking anybody.
@@ -163,7 +170,10 @@ export function GeoMap({
   }, [places, view, viewport]);
 
   return (
-    <div className={clsx('relative isolate overflow-hidden', className)}>
+    // `overflow-clip`, not `overflow-hidden`: a hidden overflow still scrolls
+    // when something inside takes focus, so tabbing to a marker beyond the edge
+    // scrolled the whole map out of its box and nothing scrolled it back.
+    <div className={clsx('relative isolate overflow-clip', className)}>
       {/*
        * `ltr`, and only here. What is inside is the Earth, which does not flip
        * with a language; the controls below stay in the document's direction.
@@ -175,7 +185,7 @@ export function GeoMap({
         aria-label={label}
         tabIndex={0}
         className={clsx('bg-surface-1 relative h-full w-full cursor-grab touch-none', focusRing)}
-        {...gestures}
+        {...gestures.handlers}
       >
         {view === null ? null : <BaseLayer view={view} viewport={viewport} basemap={basemap} />}
 

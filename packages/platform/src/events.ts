@@ -56,6 +56,11 @@ export interface DomainEvent<Payload = unknown> {
  * dispatch rule below — so this is never an undo. It is the failed-operation
  * queue of SYN-06 in the making: something to be retried or escalated by a host
  * that knows how, and never simply dropped.
+ *
+ * What it cannot yet promise is delivery across a crash. Events are held in
+ * memory between the commit and the dispatch, so a process that dies in that
+ * window loses them; closing it is the outbox of `U07`, which writes them in
+ * the same transaction as the command that produced them.
  */
 export interface HandlerFailure {
   readonly event: DomainEvent;
@@ -85,10 +90,22 @@ export interface EventBus {
    * Delivers events whose transaction has **already committed**.
    *
    * Called by the transactor and by nothing else. Delivery is sequential and in
-   * publication order, because two handlers of one sale — the ledger posting
-   * and the stock movement — are not independent of each other, and running
-   * them concurrently would make the order they interleave in a property of the
-   * event loop rather than of the specification.
+   * publication order, because two subscribers to one event are not always
+   * independent of each other, and running them concurrently would make the
+   * order they interleave in a property of the event loop rather than of the
+   * specification.
+   *
+   * Depth first when a subscriber runs a command of its own: that command's
+   * events reach their subscribers before the next subscriber of the event that
+   * caused it hears of it. That is the order of the calls; queueing instead
+   * would need to know which dispatch is nested in which, and a browser has no
+   * way to say.
+   *
+   * What never belongs here is anything that must commit with the command.
+   * `FIN-02` puts a journal entry in the same atomic transaction as its business
+   * event, and `SYN-05` forbids a partial document, so the posting and the stock
+   * movement of a sale are contract calls handed the unit of work — not
+   * subscribers to an event delivered after the command committed.
    */
   dispatch(events: readonly DomainEvent[]): Promise<void>;
 
@@ -109,6 +126,10 @@ export function createEventBus(options: EventBusOptions): EventBus {
     },
 
     async dispatch(events: readonly DomainEvent[]): Promise<void> {
+      // What the host's sink raised, kept until every subscriber has been told:
+      // a sink that throws is asking to be loud, not to decide who hears about a
+      // committed fact.
+      const raised: unknown[] = [];
       for (const event of events) {
         for (const { subscriber, handle } of handlers.get(event.name) ?? []) {
           try {
@@ -117,9 +138,17 @@ export function createEventBus(options: EventBusOptions): EventBus {
             // One subscriber failing does not stop the others. The event is a
             // fact — it happened, and it is committed — so every module that
             // was waiting for it still has to be told.
-            options.onHandlerFailure({ event, subscriber, cause });
+            try {
+              options.onHandlerFailure({ event, subscriber, cause });
+            } catch (sinkFailure) {
+              raised.push(sinkFailure);
+            }
           }
         }
+      }
+      if (raised.length === 1) throw raised[0];
+      if (raised.length > 1) {
+        throw new AggregateError(raised, 'The handler failure sink raised more than once.');
       }
     },
 

@@ -305,6 +305,27 @@ describe('What the browser stand-in also claims — SEC-01, SEC-02, SEC-09', () 
     expect(revoked.rights.includes(SEC_PERMISSIONS.role.edit)).toBe(false);
   });
 
+  it('treats withdrawing an assignment already withdrawn as done, not as missing', async () => {
+    // The stand-in refused the second press of a withdraw button with
+    // "assignment not found"; the module it stands in for answers it as done.
+    const { owner, roles } = await aShopWithAnOwner();
+    const cashierRole = seededAs(roles, 'cashier');
+    const person = taken(
+      await shop.users.enrol(owner, { handle: 'sami', name: 'سامي', password: 'till-morning-1' }),
+    );
+    taken(
+      await shop.roles.assignments.assign(owner, {
+        user: person.id,
+        role: cashierRole.id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+
+    taken(await shop.roles.assignments.withdraw(owner, person.id, cashierRole.id));
+    const again = taken(await shop.roles.assignments.withdraw(owner, person.id, cashierRole.id));
+    expect(again.active).toBe(false);
+  });
+
   it('answers a wrong current password and a new one that is too short, from changeOwnPassword', async () => {
     const { owner } = await aShopWithAnOwner();
 

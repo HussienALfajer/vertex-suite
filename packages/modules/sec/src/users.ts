@@ -13,14 +13,7 @@ import {
   type SecRefusal,
   type User,
 } from './contract.js';
-import {
-  coveredBy,
-  decideFor,
-  grantsOf,
-  liveGrants,
-  reachFor,
-  stillHeldByAnybody,
-} from './decide.js';
+import { decideFor, grantsOf, reachesAllOf, strandedBy, strandingRefusal } from './decide.js';
 import {
   identityIn,
   recoveryIn,
@@ -31,7 +24,7 @@ import {
   writeUser,
   type IdentityRecord,
 } from './records.js';
-import { hashPassword, isCurrent, MINIMUM_PASSWORD_LENGTH, verifyPassword } from './credentials.js';
+import { hashPassword, isCurrent, passwordLengthProblem, verifyPassword } from './credentials.js';
 
 /**
  * People, and the sign-ins behind them: `SEC-09`.
@@ -67,6 +60,40 @@ function named(value: string): string | null {
   return name === '' ? null : name;
 }
 
+/** A password refused for its length, as the refusal a person reads. */
+function badPassword(password: string): SecRefusal | null {
+  const problem = passwordLengthProblem(password);
+  if (problem === null) return null;
+  return 'atLeast' in problem
+    ? refusal('sec.password-too-short', problem)
+    : refusal('sec.password-too-long', problem);
+}
+
+/**
+ * How long a recovery may wait for its approvals and its new password.
+ *
+ * A recovery is weighed by every tenant at the moment each approves it, and
+ * what they weigh is the person as they were then. One left open indefinitely
+ * could be completed months later for somebody promoted since, on approvals
+ * given for somebody else — so it lapses, and a new one is opened and weighed
+ * again. A week is long enough for three shops to answer and short enough that
+ * the answer is still about the same person.
+ */
+const RECOVERY_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * A command whose subject is the caller's own sign-in, by the administrator's
+ * door.
+ *
+ * An administrator resetting their own password skips the one thing their own
+ * change asks for — the current password — so a session left open at a till is
+ * an account taken over for good. Their own password changes the way everybody
+ * else's own password does.
+ */
+function ownSignIn(by: CommandContext, user: UserId): SecRefusal | null {
+  return by.actor !== null && by.actor === user ? refusal('sec.own-password') : null;
+}
+
 function guard(
   session: RecordSession,
   by: CommandContext,
@@ -88,20 +115,17 @@ function guard(
  *
  * Checked grant by grant, and right by right inside each, for the reason an
  * assignment is: a role is a set, and it takes one member of it to escalate.
+ * And measured against every grant this person could be given back, not only
+ * the ones in force — see `grantsOf`.
  */
 function holdsEverything(
   session: RecordSession,
   by: CommandContext,
   target: UserId,
 ): SecRefusal | null {
-  if (by.actor === null) return null;
-
   for (const grant of grantsOf(session, by.tenant, target)) {
-    for (const right of grant.rights) {
-      if (!coveredBy(reachFor(session, by.tenant, by.actor, right), grant.assignment.confinement)) {
-        return refusal('sec.right-not-held', { right });
-      }
-    }
+    const outranked = reachesAllOf(session, by, grant.rights, grant.assignment.confinement);
+    if (outranked !== null) return outranked;
   }
   return null;
 }
@@ -128,9 +152,8 @@ export async function enrolUser(
   if (handle === null) return refuse('sec.handle-required');
   const name = named(input.name);
   if (name === null) return refuse('sec.user-name-required');
-  if (input.password.length < MINIMUM_PASSWORD_LENGTH) {
-    return refuse('sec.password-too-short', { atLeast: MINIMUM_PASSWORD_LENGTH });
-  }
+  const weak = badPassword(input.password);
+  if (weak !== null) return err(weak);
 
   // Unique **within the tenant**, which is as far as it can be without telling
   // one shop who works at another: a refusal that meant "taken somewhere in the
@@ -144,6 +167,14 @@ export async function enrolUser(
   // the alternative — hashing before the guard — spends that tenth of a second
   // for every caller who is about to be refused.
   const credential = await hashPassword(input.password);
+  // Asked again after the hash. The tenth of a second above is long enough for
+  // the same person to be enrolled twice from two screens — as `ahmad` and
+  // `AHMAD` — and the second could then never sign in, because a sign-in
+  // finds the first. A store that serialises its transactions refuses the
+  // overlap at commit; this makes the refusal one a person can read.
+  if (usersIn(session, by.tenant).some((one) => one.handle === handle)) {
+    return refuse('sec.handle-taken', { handle });
+  }
   const id = newId<'user'>();
 
   writeIdentity(session, { id, credential, tenants: Object.freeze([by.tenant]) });
@@ -185,7 +216,10 @@ export function admitUser(
 
   const identity = identityIn(session, input.user);
   if (identity === null) return refuse('sec.identity-not-found', { user: input.user });
-  if (usersIn(session, by.tenant).some((one) => one.handle === handle)) {
+  // Somebody else's handle. Their own is what a replayed admission carries, and
+  // refusing it turned the second delivery of a command that worked into one
+  // that failed.
+  if (usersIn(session, by.tenant).some((one) => one.handle === handle && one.id !== input.user)) {
     return refuse('sec.handle-taken', { handle });
   }
 
@@ -280,8 +314,8 @@ export function setUserActive(
   if (beyond !== null) return err(beyond);
 
   if (!active) {
-    const lockout = wouldStrandTheTenant(session, by.tenant, id);
-    if (lockout !== null) return err(lockout);
+    const stranded = strandedBy(session, by.tenant, { kind: 'user', user: id });
+    if (stranded !== null) return err(strandingRefusal(stranded, { user: id }));
   }
 
   return ok(writeUser(session, { ...user.value, active }));
@@ -323,12 +357,14 @@ export async function resetPassword(
   declared: ReadonlySet<string>,
   id: UserId,
   password: string,
+  now: Instant,
 ): Promise<Outcome<User>> {
   const user = found(session, by, declared, id, SEC_PERMISSIONS.user.resetPassword);
   if (!user.ok) return user;
-  if (password.length < MINIMUM_PASSWORD_LENGTH) {
-    return refuse('sec.password-too-short', { atLeast: MINIMUM_PASSWORD_LENGTH });
-  }
+  const own = ownSignIn(by, id);
+  if (own !== null) return err(own);
+  const weak = badPassword(password);
+  if (weak !== null) return err(weak);
 
   const identity = identityIn(session, id);
   if (identity === null) return refuse('sec.identity-not-found', { user: id });
@@ -341,7 +377,10 @@ export async function resetPassword(
   if (beyond !== null) return err(beyond);
 
   writeIdentity(session, { ...identity, credential: await hashPassword(password) });
-  return ok(user.value);
+  // A reset is what an administrator does about an account somebody else may be
+  // using. Leaving that somebody's sessions alive made it a new password for
+  // the owner and nothing at all for the intruder; `U23` honours this stamp.
+  return ok(writeUser(session, { ...user.value, sessionsVoidBefore: now }));
 }
 
 /**
@@ -358,9 +397,8 @@ export async function changeOwnPassword(
   next: string,
 ): Promise<Outcome<void>> {
   if (by.actor === null) return refuse('sec.no-actor');
-  if (next.length < MINIMUM_PASSWORD_LENGTH) {
-    return refuse('sec.password-too-short', { atLeast: MINIMUM_PASSWORD_LENGTH });
-  }
+  const weak = badPassword(next);
+  if (weak !== null) return err(weak);
 
   const user = userIn(session, by.tenant, by.actor);
   if (user === null) return refuse('sec.user-not-found', { user: by.actor });
@@ -375,6 +413,11 @@ export async function changeOwnPassword(
     return refuse('sec.password-wrong');
   }
 
+  // No sessions voided here, unlike a reset. The stamp is a moment, and the
+  // session this change was made from is one of the sessions before it: a
+  // person changing their own password would be signed out mid-sentence.
+  // Ending their other sessions is `U23`'s, which owns sessions and can tell
+  // this one from the rest.
   writeIdentity(session, { ...identity, credential: await hashPassword(next) });
   return ok(undefined);
 }
@@ -465,6 +508,8 @@ export function openRecovery(
 
   const here = userIn(session, by.tenant, user);
   if (here === null) return refuse('sec.user-not-found', { user });
+  const own = ownSignIn(by, user);
+  if (own !== null) return err(own);
 
   const identity = identityIn(session, user);
   if (identity === null) return refuse('sec.identity-not-found', { user });
@@ -488,6 +533,7 @@ export function approveRecovery(
   by: CommandContext,
   declared: ReadonlySet<string>,
   id: RecoveryId,
+  now: Instant,
 ): Outcome<Recovery> {
   const permitted = guard(session, by, declared, SEC_PERMISSIONS.user.resetPassword);
   if (permitted !== null) return err(permitted);
@@ -495,6 +541,9 @@ export function approveRecovery(
   const recovery = recoveryIn(session, id);
   if (recovery === null) return refuse('sec.recovery-not-found', { recovery: id });
   if (recovery.settled) return refuse('sec.recovery-settled', { recovery: id });
+  if (now - recovery.opened > RECOVERY_LIFETIME_MS) {
+    return refuse('sec.recovery-expired', { recovery: id });
+  }
 
   // The approval is a tenant's, so it has to come from inside one this sign-in
   // actually works in: a shop that has never employed this person has nothing
@@ -521,6 +570,7 @@ export async function completeRecovery(
   declared: ReadonlySet<string>,
   id: RecoveryId,
   password: string,
+  now: Instant,
 ): Promise<Outcome<void>> {
   const permitted = guard(session, by, declared, SEC_PERMISSIONS.user.resetPassword);
   if (permitted !== null) return err(permitted);
@@ -528,55 +578,46 @@ export async function completeRecovery(
   const recovery = recoveryIn(session, id);
   if (recovery === null) return refuse('sec.recovery-not-found', { recovery: id });
   if (recovery.settled) return refuse('sec.recovery-settled', { recovery: id });
-  if (password.length < MINIMUM_PASSWORD_LENGTH) {
-    return refuse('sec.password-too-short', { atLeast: MINIMUM_PASSWORD_LENGTH });
+  if (now - recovery.opened > RECOVERY_LIFETIME_MS) {
+    return refuse('sec.recovery-expired', { recovery: id });
   }
+  const weak = badPassword(password);
+  if (weak !== null) return err(weak);
 
   const identity = identityIn(session, recovery.user);
   if (identity === null) return refuse('sec.identity-not-found', { user: recovery.user });
 
-  // The same standing `open` and `approve` each required. Completing is the
-  // step that chooses the password, so a shop with no connection to this person
-  // deciding it would make the unanimity above a formality it was never party
-  // to.
+  // The same standing `open` and `approve` each required — a place in a shop
+  // this person works in, **and the rank**. Completing is the step that chooses
+  // the password, and it once asked only for the right: a manager refused both
+  // opening and approving a recovery for a co-owner completed it with a
+  // password of their own, and signed in as the co-owner.
   if (userIn(session, by.tenant, recovery.user) === null) {
     return refuse('sec.user-not-found', { user: recovery.user });
   }
+  const own = ownSignIn(by, recovery.user);
+  if (own !== null) return err(own);
+  const beyond = holdsEverything(session, by, recovery.user);
+  if (beyond !== null) return err(beyond);
 
   // Every tenant, and not a majority or the one that asked. A sign-in that
   // works in three shops is three shops' risk, and any rule short of unanimity
   // is a rule under which two of them decide for the third.
-  const outstanding = identity.tenants.filter((one) => !recovery.approvedBy.includes(one));
-  if (outstanding.length > 0) {
-    return refuse('sec.recovery-incomplete', { outstanding: outstanding.length });
+  //
+  // Whether, and not how many. The contract promises a tenant learns only that
+  // a sign-in is not theirs alone; a count of the shops still to answer told it
+  // how many others employ this person.
+  if (identity.tenants.some((one) => !recovery.approvedBy.includes(one))) {
+    return refuse('sec.recovery-incomplete');
   }
 
   writeIdentity(session, { ...identity, credential: await hashPassword(password) });
   writeRecovery(session, { ...recovery, settled: true });
+  // Every shop's record of this person: the recovery exists because somebody
+  // else may hold the old password, in any of them.
+  for (const tenant of identity.tenants) {
+    const theirs = userIn(session, tenant, recovery.user);
+    if (theirs !== null) writeUser(session, { ...theirs, sessionsVoidBefore: now });
+  }
   return ok(undefined);
-}
-
-/**
- * Whether withdrawing this person leaves the shop with nobody who can undo it.
- *
- * The same rule as the last owner's role and the last owner's assignment, at
- * the level of the person: `SEC-09` says this is the tenant's administrator's
- * work and never the vendor's, and a shop that has withdrawn its last
- * administrator has no route back that does not involve exactly the person
- * those features exist to keep out of the data.
- */
-function wouldStrandTheTenant(
-  session: RecordSession,
-  tenant: TenantId,
-  leaving: UserId,
-): SecRefusal | null {
-  const keystone = SEC_PERMISSIONS.role.edit;
-  const holdsIt = liveGrants(session, tenant, leaving).some((grant) =>
-    grant.rights.includes(keystone),
-  );
-  if (!holdsIt) return null;
-
-  return stillHeldByAnybody(session, tenant, keystone, { kind: 'user', user: leaving })
-    ? null
-    : refusal('sec.last-owner', { user: leaving });
 }

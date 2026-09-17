@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { AuthorisationScope, Authoriser } from './authorise.js';
 import { contractKey, type ContractKey } from './contract.js';
-import { commandContext } from './context.js';
+import { commandContext, systemContext } from './context.js';
 import { composeEdition, type EditionPlan, type EditionRequest } from './edition.js';
 import {
   AuthoriserUnavailableError,
   ContractCycleError,
   ContractUnavailableError,
+  DuplicateDeclarationError,
+  RegistryError,
   UndeclaredEventError,
 } from './errors.js';
 import { createEventBus, eventType, type EventBus } from './events.js';
@@ -133,13 +135,24 @@ describe('authorisation', () => {
   it('lets the system through without asking, since it has nobody to be', async () => {
     asked.length = 0;
     const { registry } = bring(catalogue(false), { modules: [...CORE] }, Authority);
-    const system = commandContext({ tenant: newId<'tenant'>() });
+    const system = systemContext(newId<'tenant'>());
 
     // A migration, a scheduled job, a sync applying work authorised on the
     // register that did it. `POS-19` turns on a store node being able to take
     // up the trading of a shop that was offline.
     expect(await registry.authorise(system, 'sys.branch.edit', undefined)).toBe(true);
     expect(asked).toEqual([]);
+  });
+
+  it('does not read a context that forgot its actor as the system', () => {
+    // The system holds every right, so "nobody" has to be said. An optional
+    // actor turned `{ tenant }` — a field forgotten by a caller, or dropped by a
+    // payload in transit — into a context `authorise` said yes to without
+    // asking the authoriser at all.
+    const forgotten = { tenant: newId<'tenant'>() } as unknown as Parameters<
+      typeof commandContext
+    >[0];
+    expect(() => commandContext(forgotten)).toThrow(TypeError);
   });
 
   it('raises rather than deciding for itself when the host wired nothing', async () => {
@@ -347,6 +360,32 @@ describe('what the host asks the registry', () => {
     expect(registry.switchEnabled('pos.nothing-declares-this')).toBe(false);
   });
 
+  it('refuses a plan that was not composed from the catalogue it is given', () => {
+    // Nothing forced the two to match. Two definitions under one code resolved
+    // to the last, and a module the plan enabled but the catalogue lacked was
+    // simply absent — an edition short a module it was sold.
+    const { plan } = bring(catalogue, { modules: [...CORE] });
+    const wiring = (modules: readonly ModuleDefinition<MemorySession>[]) => () => {
+      const store = createMemoryStore();
+      const bus = createEventBus({ onHandlerFailure: () => undefined });
+      createRegistry({
+        catalogue: modules,
+        plan,
+        bus,
+        transactor: createTransactor({
+          driver: store.driver,
+          bus,
+          clock: systemClock,
+          onEffectFailure: () => undefined,
+        }),
+        clock: systemClock,
+      });
+    };
+
+    expect(wiring([...catalogue, catalogue[0]!])).toThrow(DuplicateDeclarationError);
+    expect(wiring(catalogue.filter((one) => one.code !== 'FIN'))).toThrow(RegistryError);
+  });
+
   it('knows which modules it is running', () => {
     const { registry } = bring(catalogue, { modules: [...CORE] });
     expect(registry.modules.map((one) => one.code)).toEqual(['SYS', 'SEC', 'FX', 'FIN']);
@@ -358,13 +397,15 @@ describe('what the host asks the registry', () => {
 describe('what a module is handed', () => {
   it('can open a transaction and read the clock, and can reach nothing else', async () => {
     const Recorder = contractKey<{ record(): Promise<void> }>('sys.recorder');
+    let handed: object | undefined;
     const sys = defineModule<MemorySession>({
       code: 'SYS',
       labelKey: 'module.sys',
       provides: [
         provideContract(Recorder, (context) => ({
           record: async () => {
-            await context.transactor.run(commandContext({ tenant: newId<'tenant'>() }), (uow) => {
+            handed = context;
+            await context.transactor.run(systemContext(newId<'tenant'>()), (uow) => {
               uow.session.put('recorded-at', context.clock.now());
               return Promise.resolve();
             });
@@ -377,8 +418,17 @@ describe('what a module is handed', () => {
     await registry.require(Recorder).record();
 
     expect(store.committed().has('recorded-at')).toBe(true);
-    // Everything a module can reach is on this object, and there is no member
-    // on it that leads to another module's data — only to its contracts.
-    expect(Object.keys(registry.require(Recorder))).toEqual(['record']);
+    // Everything a module can reach is on the context it is handed, and there is
+    // no member on it that leads to another module's data, to the bus or to the
+    // registry — only to contracts, by key. A new member fails this on purpose.
+    expect(Object.keys(handed ?? {}).sort()).toEqual([
+      'authorise',
+      'clock',
+      'declaredPermissions',
+      'require',
+      'resolve',
+      'switchEnabled',
+      'transactor',
+    ]);
   });
 });

@@ -48,14 +48,17 @@ export function SearchInput({
   ...props
 }: SearchInputProps): ReactNode {
   return (
+    // Named by the `Label` inside, visible or not. An `aria-label` beside it was
+    // joined to it, and the field was announced as its name twice.
     <SearchField
       {...props}
-      aria-label={label}
       className={clsx('group flex flex-col gap-[var(--vx-gap-xs)]', className)}
     >
       <Label
         className={clsx(
-          'text-footnote font-body-medium text-fg-secondary',
+          // `font-medium`, not `font-body-medium`: §5.4 steps text down a weight
+          // in the dark from `body` size up, and leaves footnotes alone.
+          'text-footnote font-medium text-fg-secondary',
           isLabelVisible ? '' : 'sr-only',
         )}
       >

@@ -78,6 +78,9 @@ const PATTERNS: readonly RegExp[] = [
   new RegExp(String.raw`[?&](?:q|ll|query|center|daddr|destination)=(${NUMBER})\s*,\s*(${NUMBER})`),
   new RegExp(String.raw`@(${NUMBER}),(${NUMBER})`),
   new RegExp(String.raw`^geo:(${NUMBER}),(${NUMBER})`),
+  // OpenStreetMap's own links: `#map=17/lat/lng`, and a marker's `mlat`/`mlon`.
+  new RegExp(String.raw`#map=\d{1,2}(?:\.\d+)?/(${NUMBER})/(${NUMBER})`),
+  new RegExp(String.raw`[?&]mlat=(${NUMBER})&mlon=(${NUMBER})`),
   new RegExp(String.raw`^\s*(${NUMBER})\s*[,;\s]\s*(${NUMBER})\s*$`),
 ];
 
@@ -97,8 +100,26 @@ function written(value: string): string {
   return `${negative && !isZero ? '-' : ''}${digits}`;
 }
 
+/**
+ * The text as a person meant it.
+ *
+ * Two things a paste carries that nobody typed. Invisible format characters —
+ * a right-to-left mark copied out of an Arabic interface around a pair of
+ * numbers — which neither `trim` nor `\s` removes, so `\u200f33.51, 36.27`
+ * read as nothing. And an encoded comma: the links messaging and search apps
+ * share write `33.51%2C36.27`, which no pattern here would otherwise see.
+ */
+function unwrapped(text: string): string {
+  const visible = text.replace(/\p{Cf}/gu, '');
+  try {
+    return decodeURIComponent(visible);
+  } catch {
+    return visible;
+  }
+}
+
 export function parsePlace(text: string): ParsedPlace {
-  const normalised = westernDigits(text).trim();
+  const normalised = westernDigits(unwrapped(text)).trim();
   if (normalised === '') return { kind: 'none' };
 
   for (const pattern of PATTERNS) {

@@ -1,4 +1,4 @@
-import type { BranchId, PermissionId, TenantId, UserId } from '@vertex/contracts';
+import type { BranchId, PermissionId, UserId } from '@vertex/contracts';
 import { err, ok, refusal, refuse, type Result } from '@vertex/kernel';
 import type { CommandContext } from '@vertex/platform';
 import type { Organisation } from '@vertex/sys/contract';
@@ -12,8 +12,15 @@ import {
   type RoleId,
   type SecRefusal,
 } from './contract.js';
-import { coveredBy, reachesNothing, reachFor, stillHeldByAnybody } from './decide.js';
-import { assignmentIn, roleIn, rolesIn, writeAssignment } from './records.js';
+import {
+  coveredBy,
+  reachesAllOf,
+  reachesNothing,
+  reachFor,
+  strandedBy,
+  strandingRefusal,
+} from './decide.js';
+import { assignmentIn, roleIn, userIn, writeAssignment } from './records.js';
 
 /**
  * Putting a user into a role over a stretch of the shop group: `SEC-04`.
@@ -94,23 +101,6 @@ function copyOf(confinement: Confinement): Confinement {
   });
 }
 
-/** Everything the assigner would be handing over, right by right. */
-function withinTheirReach(
-  session: RecordSession,
-  by: CommandContext,
-  rights: readonly PermissionId[],
-  confinement: Confinement,
-): SecRefusal | null {
-  if (by.actor === null) return null;
-
-  for (const right of rights) {
-    if (!coveredBy(reachFor(session, by.tenant, by.actor, right), confinement)) {
-      return refusal('sec.right-not-held', { right });
-    }
-  }
-  return null;
-}
-
 /**
  * Whether this administrator may staff that much of the shop group.
  *
@@ -150,12 +140,49 @@ export function assignRole(
   const permitted = mayStaff(session, by, SEC_PERMISSIONS.assignment.create, input.confinement);
   if (permitted !== null) return err(permitted);
 
+  // Somebody who works here. An assignment naming anybody else was accepted and
+  // sat dormant, and took effect the day that identity was admitted to this
+  // tenant — a grant nobody decided on at the moment it began to count.
+  if (userIn(session, by.tenant, input.user) === null) {
+    return refuse('sec.user-not-found', { user: input.user });
+  }
+
   const role = roleIn(session, by.tenant, input.role);
   if (role === null) return refuse('sec.role-not-found', { role: input.role });
   if (!role.active) return refuse('sec.role-withdrawn', { role: input.role });
 
-  const beyond = withinTheirReach(session, by, role.rights, input.confinement);
+  const beyond = reachesAllOf(session, by, role.rights, input.confinement);
   if (beyond !== null) return err(beyond);
+
+  // Assigning a role somebody already holds replaces its reach, which is a
+  // withdrawal of the old reach as much as a grant of the new one. Checked only
+  // as a grant, it was the way round every rule a withdrawal keeps: an
+  // administrator of one branch who may not stand down a tenant-wide cashier
+  // re-assigned them to that branch instead, and an owner confined to Aleppo
+  // narrowed the real owner's role to Aleppo — after which nobody held role
+  // editing anywhere the shop could use it, for good.
+  const existing = assignmentIn(session, by.tenant, input.user, role.id);
+  if (existing?.active === true) {
+    const standDown = mayStaff(
+      session,
+      by,
+      SEC_PERMISSIONS.assignment.withdraw,
+      existing.confinement,
+    );
+    if (standDown !== null) return err(standDown);
+
+    const outranked = reachesAllOf(session, by, role.rights, existing.confinement);
+    if (outranked !== null) return err(outranked);
+
+    if (existing.confinement.kind === 'tenant' && input.confinement.kind !== 'tenant') {
+      const stranded = strandedBy(session, by.tenant, {
+        kind: 'assignment',
+        user: input.user,
+        role: role.id,
+      });
+      if (stranded !== null) return err(strandingRefusal(stranded, { user: input.user }));
+    }
+  }
 
   const assignment: Assignment = {
     tenant: by.tenant,
@@ -190,41 +217,21 @@ export function withdrawAssignment(
   );
   if (permitted !== null) return err(permitted);
 
-  const lockout = wouldStrandTheTenant(session, by.tenant, existing);
-  if (lockout !== null) return err(lockout);
+  // Ranked, as standing a person down is: taking somebody's role away is how an
+  // account comes to hold nothing, and an account that holds nothing is one a
+  // password reset no longer protects. A manager withdrew a co-owner's role,
+  // reset the password of what was left, and signed in as a co-owner the moment
+  // the owner put the role back.
+  const held = roleIn(session, by.tenant, role);
+  if (held !== null) {
+    const outranked = reachesAllOf(session, by, held.rights, existing.confinement);
+    if (outranked !== null) return err(outranked);
+  }
+
+  const stranded = strandedBy(session, by.tenant, { kind: 'assignment', user, role });
+  if (stranded !== null) return err(strandingRefusal(stranded, { user }));
 
   // Idempotent, like every other withdrawal in this system: a replayed command
   // must not turn a sync that worked into a sync that failed.
   return ok(writeAssignment(session, by.tenant, { ...existing, active: false }));
-}
-
-/**
- * Whether standing this person down leaves nobody who can put them back.
- *
- * The same rule as withdrawing the last role that can edit roles, one level
- * out: `SYS-09` and `SEC-09` both say this is the tenant's own administrator's
- * work and **never the vendor's**, and a shop whose last administrator has been
- * withdrawn has no way back that does not involve somebody with a database
- * client. The command is refused while there is still somebody who can act.
- *
- * Counted by `stillHeldByAnybody`, which requires the person, the assignment
- * and the role to be live together — an assignment left behind by somebody who
- * no longer works here is not somebody who can act.
- */
-function wouldStrandTheTenant(
-  session: RecordSession,
-  tenant: TenantId,
-  leaving: Assignment,
-): SecRefusal | null {
-  const keystone = SEC_PERMISSIONS.role.edit;
-  const role = rolesIn(session, tenant).find((one) => one.id === leaving.role);
-  if (role === undefined || !role.active || !role.rights.includes(keystone)) return null;
-
-  return stillHeldByAnybody(session, tenant, keystone, {
-    kind: 'assignment',
-    user: leaving.user,
-    role: leaving.role,
-  })
-    ? null
-    : refusal('sec.last-owner', { user: leaving.user });
 }

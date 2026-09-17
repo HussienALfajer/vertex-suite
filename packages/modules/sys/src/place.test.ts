@@ -44,14 +44,18 @@ const SHOP = { lat: '36.199700', lng: '37.163700' };
 const WAREHOUSE = { lat: '35.931000', lng: '36.633900' };
 
 describe('Addresses and places on a map — SYS-14', () => {
-  it('places a branch and reads it back with nothing reaching the network', async () => {
+  it('places a branch and reads it back with no way out to the network', async () => {
     // The acceptance criterion says "with all network interfaces disabled", and
     // this is that claim made to fail loudly instead of being asserted in
-    // prose: anything that tried to geocode an address, fetch a tile or ask a
-    // map provider where this is would land here and throw.
-    vi.stubGlobal('fetch', () => {
+    // prose: every way a module in this runtime could ask a service anything is
+    // replaced by one that throws, so geocoding an address, fetching a tile or
+    // asking a map provider where this is would land here.
+    const offline = (): never => {
       throw new Error('SYS-14 reached the network.');
-    });
+    };
+    vi.stubGlobal('fetch', offline);
+    vi.stubGlobal('XMLHttpRequest', offline);
+    vi.stubGlobal('WebSocket', offline);
 
     const branch = await aBranch();
     const placed = taken(await sys.admin.branches.locate(sys.by, branch.id, SHOP));
@@ -104,6 +108,20 @@ describe('Addresses and places on a map — SYS-14', () => {
       lat: '0.000000',
       lng: '0.000000',
     });
+  });
+
+  it('writes the meridian opposite Greenwich one way, whichever side it was reached from', () => {
+    for (const lng of ['-180', '180', '-179.9999996']) {
+      const normalised = normalisePoint({ lat: '0', lng });
+      expect(isOk(normalised) ? normalised.value.lng : null, lng).toBe('180.000000');
+    }
+  });
+
+  it('refuses a point that did not arrive as text, rather than failing on it', () => {
+    // A request body or a replayed command, where the type does not reach.
+    const numbers = { lat: 36.2, lng: 37.1 } as unknown as { lat: string; lng: string };
+    const refused = normalisePoint(numbers);
+    expect(isOk(refused) ? null : refused.error.code).toBe('sys.point-out-of-range');
   });
 
   it('refuses more degrees than the Earth has, and says what was typed', async () => {
@@ -174,7 +192,8 @@ describe('Addresses and places on a map — SYS-14', () => {
     ).toBe('sys.location-kind-has-no-place');
   });
 
-  it('lets a vehicle be cleared, so a command SYN-02 replays is not a failure', async () => {
+  it('lets a vehicle be cleared, so a replayed command is not a failure', async () => {
+    // SYN-02 replays commands; this is the half of that SYS owns.
     const branch = await aBranch();
     const van = await aLocation(branch, 'vehicle');
 

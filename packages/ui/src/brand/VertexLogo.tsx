@@ -198,6 +198,11 @@ function Tagline({
       // drew it — which is how a tagline ends up clipped by its own viewBox.
       textLength={width}
       lengthAdjust="spacing"
+      // Latin, and anchored as Latin whatever the page is. `direction` is
+      // inherited from `<html dir="rtl">`, and under it `text-anchor: start`
+      // means the right edge: the line ran from x = −width to 0, outside the
+      // viewBox, and the sign-in screen's tagline was clipped away entirely.
+      direction="ltr"
       fill="currentColor"
       fontSize={size}
       fontFamily="var(--vx-font-latin), 'IBM Plex Sans', system-ui, sans-serif"

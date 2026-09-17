@@ -1,7 +1,9 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { catalogue, createTranslator } from './catalogue.js';
+import { SYS_PERMISSIONS } from '@vertex/sys/contract';
+
+import { catalogue, createTranslator, nameOfPermission } from './catalogue.js';
 import {
   chooseOption,
   enrolUser,
@@ -282,5 +284,28 @@ describe('A role that is not "owner" can be the tenant’s only way to edit role
 
     expect(await screen.findByText(say.format('refusal.sec.last-owner', {}))).toBeTruthy();
     expect(rowFor('سارة').textContent).toContain(catalogue['status.inUse']);
+  });
+});
+
+describe('A withdrawn role — SEC-01', () => {
+  it('shows its rights without offering to change them', async () => {
+    // `SEC` refuses a grant to a withdrawn role, so a switch there could only
+    // ever be refused after somebody pressed it.
+    const shop = await aShopOnRoles();
+    await defineRole(shop, 'دور مسحوب');
+    await shop.person.click(
+      within(rowFor('دور مسحوب')).getByRole('button', { name: catalogue['roles.withdraw.title'] }),
+    );
+    await shop.person.click(screen.getByRole('button', { name: catalogue['roles.withdraw'] }));
+    await shop.person.click(
+      screen.getByRole('switch', { name: catalogue['listing.includeWithdrawn'] }),
+    );
+    await screen.findByRole('rowheader', { name: 'دور مسحوب' });
+    await openRole(shop, 'دور مسحوب');
+
+    const grant = await screen.findByRole('switch', {
+      name: nameOfPermission(say, SYS_PERMISSIONS.branch.create),
+    });
+    expect(grant.hasAttribute('disabled')).toBe(true);
   });
 });

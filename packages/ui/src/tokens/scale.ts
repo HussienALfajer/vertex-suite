@@ -78,9 +78,9 @@ export const SIZE_TOKENS: Readonly<Record<string, Readonly<Record<Density, numbe
   //
   // The two-step system is unchanged — a surface is still rounder than the
   // controls inside it — but at these sizes that gap is a matter of a pixel or
-  // two, felt rather than seen. Only the pill (§7.1) stays a pill: it is what
-  // keeps a status chip from reading as a button now that a button barely
-  // curves at all.
+  // two, felt rather than seen. Only the pill (§7.1) stays a pill, and since
+  // v1.9 only on the switch track and a map's markers: a status chip rounds
+  // like every other control.
   radius: { compact: 2, comfortable: 3, touch: 4 },
   'radius-card': { compact: 4, comfortable: 5, touch: 6 },
   checkbox: { compact: 16, comfortable: 20, touch: 28 },

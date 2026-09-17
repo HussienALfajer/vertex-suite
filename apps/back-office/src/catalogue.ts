@@ -69,10 +69,10 @@ export const catalogue = {
   'refusal.sec.role-name-required': 'أدخل اسم الدور.',
   /**
    * `SEC-02`: a grant naming a right no module in this edition declared.
-   * `{right}` is resolved through `nameOfPermission` like every other refusal
-   * that carries one — except this one names a right that has no name here,
-   * so what a person actually reads is its raw identifier, which is the honest
-   * answer to a request for something that does not exist.
+   * Every other refusal carrying `{right}` has it resolved to a name; this one
+   * names a right that has no name here, so `messageForRefusal` leaves the
+   * identifier as it came — the honest answer to a request for something that
+   * does not exist, where "the unknown right is unknown" would say nothing.
    */
   'refusal.sec.right-undeclared': 'الصلاحية «{right}» غير معروفة في هذا الإصدار من النظام.',
   /**
@@ -83,6 +83,36 @@ export const catalogue = {
    */
   'refusal.sec.last-owner':
     'هذا آخر من يملك صلاحية إدارة الأدوار والمستخدمين في هذا المتجر. امنح هذه الصلاحية لجهة أخرى أولًا، وإلا لن يبقى من يستطيع التراجع عن هذا القرار.',
+  /**
+   * The same rule for any other right: a right nobody holds across the whole
+   * shop is one nobody can ever grant again, so the last holding of it stays.
+   */
+  'refusal.sec.last-holder':
+    'هذا آخر من يملك صلاحية «{right}» على مستوى المتجر كله. امنحها لجهة أخرى على مستوى المتجر كله أولًا، وإلا لن يستطيع أحد منحها من جديد.',
+  /**
+   * The two escalation refusals. Both were once missing here, so an
+   * administrator refused for reaching beyond their own rights read "try
+   * again" — an instruction that could never work.
+   */
+  'refusal.sec.right-not-held':
+    'لا يمكنك تنفيذ هذا لأنه يمسّ صلاحية «{right}»، وأنت لا تملكها بالنطاق نفسه. راجع مالك المتجر.',
+  'refusal.sec.confinement-exceeds-own':
+    'هذا يتجاوز الفروع التي تغطيها صلاحياتك. اختر نطاقًا ضمن فروعك، أو راجع مالك المتجر.',
+  'refusal.sec.location-not-found': 'لم يعد هذا الموقع موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.location-outside-confinement':
+    'الموقع «{location}» لا يتبع أيًا من الفروع المختارة. اختر فرعه أيضًا، أو أزل الموقع.',
+  'refusal.sec.identity-not-found': 'تعذّر العثور على حساب الدخول لهذا المستخدم. راجع مالك المتجر.',
+  'refusal.sec.no-actor': 'انتهت جلستك. سجّل الدخول من جديد.',
+  'refusal.sec.own-password':
+    'لا تُعاد كلمة مرورك من هنا. غيّرها من «تغيير كلمة المرور» بإدخال كلمتك الحالية.',
+  'refusal.sec.password-too-long':
+    'كلمة المرور أطول من المسموح. أدخل {atMost, number} حرفًا أو أقل.',
+  'refusal.sec.recovery-not-found':
+    'لم يعد طلب الاسترداد هذا موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.recovery-settled': 'اكتمل طلب الاسترداد هذا من قبل.',
+  'refusal.sec.recovery-incomplete':
+    'لم يوافق بعد كل متجر يعتمد على حساب الدخول هذا. يكتمل الاسترداد بعد موافقتهم جميعًا.',
+  'refusal.sec.recovery-expired': 'انتهت مهلة طلب الاسترداد هذا. افتح طلبًا جديدًا.',
 
   /**
    * `SYS`'s own refusals, as sentences.
@@ -140,6 +170,13 @@ export const catalogue = {
     'الصيغة «{format}» غير مقروءة، أو لا عدّاد فيها. صيغة بلا عدّاد تعطي كل مستندات السلسلة الرقم نفسه.',
   'refusal.sys.series-format-must-carry-register':
     'صيغة سلسلة صندوق لا بدّ أن تحمل رمز الصندوق وجيل جهازه معًا. بدونهما يسقط ضمان الترقيم: جهاز بديل قد يعيد إصدار رقم طبعه الجهاز الذي حلّ محلّه ولم يصل إلى عقدة المتجر بعد.',
+  'refusal.sys.series-format-must-carry-year':
+    'الصيغة «{format}» بلا سنة. تبدأ السلسلة العدّ من واحد كل سنة مالية، فصيغة بلا سنة تطبع أرقام السنة الماضية مرة أخرى.',
+  'refusal.sys.series-format-fields-adjacent':
+    'في الصيغة «{format}» جزآن متلاصقان لا يُعرف أين ينتهي أحدهما ويبدأ الآخر، فيطبع مستندان مختلفان الرقم نفسه. افصل بينهما بشرطة أو شرطة مائلة.',
+  'refusal.sys.register-held-elsewhere':
+    'هذا الجهاز ليس الجهاز المسجَّل على الصندوق «{register}»، فلا يُصدر أرقامه. سجّل هذا الجهاز على الصندوق أولًا.',
+  'refusal.sys.location-kind-unknown': 'نوع الموقع «{kind}» غير معروف.',
   'refusal.sys.series-format-carries-absent-register':
     'هذه السلسلة لا صندوق لها، فلا شيء يملأ رمز الصندوق ولا جيل الجهاز. احذف العلامتين من الصيغة.',
 
@@ -194,7 +231,7 @@ export const catalogue = {
    * `SEC-02`'s grid, read by column and by row rather than as full sentences:
    * `permission.action.*` names the five actions across the top, and
    * `permission.resource.*` names what each row is about. The full sentence
-   * above (`permission.sec.user.view`) still names every checkbox itself, so a
+   * above (`permission.sec.user.view`) still names every switch itself, so a
    * screen reader announces "الاطلاع على المستخدمين" rather than "عرض" bare —
    * only the visible header is this short.
    */
@@ -316,9 +353,9 @@ export const catalogue = {
    */
   'listing.includeWithdrawn': 'إظهار المسحوب من الخدمة',
   'listing.noMatch': 'لا شيء يطابق ما بحثت عنه.',
-  'listing.noMatch.explanation': 'جرّب اسمًا أقصر، أو أظهر ما سُحب من الخدمة.',
 
   'data.loading': 'جارٍ التحميل…',
+  'data.unknown': 'غير معروف',
   'data.unreachable': 'تعذّر الوصول إلى سجلّ المتجر',
   'data.unreachable.explanation':
     'لم يصل ردّ من سجلّ المتجر، فما تراه قد لا يكون الحالة الأحدث. تحقّق من الاتصال ثم أعد المحاولة.',
@@ -660,9 +697,6 @@ export const catalogue = {
   'users.security.forceSignOut': 'إنهاء كل الجلسات',
   'users.security.forceSignOut.description':
     'يُنهي دخول «{name}» على كل جهاز عند أول اتصال به بعد الآن. لا يوقف عملًا جاريًا على صندوق غير متصل حاليًا.',
-  'users.security.forceSignOut.confirm.title': 'إنهاء جلسات «{name}»',
-  'users.security.forceSignOut.confirm.message':
-    'سيُطلب من «{name}» تسجيل الدخول من جديد على كل جهاز، فور أن يتصل بعقدة المتجر.',
   'users.security.forceSignOut.done': 'أُنهيت جلسات «{name}».',
 
   /**
@@ -728,10 +762,9 @@ export const catalogue = {
   'roles.restored': 'أُعيد «{name}» إلى الخدمة.',
 
   'roles.empty': 'لا يوجد دور بعد',
-  'roles.empty.explanation': 'السبعة المهيّأة تُنشأ مع المتجر نفسه؛ إن غابت فحدّث الصفحة.',
 
   /**
-   * `SEC-02`'s grid: one checkbox per (resource, action) pair this role either
+   * `SEC-02`'s grid: one switch per (resource, action) pair this role either
    * holds or does not. Not a form saved all at once — each cell is its own
    * command (`grant` or `revoke`) that takes effect the moment it is toggled,
    * the same immediacy withdrawing a role or assigning one already has.
@@ -860,10 +893,13 @@ export function messageForRefusal(translator: Translator, refused: Refusal): str
   if (!translator.has(key)) return translator.format('refusal.unknown');
 
   const right = refused.values['right'];
+  // A permission identifier is a name for a program, not for a person — except
+  // when the refusal is that no such right exists, and the identifier is all
+  // there is to say.
+  const named = typeof right === 'string' && refused.code !== 'sec.right-undeclared';
   return translator.format(key, {
     ...formattable(refused.values),
-    // A permission identifier is a name for a program, not for a person.
-    ...(typeof right === 'string' ? { right: nameOfPermission(translator, right) } : {}),
+    ...(named ? { right: nameOfPermission(translator, right) } : {}),
   });
 }
 

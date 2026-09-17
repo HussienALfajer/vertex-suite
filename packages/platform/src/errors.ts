@@ -81,5 +81,17 @@ export class AuthoriserUnavailableError extends PlatformError {
   }
 }
 
-/** A migration failed, or the journal and the plan disagree about what has run. */
+/**
+ * A migration failed, or the journal and the plan disagree about what has run:
+ * one recorded that the plan no longer names, or one pending before one applied.
+ */
 export class MigrationError extends PlatformError {}
+
+/**
+ * A transaction read something another committed while it ran, and committing
+ * it anyway would have written a decision taken on a state that no longer holds.
+ *
+ * Not a refusal and not a defect: the command did nothing wrong and would
+ * succeed if run again. Raised at commit, with nothing written.
+ */
+export class SerialisationConflictError extends PlatformError {}

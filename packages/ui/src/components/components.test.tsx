@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,13 +12,15 @@ import { Button, IconButton } from './Button.js';
 import { Checkbox, Switch } from './Toggle.js';
 import { Page, PageHeader } from './Page.js';
 import { Panel } from './Panel.js';
+import { SearchInput } from './SearchInput.js';
+import { ToastRegion, useToast } from './Toast.js';
 import { TextInput } from './TextInput.js';
 
 afterEach(cleanup);
 
 const translator = new Translator({
   locale: 'ar',
-  catalogue: { 'a11y.skipToContent': 'تخطَّ إلى المحتوى' },
+  catalogue: { 'a11y.skipToContent': 'تخطَّ إلى المحتوى', 'action.dismiss': 'إغلاق' },
 });
 
 function wrap(children: ReactNode): void {
@@ -30,7 +32,8 @@ function wrap(children: ReactNode): void {
 }
 
 describe('<Button>', () => {
-  it('is operable from the keyboard alone — POS-02', async () => {
+  it('is operable from the keyboard alone', async () => {
+    // What POS-02 asks of every control; the register, not a button, proves it.
     const user = userEvent.setup();
     const pressed = vi.fn();
     wrap(<Button onPress={pressed}>حفظ</Button>);
@@ -322,5 +325,60 @@ describe('<DensityScope> — §6.1', () => {
     expect(container.querySelector('[data-density]')?.getAttribute('data-density')).toBe('touch');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe('<ToastRegion> — a message that is delivered', () => {
+  it('lives outside the application, where a dialog cannot hide it', () => {
+    // A dialog hides everything outside itself from assistive technology and
+    // lays a scrim over it. Inside the app, a toast a dialog raised about its
+    // own work was dimmed, unreachable and never announced.
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <ToastRegion>
+          <span />
+        </ToastRegion>
+      </VertexProvider>,
+    );
+    const region = document.querySelector('[aria-live="polite"]');
+    expect(region).not.toBeNull();
+    expect(container.contains(region)).toBe(false);
+    expect(region?.hasAttribute('data-react-aria-top-layer')).toBe(true);
+  });
+
+  it('gives focus back to where it was when a toast is dismissed from the keyboard', async () => {
+    const person = userEvent.setup();
+    let show: (message: string) => void = () => undefined;
+    function Shower(): ReactNode {
+      const toast = useToast();
+      show = (message) => {
+        toast.show(message, { duration: null });
+      };
+      return <Button onPress={() => undefined}>حفظ</Button>;
+    }
+    wrap(
+      <ToastRegion>
+        <Shower />
+      </ToastRegion>,
+    );
+
+    await person.tab();
+    const origin = document.activeElement;
+    act(() => {
+      show('حُفظ الفرع');
+    });
+    screen.getByRole('button', { name: 'إغلاق' }).focus();
+    await person.keyboard('{Enter}');
+
+    expect(screen.queryByText('حُفظ الفرع')).toBeNull();
+    expect(document.activeElement).toBe(origin);
+  });
+});
+
+describe('<SearchInput>', () => {
+  it('is announced by its name once, not twice', () => {
+    wrap(<SearchInput label="بحث" />);
+    expect(screen.getByRole('searchbox').getAttribute('aria-label')).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'بحث' })).toBeDefined();
   });
 });

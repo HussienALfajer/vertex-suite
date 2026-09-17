@@ -6,7 +6,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
-  type WheelEvent as ReactWheelEvent,
 } from 'react';
 
 import {
@@ -68,7 +67,11 @@ export function useMeasured(of: RefObject<HTMLDivElement | null>): Viewport {
 }
 
 export interface GestureOptions {
+  /** The element the wheel is listened for on — see `onWheel` below for why it is not a prop. */
+  readonly surface: RefObject<HTMLDivElement | null>;
   readonly view: MapView | null;
+  /** The deepest zoom the base layer has anything to show at. */
+  readonly maxZoom?: number;
   readonly viewport: Viewport;
   readonly onChange: (view: MapView) => void;
   /** Called for a press that did not turn into a drag. Absent means clicks pan only. */
@@ -77,23 +80,41 @@ export interface GestureOptions {
   readonly onReset?: () => void;
 }
 
-export interface Gestures {
+/**
+ * What is spread onto the surface, kept apart from what is called by hand.
+ *
+ * They were one object, and spreading it put `zoomBy` on a DOM element as an
+ * attribute React warned about on every render of every map.
+ */
+export interface GestureHandlers {
   readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
-  readonly onWheel: (event: ReactWheelEvent<HTMLElement>) => void;
   readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+}
+
+export interface Gestures {
+  readonly handlers: GestureHandlers;
   readonly zoomBy: (steps: number) => void;
 }
 
-function inside(event: ReactPointerEvent<HTMLElement> | ReactWheelEvent<HTMLElement>): Pixel {
-  const box = event.currentTarget.getBoundingClientRect();
+/** How many pixels of wheel travel make one zoom level. */
+const WHEEL_PER_LEVEL = 300;
+
+function inside(event: {
+  clientX: number;
+  clientY: number;
+  currentTarget: EventTarget | null;
+}): Pixel {
+  const box = (event.currentTarget as Element).getBoundingClientRect();
   return { x: event.clientX - box.left, y: event.clientY - box.top };
 }
 
 export function useMapGestures({
+  surface,
   view,
+  maxZoom = MAX_ZOOM,
   viewport,
   onChange,
   onPick,
@@ -107,9 +128,9 @@ export function useMapGestures({
     (steps: number) => {
       if (view === null) return;
       const middle = { x: viewport.width / 2, y: viewport.height / 2 };
-      onChange(zoomAround(view, middle, clamp(view.zoom + steps, MIN_ZOOM, MAX_ZOOM), viewport));
+      onChange(zoomAround(view, middle, clamp(view.zoom + steps, MIN_ZOOM, maxZoom), viewport));
     },
-    [view, viewport, onChange],
+    [view, viewport, onChange, maxZoom],
   );
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
@@ -161,22 +182,41 @@ export function useMapGestures({
     if (drag.current?.pointer === event.pointerId) drag.current = null;
   }, []);
 
-  const onWheel = useCallback(
-    (event: ReactWheelEvent<HTMLElement>) => {
-      if (view === null) return;
+  // The wheel is listened for natively, not through React. React attaches its
+  // wheel handler as a passive listener, which may not cancel the scroll — so
+  // the page scrolled away underneath a map that was zooming, and somebody
+  // scrolling down the branches screen past the map zoomed it out on the way.
+  // And the amount follows the wheel's own distance: a fixed half level per
+  // event sent a trackpad, which fires many small events, three levels deep on
+  // nine pixels of travel.
+  const latest = useRef({ view, viewport, onChange, maxZoom });
+  latest.current = { view, viewport, onChange, maxZoom };
+  useEffect(() => {
+    const element = surface.current;
+    if (element === null) return undefined;
+    const onWheel = (event: WheelEvent): void => {
+      const { view: now, viewport: size, onChange: change, maxZoom: deepest } = latest.current;
+      if (now === null) return;
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? size.height : 1;
+      const levels = clamp((-event.deltaY * unit) / WHEEL_PER_LEVEL, -1, 1);
       // Anchored on the pointer. The alternative throws away the place somebody
       // is looking at on every notch, and the correction is a drag they never
       // meant to make.
-      onChange(
-        zoomAround(view, inside(event), view.zoom - Math.sign(event.deltaY) * 0.5, viewport),
-      );
-    },
-    [view, viewport, onChange],
-  );
+      change(zoomAround(now, inside(event), clamp(now.zoom + levels, MIN_ZOOM, deepest), size));
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      element.removeEventListener('wheel', onWheel);
+    };
+  }, [surface]);
 
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
       if (view === null) return;
+      // A chord is the browser's or the system's: Ctrl with + zooms the page,
+      // and taking it for the map left somebody unable to enlarge the text.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
 
       // Arrow keys move the map the way a hand would: pressing up shows what is
       // above, which means pushing the content down.
@@ -208,12 +248,7 @@ export function useMapGestures({
   );
 
   return {
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
-    onPointerCancel,
-    onWheel,
-    onKeyDown,
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onKeyDown },
     zoomBy,
   };
 }
