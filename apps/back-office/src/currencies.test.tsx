@@ -105,16 +105,25 @@ describe('Currencies — FX-01', () => {
     expect(screen.getByLabelText(catalogue['currencies.new.increment'])).toBeTruthy();
   });
 
-  it('takes a currency out of use and puts it back', async () => {
+  it('takes a currency out of use, drops it from the default view, and puts it back', async () => {
     const shop = await aShopOnCurrencies();
 
     await shop.person.click(
       within(rowFor('TRY')).getByRole('button', { name: catalogue['currencies.disable.title'] }),
     );
     await shop.person.click(screen.getByRole('button', { name: catalogue['currencies.disable'] }));
+
+    // Hidden the moment it is out of use, the same rule `SYS-09`'s own
+    // structural screens follow — a shop's small, active set of currencies
+    // is what a glance shows.
     await waitFor(() => {
-      expect(rowFor('TRY').textContent).toContain(catalogue['status.withdrawn']);
+      expect(screen.queryByRole('rowheader', { name: 'TRY' })).toBeNull();
     });
+    await shop.person.click(
+      screen.getByRole('switch', { name: catalogue['listing.includeWithdrawn'] }),
+    );
+    expect(await screen.findByRole('rowheader', { name: 'TRY' })).toBeTruthy();
+    expect(rowFor('TRY').textContent).toContain(catalogue['status.withdrawn']);
 
     await shop.person.click(
       within(rowFor('TRY')).getByRole('button', { name: catalogue['currencies.enable.title'] }),
@@ -158,6 +167,9 @@ describe('The functional currency — FX-02', () => {
       within(rowFor('TRY')).getByRole('button', { name: catalogue['currencies.disable.title'] }),
     );
     await shop.person.click(screen.getByRole('button', { name: catalogue['currencies.disable'] }));
+    await shop.person.click(
+      screen.getByRole('switch', { name: catalogue['listing.includeWithdrawn'] }),
+    );
     await waitFor(() => {
       expect(rowFor('TRY').textContent).toContain(catalogue['status.withdrawn']);
     });
