@@ -165,3 +165,32 @@ test('a withdrawn branch is still there to be put back', async ({ page }) => {
   await page.getByRole('button', { name: 'إعادة إلى الخدمة', exact: true }).click();
   await expect(page.getByText('قيد الاستخدام')).toBeVisible();
 });
+
+test('names the company throughout its own withdraw confirmation, including the close that follows either answer', async ({
+  page,
+}) => {
+  await signIn(page);
+
+  await page.getByRole('button', { name: 'تسجيل شركة' }).first().click();
+  await page.getByLabel('اسم الشركة', { exact: true }).fill('fajer 2');
+  await page.getByRole('button', { name: 'تسجيل', exact: true }).click();
+  await expect(page.getByRole('rowheader', { name: 'fajer 2' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'سحب الشركة من الخدمة' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('fajer 2');
+
+  // Cancel closes the dialog over §8's `dur-slow` rather than instantly, and
+  // the name interpolated into its message is read from state a screen used
+  // to clear the moment the dialog closed — blanking the sentence for exactly
+  // that fade. It must still name the company right up to the close, on
+  // either answer.
+  await page.getByRole('button', { name: 'إلغاء' }).click();
+  expect(await dialog.textContent()).toContain('fajer 2');
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('button', { name: 'سحب الشركة من الخدمة' }).click();
+  await page.getByRole('button', { name: 'سحب من الخدمة', exact: true }).click();
+  expect(await dialog.textContent()).toContain('fajer 2');
+  await expect(dialog).toBeHidden();
+});

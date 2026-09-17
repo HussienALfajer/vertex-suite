@@ -205,3 +205,34 @@ test('refuses a format that drops the guarantee, under the field that typed it',
   // document nobody can reprint.
   await expect(dialog.getByText('صيغة سلسلة صندوق لا بدّ أن تحمل')).toBeVisible();
 });
+
+test('keeps showing a series’ own scope through the close that follows cancelling its revision', async ({
+  page,
+}) => {
+  await aShopTrading(page);
+
+  await page.getByRole('link', { name: 'سلاسل الترقيم' }).click();
+  await page.getByRole('button', { name: 'تعريف سلسلة' }).first().click();
+
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('نوع المستند', { exact: true }).fill('pur.invoice');
+  await dialog.getByLabel('السنة المالية', { exact: true }).fill('2026');
+  await dialog.getByLabel('الصيغة', { exact: true }).fill('{year}-{sequence:6}');
+  await dialog.getByRole('button', { name: 'حفظ الصيغة' }).click();
+  await expect(page.getByRole('rowheader', { name: 'pur.invoice' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'تعديل الصيغة' }).click();
+  // Revise mode shows the scope as a definition list, not fields — the whole
+  // reason this dialog and the one that defines a series are one component.
+  const scopeValue = dialog.locator('dd').filter({ hasText: 'pur.invoice' });
+  await expect(scopeValue).toBeVisible();
+  await expect(dialog.getByLabel('نوع المستند', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'إلغاء' }).click();
+  // The dialog is still fading (§8's `dur-slow`), and this is the render a
+  // caller that clears its own `subject` the instant it closes would have
+  // shown the "define" fields on — an empty, editable نوع المستند input,
+  // right where the scope's own text was a moment ago.
+  expect(await dialog.getByLabel('نوع المستند', { exact: true }).count()).toBe(0);
+  await expect(dialog).toBeHidden();
+});
