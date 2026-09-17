@@ -60,7 +60,7 @@ describe('Currencies — FX-01', () => {
 
     const syp = await fx.read.currency(fx.by, 'SYP');
     const usd = await fx.read.currency(fx.by, 'USD');
-    expect(syp).toMatchObject({ symbol: 'ل.س', decimals: 2, roundingIncrement: '1' });
+    expect(syp).toMatchObject({ symbol: 'ل.س', decimals: 2, roundingIncrement: '10' });
     expect(usd).toMatchObject({ symbol: '$', decimals: 4, roundingIncrement: '0.01' });
     expect(await fx.read.currency(fx.by, 'TRY')).toMatchObject({ symbol: '₺' });
     expect(await fx.read.currency(fx.by, 'EUR')).toMatchObject({ symbol: '€' });
@@ -72,11 +72,11 @@ describe('Currencies — FX-01', () => {
     const usd = (await fx.read.currency(fx.by, 'USD'))!;
 
     // Handed straight to the kernel, with nothing converted on the way: the
-    // pound settles to the whole pound and the dollar to the cent, and neither
+    // pound settles to the ten-pound note and the dollar to the cent, and neither
     // loses what rounding took off.
-    const pounds = round(money('13100.5', syp.code), syp);
-    expect(toDecimalString(pounds.value)).toBe('13101');
-    expect(toDecimalString(pounds.residual)).toBe('-0.5');
+    const pounds = round(money('13105', syp.code), syp);
+    expect(toDecimalString(pounds.value)).toBe('13110');
+    expect(toDecimalString(pounds.residual)).toBe('-5');
 
     const dollars = round(money('10.3664', usd.code), usd);
     expect(toDecimalString(dollars.value)).toBe('10.37');
@@ -161,7 +161,7 @@ describe('Currencies — FX-01', () => {
     expect(refusalOf(await fx.admin.define(fx.by, { ...AED, code: 'SYP' }))).toBe(
       'fx.currency-exists',
     );
-    expect((await fx.read.currency(fx.by, 'SYP'))?.roundingIncrement).toBe('1');
+    expect((await fx.read.currency(fx.by, 'SYP'))?.roundingIncrement).toBe('10');
   });
 
   it('refuses a symbol with nothing visible in it, and keeps the one it takes without its padding', async () => {

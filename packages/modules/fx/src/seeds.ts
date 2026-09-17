@@ -9,32 +9,33 @@ import { defineCurrency, type Currency, type CurrencyCode } from '@vertex/kernel
  * currency fails when the module loads on the engineer's machine, not when a
  * shop is installed.
  *
- * **Every step settles to the smallest unit the currency issues at all** — the
- * cent, the kuruş, the whole pound — and never to a larger note. That is the one
- * step a seed can choose without choosing for the shop: rounding to a note
- * bigger than the one circulating in its market takes money from every customer
- * or gives it away at every sale, and which note that is is a fact about the
- * shop's market on the day, which the owner states by revising the step.
+ * **Every step is the smallest note or coin a cashier can actually hand over.**
+ * Settling to anything finer asks for change that does not exist, and the till
+ * comes up short by the difference at every sale; settling to anything coarser
+ * takes from every customer or gives away to them. Which note that is is a fact
+ * about a market on a given day, so it is data the owner revises when the notes
+ * change — the seed only states the market this product is first sold into.
  *
- * **Every precision is finer than its step**, on purpose. An amount received in one currency
- * is worth a whole number of cents of another only by coincidence; the books
- * (`FX-02`) keep its equivalent to four places, and what four places cannot hold
- * is the rounding residual of `FX-07`. A ledger stored to the cent would drop the
- * rest with nothing to say where it went. Any of these may be made functional,
- * so each is carried the same way.
+ * **Every precision is finer than its step**, on purpose. An amount received in
+ * one currency is worth a whole number of cents of another only by coincidence;
+ * the books (`FX-02`) keep its equivalent to four places, and what four places
+ * cannot hold is the rounding residual of `FX-07`. A ledger stored to the cent
+ * would drop the rest with nothing to say where it went. Any of these may be made
+ * functional, so each is carried the same way.
  *
  * Half-up throughout, which is what a customer expects to read on a receipt.
  */
 export const SEEDED_CURRENCIES: readonly Currency[] = Object.freeze([
-  // Two places although nothing smaller than a pound is issued: a figure
-  // converted into pounds, or restated by a redenomination (`FX-11`), still has
-  // somewhere to put its fraction.
+  // Settled to the ten-pound note, the smallest in circulation in the market
+  // this is first sold into, as its owner states it. Two places although no note
+  // is smaller than ten: a figure converted into pounds, or restated by a
+  // redenomination (`FX-11`), still has somewhere to put its fraction.
   defineCurrency({
     code: 'SYP',
     // policy-exempt: §12 — a currency symbol is data the owner revises (FX-01), not a label
     symbol: 'ل.س',
     decimals: 2,
-    roundingIncrement: '1',
+    roundingIncrement: '10',
     roundingMode: 'half-up',
   }),
   defineCurrency({
