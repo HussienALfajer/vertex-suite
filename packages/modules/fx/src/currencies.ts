@@ -7,6 +7,7 @@ import {
   type CurrencyCode,
   type CurrencyFlaw,
   type Err,
+  type Instant,
   type Result,
 } from '@vertex/kernel';
 
@@ -267,10 +268,32 @@ export function makeFunctional(
   if (currency === null) return refuse('fx.currency-not-found', { code });
   if (!currency.enabled) return refuse('fx.currency-disabled', { code });
 
-  if (functionalCodeIn(session, tenant) !== code) {
-    writeRecord(session, 'functional', tenant, [], { tenant, currency: code });
+  const chosen = readRecord(session, 'functional', tenant, []);
+  if (chosen?.currency === code) return ok(currency);
+  if (chosen !== null && chosen.fixedAt !== null) {
+    return refuse('fx.functional-currency-in-use', { code, functional: chosen.currency });
   }
+
+  writeRecord(session, 'functional', tenant, [], { tenant, currency: code, fixedAt: null });
   return ok(currency);
+}
+
+/**
+ * Fixes the functional currency, the first time a figure is written against it.
+ *
+ * Called in the transaction that writes the figure, so the two commit together
+ * or not at all: a rate that rolled back leaves the choice as free as it was.
+ */
+export function fixFunctional(session: RecordSession, tenant: TenantId, at: Instant): void {
+  const chosen = readRecord(session, 'functional', tenant, []);
+  // The caller has already read the functional currency to express its figure
+  // in, so there is always one here; a store without it has been damaged.
+  if (chosen === null) {
+    throw new Error(`Tenant ${tenant} has no functional currency to fix.`);
+  }
+  if (chosen.fixedAt === null) {
+    writeRecord(session, 'functional', tenant, [], { ...chosen, fixedAt: at });
+  }
 }
 
 /**
@@ -308,7 +331,11 @@ export function seedCurrencies(
   }
 
   if (chosen === null) {
-    writeRecord(session, 'functional', tenant, [], { tenant, currency: SEEDED_FUNCTIONAL });
+    writeRecord(session, 'functional', tenant, [], {
+      tenant,
+      currency: SEEDED_FUNCTIONAL,
+      fixedAt: null,
+    });
   }
   return ok(currenciesIn(session, tenant));
 }

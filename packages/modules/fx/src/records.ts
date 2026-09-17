@@ -1,7 +1,15 @@
 import type { TenantId } from '@vertex/contracts';
-import type { CurrencyCode } from '@vertex/kernel';
+import type { CurrencyCode, Instant } from '@vertex/kernel';
 
-import type { RecordSession, TenantCurrency } from './contract.js';
+import type {
+  LastKnownRates,
+  RateRevision,
+  RateRevisionId,
+  RecordSession,
+  SuggestedRate,
+  SuggestedRateId,
+  TenantCurrency,
+} from './contract.js';
 
 /**
  * The key layout, and the one place a stored shape is asserted.
@@ -27,11 +35,45 @@ import type { RecordSession, TenantCurrency } from './contract.js';
 export interface FunctionalRecord {
   readonly tenant: TenantId;
   readonly currency: CurrencyCode;
+  /**
+   * When the first rate was written against it, after which it cannot change;
+   * null until then. On this record rather than found by looking for rates, so
+   * that the command choosing a currency and the command recording a rate each
+   * read what the other writes, and the store refuses whichever commits second.
+   */
+  readonly fixedAt: Instant | null;
+}
+
+/**
+ * Which revision of a day is in force, and how many there have been.
+ *
+ * A pointer rather than a search for the highest sequence: two corrections
+ * recorded at once each read it before writing it, so one of them is refused at
+ * commit instead of both being numbered 2.
+ */
+export interface RevisionHead {
+  readonly revision: RateRevisionId;
+  readonly sequence: number;
+}
+
+/** The tenant's latest suggestion for one currency, for the same reason. */
+export interface SuggestionHead {
+  readonly suggestion: SuggestedRateId;
 }
 
 export interface StoredShapes {
   readonly currency: TenantCurrency;
   readonly functional: FunctionalRecord;
+  /** `fx/revision/<tenant>/<branch>/<currency>/<day>/<id>` */
+  readonly revision: RateRevision;
+  /** `fx/revision-head/<tenant>/<branch>/<currency>/<day>` */
+  readonly 'revision-head': RevisionHead;
+  /** `fx/suggestion/<tenant>/<currency>/<id>` */
+  readonly suggestion: SuggestedRate;
+  /** `fx/suggestion-head/<tenant>/<currency>` */
+  readonly 'suggestion-head': SuggestionHead;
+  /** `fx/last-known/<tenant>/<branch>/<day>/<device>`: one confirmation per register per day. */
+  readonly 'last-known': LastKnownRates;
 }
 
 export type Collection = keyof StoredShapes;
@@ -73,18 +115,21 @@ export function writeRecord<C extends Collection>(
 }
 
 /**
- * Every record of a collection belonging to one tenant.
+ * Every record of a collection belonging to one tenant, or to one stretch of
+ * its keys — `within` a branch and a currency, say.
  *
  * A scan of the key space, which is what the memory store can do; `U07`'s
  * driver replaces it with an index. The prefix ends in a separator, so tenant
- * `ab` never reads the records of tenant `abc`.
+ * `ab` never reads the records of tenant `abc`, and the revisions of one day
+ * never include those of another whose key merely begins the same way.
  */
 export function scanRecords<C extends Collection>(
   session: RecordSession,
   collection: C,
   tenant: TenantId,
+  within: readonly string[] = [],
 ): StoredShapes[C][] {
-  const prefix = `${keyFor(collection, tenant, [])}/`;
+  const prefix = `${keyFor(collection, tenant, within)}/`;
   const found: StoredShapes[C][] = [];
   for (const key of session.keys()) {
     if (!key.startsWith(prefix)) continue;

@@ -127,3 +127,52 @@ describe('Functional currency — FX-02', () => {
     expect((await fx.read.functional(fx.by))?.code).toBe('USD');
   });
 });
+
+describe('The functional currency, once rates are written against it — FX-02', () => {
+  const POUNDS = { form: 'units-per-functional', buy: '13100', sell: '12900' } as const;
+
+  it('is fixed by the first rate a branch records, because that rate is per one unit of it', async () => {
+    taken(await fx.admin.seed(fx.system));
+    const aleppo = fx.openBranch();
+    taken(await fx.admin.makeFunctional(fx.by, 'EUR'));
+    taken(await fx.admin.makeFunctional(fx.by, 'USD'));
+
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+
+    const refused = await fx.admin.makeFunctional(fx.by, 'EUR');
+    expect(refusalOf(refused)).toBe('fx.functional-currency-in-use');
+    expect(refused.ok ? null : refused.error.values).toEqual({ code: 'EUR', functional: 'USD' });
+    expect((await fx.read.functional(fx.by))?.code).toBe('USD');
+    // Choosing the currency already chosen is still answered, and changes nothing.
+    expect(taken(await fx.admin.makeFunctional(fx.by, 'USD')).code).toBe('USD');
+  });
+
+  it('is fixed by the first rate the tenant suggests, as well', async () => {
+    taken(await fx.admin.seed(fx.system));
+
+    taken(await fx.rateAdmin.suggest(fx.by, 'SYP', POUNDS));
+
+    expect(refusalOf(await fx.admin.makeFunctional(fx.by, 'TRY'))).toBe(
+      'fx.functional-currency-in-use',
+    );
+  });
+
+  it('is not fixed by a rate that was refused', async () => {
+    taken(await fx.admin.seed(fx.system));
+    const aleppo = fx.openBranch();
+
+    expect(isOk(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', { ...POUNDS, buy: '0' }))).toBe(
+      false,
+    );
+
+    expect(taken(await fx.admin.makeFunctional(fx.by, 'EUR')).code).toBe('EUR');
+  });
+
+  it('stays fixed for one tenant while another still chooses', async () => {
+    taken(await fx.admin.seed(fx.system));
+    taken(await fx.admin.seed(systemContext(fx.otherTenant)));
+    taken(await fx.rateAdmin.suggest(fx.by, 'SYP', POUNDS));
+
+    expect(taken(await fx.admin.makeFunctional(fx.byOther, 'TRY')).code).toBe('TRY');
+  });
+});

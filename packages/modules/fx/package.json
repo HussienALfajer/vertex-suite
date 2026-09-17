@@ -28,7 +28,8 @@
   "dependencies": {
     "@vertex/contracts": "workspace:*",
     "@vertex/kernel": "workspace:*",
-    "@vertex/platform": "workspace:*"
+    "@vertex/platform": "workspace:*",
+    "@vertex/sys": "workspace:*"
   },
   "devDependencies": {
     "typescript": "6.0.2",
