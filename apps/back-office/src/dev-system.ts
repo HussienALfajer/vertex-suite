@@ -8,12 +8,14 @@ import {
   createTransactor,
   defineModule,
   provideContract,
+  systemContext,
   type Authoriser,
   type CommandContext,
   type MemorySession,
   type PermissionDeclaration,
 } from '@vertex/platform';
 import { OWNER, SEEDED_ROLES, type PermissionId } from '@vertex/contracts';
+import { Currencies, CurrencyAdministration, fxModule } from '@vertex/fx';
 import {
   Authorisation,
   SEC_PERMISSIONS,
@@ -32,6 +34,7 @@ import {
 } from '@vertex/sys';
 
 import type {
+  CurrenciesOfRecord,
   DeclaredRight,
   OrganisationOfRecord,
   SignInAttempt,
@@ -54,16 +57,17 @@ import type {
  * real module, in Node, where it can run; if `SEC` ever answered differently,
  * that test fails rather than this stand-in quietly teaching the screen a lie.
  *
- * **`SYS` is not stood in for. It is the real one, hosted here.** Nothing in it
- * needs a machine: it is an ordinary module over the memory store the platform
- * ships, and it runs in a browser exactly as it runs on a store node. Writing a
- * fake organisation would have meant writing a second implementation of every
- * rule the screens are built on — that two branches in one company may not
- * share a name, that a location cannot be opened in a branch that is shut, that
- * nothing is ever deleted — and a screen developed against a second
- * implementation is a screen developed against a guess. The composition here is
- * the real edition composition, the real registry and the real transactor, for
- * the same reason `edition.fixture.ts` is.
+ * **`SYS` and `FX` are not stood in for. They are the real ones, hosted here.**
+ * Nothing in either needs a machine: both are ordinary modules over the memory
+ * store the platform ships, and both run in a browser exactly as they run on a
+ * store node. Writing a fake organisation, or a fake currency, would have meant
+ * writing a second implementation of every rule the screens are built on —
+ * that two branches in one company may not share a name, that a rounding step
+ * cannot be finer than a currency's own stored precision — and a screen
+ * developed against a second implementation is a screen developed against a
+ * guess. The composition here is the real edition composition, the real
+ * registry and the real transactor, for the same reason `edition.fixture.ts`
+ * is.
  *
  * All of it goes when `U07` brings the store node and a transport. The screens
  * do not change: they never named anything in this file.
@@ -192,9 +196,9 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const clock = options.clock ?? systemClock;
   const tenant = newId<'tenant'>();
 
-  const catalogue = [sysModule<MemorySession>(), authorityStandIn()];
+  const catalogue = [sysModule<MemorySession>(), authorityStandIn(), fxModule<MemorySession>()];
   const plan = orThrow(
-    composeEdition(catalogue, { modules: ['SYS', 'SEC'] }),
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX'] }),
     (refusal) => new Error(`The edition would not compose: ${refusal.code}`),
   );
 
@@ -228,6 +232,8 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   // What the back office asks this contract are the two questions that take
   // nothing — what is configured, and what a format would print.
   const numbering = registry.require(DocumentNumbering);
+  const currenciesRead = registry.require(Currencies);
+  const currenciesAdmin = registry.require(CurrencyAdministration);
 
   /**
    * Who is asking, which is the transport's business and not a screen's.
@@ -302,6 +308,65 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     profile: {
       read: (company) => read.profile(by(), company),
       revise: (company, changes) => admin.profile.revise(by(), company, changes),
+    },
+  };
+
+  /**
+   * The four currencies of `FX-01`, ready before anybody asks for them.
+   *
+   * `seed` is idempotent and asks nothing of a specific person — `SYS-13`'s
+   * first run has nobody signed in yet either — so it runs at the system's
+   * own place the first time this port is used, rather than waiting for a
+   * screen to trigger it explicitly. Cached in one promise so a second screen
+   * mounting while the first is still seeding awaits the same attempt instead
+   * of racing it and seeding twice — and cleared on failure, so a transport
+   * hiccup is a `currencies.tsx` `reload()` away from trying again rather
+   * than a refusal every caller is stuck with for the rest of the session.
+   */
+  let seeded: Promise<void> | null = null;
+  function ensureCurrenciesSeeded(): Promise<void> {
+    seeded ??= (async () => {
+      try {
+        orThrow(
+          await currenciesAdmin.seed(systemContext(tenant)),
+          (refusal) => new Error(`Seeding currencies was refused: ${refusal.code}`),
+        );
+      } catch (cause) {
+        seeded = null;
+        throw cause;
+      }
+    })();
+    return seeded;
+  }
+
+  const currencies: CurrenciesOfRecord = {
+    list: async (listing) => {
+      await ensureCurrenciesSeeded();
+      return currenciesRead.currencies(by(), listing);
+    },
+    functional: async () => {
+      await ensureCurrenciesSeeded();
+      return currenciesRead.functional(by());
+    },
+    define: async (input) => {
+      await ensureCurrenciesSeeded();
+      return currenciesAdmin.define(by(), input);
+    },
+    revise: async (code, changes) => {
+      await ensureCurrenciesSeeded();
+      return currenciesAdmin.revise(by(), code, changes);
+    },
+    disable: async (code) => {
+      await ensureCurrenciesSeeded();
+      return currenciesAdmin.disable(by(), code);
+    },
+    enable: async (code) => {
+      await ensureCurrenciesSeeded();
+      return currenciesAdmin.enable(by(), code);
+    },
+    makeFunctional: async (code) => {
+      await ensureCurrenciesSeeded();
+      return currenciesAdmin.makeFunctional(by(), code);
     },
   };
 
@@ -759,5 +824,6 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
 
     organisation,
     users: usersPort,
+    currencies,
   };
 }

@@ -38,6 +38,7 @@ function systemThatAnswers(signIn: SystemOfRecord['signIn']): SystemOfRecord {
     signOut: real.signOut.bind(real),
     organisation: real.organisation,
     users: real.users,
+    currencies: real.currencies,
   };
 }
 

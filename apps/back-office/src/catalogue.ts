@@ -181,6 +181,33 @@ export const catalogue = {
     'هذه السلسلة لا صندوق لها، فلا شيء يملأ رمز الصندوق ولا جيل الجهاز. احذف العلامتين من الصيغة.',
 
   /**
+   * `FX`'s own refusals, as sentences.
+   *
+   * `FX-01`'s currencies and `FX-02`'s functional currency alone: the rate,
+   * stamping and rounding refusals belong to the screen that first triggers
+   * them, which is not this one yet.
+   */
+  'refusal.fx.currency-code-invalid':
+    'الرمز «{code}» لا يصلح: ثلاثة حروف لاتينية كبيرة بالضبط، كما يكتبها ISO 4217 — مثل AED أو GBP.',
+  'refusal.fx.currency-exists': 'العملة «{code}» موجودة هنا بالفعل.',
+  'refusal.fx.currency-not-found': 'لم تعد هذه العملة موجودة. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.fx.currency-symbol-required': 'أدخل رمزًا مطبوعًا للعملة.',
+  'refusal.fx.currency-decimals-invalid': 'الدقة العشرية رقم صحيح بين 0 و12.',
+  'refusal.fx.currency-decimals-reduced':
+    'الدقة ترتفع ولا تنخفض: خفضها إلى {to} يجعل مبلغًا مخزَّنًا بدقة {from} خانة غير قابل للتخزين كما هو.',
+  'refusal.fx.currency-increment-invalid': 'خطوة التقريب رقم عشري موجب، مثل 0.01 أو 10.',
+  'refusal.fx.currency-increment-too-fine':
+    'خطوة التقريب «{increment}» أدق من الدقة العشرية المخزَّنة ({decimals} خانة). اختر خطوة أكبر، أو ارفع الدقة أولًا.',
+  'refusal.fx.currency-rounding-mode-unknown': 'اتجاه التقريب غير معروف.',
+  'refusal.fx.currency-disabled': 'العملة «{code}» معطَّلة حاليًا، فلا تصلح عملة للدفاتر.',
+  'refusal.fx.currency-is-functional':
+    'لا يمكن تعطيل «{code}» وهي عملة الدفاتر — سيُترك حساب التكلفة والهامش بلا عملة. اجعل عملة أخرى عملة للدفاتر أولًا.',
+  'refusal.fx.functional-currency-in-use':
+    'عملة الدفاتر ثبتت عند «{functional}» بأول سعر يومي سُجِّل عليها، فلا تتغيّر بعد ذلك.',
+  'refusal.fx.not-permitted':
+    'هذا الإجراء يحتاج صلاحية «{right}»، وهي غير ممنوحة لك. راجع مالك المتجر.',
+
+  /**
    * The rights `SYS` declares, named the way an administrator would say them.
    *
    * The key is the permission's own identifier, which is exactly the `labelKey`
@@ -226,6 +253,24 @@ export const catalogue = {
   'permission.sec.role-assignment.create': 'تعيين دور لمستخدم',
   'permission.sec.role-assignment.edit': 'تعديل تكليف دور',
   'permission.sec.role-assignment.delete': 'سحب تكليف دور',
+  /**
+   * `FX`'s own rights. `rate` and `suggested-rate` are named even though no
+   * screen here grants them through a command yet — `SEC-02`'s grid names
+   * every right the edition declares, not only the ones a screen already acts
+   * on (`roles.test.tsx`'s own rule, proven once for `sys.branch.rezone`).
+   */
+  'permission.fx.currency.view': 'الاطلاع على العملات',
+  'permission.fx.currency.create': 'إضافة عملة',
+  'permission.fx.currency.edit': 'تعديل قواعد العملات',
+  'permission.fx.currency.delete': 'تعطيل عملة',
+  'permission.fx.functional-currency.view': 'الاطلاع على عملة الدفاتر',
+  'permission.fx.functional-currency.edit': 'اعتماد عملة الدفاتر',
+  'permission.fx.rate.view': 'الاطلاع على أسعار الصرف اليومية',
+  'permission.fx.rate.create': 'تسجيل أسعار الصرف اليومية',
+  'permission.fx.rate.override': 'تجاوز سعر الصرف على مستند',
+  'permission.fx.suggested-rate.view': 'الاطلاع على السعر المقترح',
+  'permission.fx.suggested-rate.create': 'اقتراح سعر لكل الفروع',
+  'permission.fx.last-known-rate.confirm': 'التداول بآخر سعر معروف عند انقطاع الاتصال',
   'permission.unknown': 'غير معروفة',
 
   /**
@@ -252,6 +297,10 @@ export const catalogue = {
   'permission.resource.sec.user': 'المستخدمون',
   'permission.resource.sec.role': 'الأدوار',
   'permission.resource.sec.role-assignment': 'تكليفات الأدوار',
+  'permission.resource.fx.currency': 'العملات',
+  'permission.resource.fx.functional-currency': 'عملة الدفاتر',
+  'permission.resource.fx.rate': 'أسعار الصرف اليومية',
+  'permission.resource.fx.suggested-rate': 'السعر المقترح',
 
   'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
   'theme.light': 'فاتح',
@@ -269,6 +318,9 @@ export const catalogue = {
   'nav.numbering': 'سلاسل الترقيم',
   'nav.users': 'المستخدمون',
   'nav.roles': 'الأدوار',
+  /** `FX`'s own group in the side navigation — see `nav.currencies` below. */
+  'nav.group.fx': 'العملات',
+  'nav.currencies': 'إدارة العملات',
 
   'action.close': 'إغلاق',
   'action.cancel': 'إلغاء',
@@ -483,6 +535,19 @@ export const catalogue = {
   'location.kind.shop-floor': 'صالة بيع',
   'location.kind.store-room': 'مستودع',
   'location.kind.vehicle': 'مركبة',
+
+  /**
+   * The kernel's six rounding modes (`FX-01`, `FX-07`), named by what they do
+   * to a value exactly between two increments — the one case where the six
+   * differ — rather than by their code names, which read as jargon to an
+   * owner who has never seen `decimal.js`.
+   */
+  'currency.roundingMode.half-up': 'للأقرب، وللأبعد عن الصفر عند التساوي',
+  'currency.roundingMode.half-even': 'للأقرب، وللرقم الزوجي عند التساوي',
+  'currency.roundingMode.up': 'دائمًا بعيدًا عن الصفر',
+  'currency.roundingMode.down': 'دائمًا نحو الصفر',
+  'currency.roundingMode.ceil': 'دائمًا نحو الأكبر',
+  'currency.roundingMode.floor': 'دائمًا نحو الأصغر',
 
   /**
    * `SYS-09`'s tills and `SYS-02`'s machines, on one screen because they are
@@ -790,6 +855,67 @@ export const catalogue = {
   'roles.holders.user': 'المستخدم',
   'roles.holders.user.placeholder': 'اختر المستخدم',
   'roles.holders.user.required': 'اختر المستخدم.',
+
+  /**
+   * `FX-01`: the four seeded currencies and any a tenant adds, each with its
+   * own rounding rule. `FX-02`: which one the books are kept in, marked on
+   * its own row rather than asked as a separate question — a currency either
+   * is the one the books are kept in or it is not, and the row it is already
+   * on is where that reads best.
+   */
+  'currencies.title': 'إدارة العملات',
+  'currencies.description':
+    'عملات هذا المتجر، وقاعدة كل منها: دقتها العشرية، وخطوة تقريبها، واتجاه ذلك التقريب. إحداها عملة الدفاتر — بها تُحسب التكلفة والهامش وتقييم المخزون.',
+  'currencies.table': 'العملات',
+  'currencies.define': 'إضافة عملة',
+  'currencies.column.code': 'العملة',
+  'currencies.column.symbol': 'الرمز',
+  'currencies.column.decimals': 'الدقة العشرية',
+  'currencies.column.increment': 'خطوة التقريب',
+  'currencies.column.roundingMode': 'اتجاه التقريب',
+  'currencies.column.status': 'الحالة',
+  'currencies.column.actions': 'إجراءات',
+  /** The number goes through the locale, so §5.5's per-tenant digits reach it. */
+  'currencies.decimals.value': '{decimals, number}',
+  'currencies.functional.badge': 'عملة الدفاتر',
+
+  'currencies.new.title': 'إضافة عملة',
+  'currencies.new.code': 'رمز العملة',
+  'currencies.new.code.description':
+    'حسب ISO 4217: ثلاثة حروف لاتينية كبيرة، كما يُطبع على أوراق النقد — مثل AED أو GBP.',
+  'currencies.new.code.required': 'أدخل رمز العملة.',
+  'currencies.new.symbol': 'الرمز المطبوع',
+  'currencies.new.symbol.required': 'أدخل الرمز الذي يُطبع على الإيصال.',
+  'currencies.new.decimals': 'الدقة العشرية',
+  'currencies.new.increment': 'خطوة التقريب',
+  'currencies.new.increment.description':
+    'أصغر فئة تُسلَّم بها الفكّة فعليًا، رقمًا عشريًا: 0.01 لأصغرها قرش، 10 لأصغرها ورقة بعشرة. خطوة أدق من المتاح تجعل الصندوق يخسر الفرق في كل مرة.',
+  'currencies.new.increment.required': 'أدخل خطوة التقريب.',
+  'currencies.new.roundingMode': 'اتجاه التقريب',
+  'currencies.new.submit': 'إضافة',
+  'currencies.defined': 'أُضيفت عملة «{code}».',
+
+  'currencies.revise.action': 'تعديل قواعد العملة',
+  'currencies.revise.title': 'تعديل قواعد العملة',
+  'currencies.revise.submit': 'حفظ',
+  'currencies.revised': 'حُدّثت قواعد «{code}».',
+
+  'currencies.disable': 'تعطيل',
+  'currencies.disable.title': 'تعطيل عملة',
+  'currencies.disable.message':
+    'لن تُستخدم «{code}» في حركة جديدة، وتبقى كل مستنداتها السابقة كما هي وقابلة للتقارير. يمكنك إعادة تفعيلها متى شئت.',
+  'currencies.disabled': 'عُطِّلت «{code}».',
+  'currencies.enable': 'تفعيل',
+  'currencies.enable.title': 'إعادة تفعيل عملة',
+  'currencies.enable.message': 'ستعود «{code}» متاحة للاستخدام في حركة جديدة.',
+  'currencies.enabled': 'أُعيد تفعيل «{code}».',
+
+  'currencies.makeFunctional.action': 'اعتماد عملة للدفاتر',
+  'currencies.makeFunctional.title': 'اعتماد عملة للدفاتر',
+  'currencies.makeFunctional.message':
+    'ستُحسب التكلفة والهامش وتقييم المخزون بعملة «{code}» من الآن. عملة الدفاتر تثبت نهائيًا بمجرد أن يُسجَّل عليها أول سعر يومي، فاختر بعناية.',
+  'currencies.makeFunctional.submit': 'اعتماد',
+  'currencies.functionalChanged': 'صارت «{code}» عملة الدفاتر.',
 
   /**
    * `Credentials.changeOwnPassword`: the one action here that belongs to

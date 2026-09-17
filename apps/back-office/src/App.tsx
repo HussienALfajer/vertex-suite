@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { ThemeSwitch, ToastRegion, VertexProvider, type TwoToneTheme } from '@vertex/ui';
 
 import { createTranslator } from './catalogue.js';
+import { CurrenciesProvider } from './currencies.js';
 import { OrganisationProvider } from './organisation.js';
 import { navigate } from './routing.js';
 import { useSession, SessionProvider } from './session.js';
@@ -78,7 +79,9 @@ function Screen({
   ) : (
     <OrganisationProvider system={system}>
       <UsersProvider system={system}>
-        <Shell themeSwitch={themeSwitch} />
+        <CurrenciesProvider system={system}>
+          <Shell themeSwitch={themeSwitch} />
+        </CurrenciesProvider>
       </UsersProvider>
     </OrganisationProvider>
   );
