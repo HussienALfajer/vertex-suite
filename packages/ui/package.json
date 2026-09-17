@@ -26,6 +26,9 @@
     "src/tokens/*.generated.css",
     "src/styles/*.css"
   ],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
@@ -61,5 +64,9 @@
     "d3-geo": "3.1.1",
     "react-aria-components": "1.21.1",
     "topojson-client": "3.1.0"
+  },
+  "peerDependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   }
 }

@@ -73,7 +73,7 @@ export function DataTable<T extends { id: Key }>({
   ...props
 }: DataTableProps<T>): ReactNode {
   const density = useDensity();
-  const rowHeight = SIZE_TOKENS['h-row']?.[density === 'touch' ? 'touch' : 'compact'] ?? 28;
+  const rowHeight = SIZE_TOKENS['h-row']?.[density === 'touch' ? 'touch' : 'compact'] ?? 32;
 
   const table = (
     <Table
@@ -100,7 +100,7 @@ export function DataTable<T extends { id: Key }>({
               // sit just under white on a light one.
               'bg-surface-1 border-line sticky top-0 z-10 border-b',
               'px-[var(--vx-pad-md)] py-[var(--vx-pad-sm)]',
-              'text-footnote font-body-medium text-fg-secondary',
+              'text-footnote font-medium text-fg-secondary',
               column.align === 'end' ? 'text-end' : 'text-start',
               focusRing,
             )}
@@ -170,11 +170,16 @@ export function DataTable<T extends { id: Key }>({
  * React Aria will not size a column below 75px, so the `1%` that used to stand
  * for "shrink to fit" under an automatic table layout is, under the fixed one
  * it actually uses, a column too narrow to hold what is in it.
+ *
+ * The cell's padding is the table's density — `compact`, except on a touch
+ * surface, which the table may not lower (§6.3). It was always `compact`, so
+ * on the register a three-action column came out 16px short and the last
+ * action was clipped.
  */
 export function actionsColumnWidth(count: number, density: Density = 'comfortable'): number {
   const control = SIZE_TOKENS['h-control']?.[density] ?? 32;
   const gap = SIZE_TOKENS['gap-md']?.[density] ?? 16;
-  const padding = SIZE_TOKENS['pad-md']?.compact ?? 8;
+  const padding = SIZE_TOKENS['pad-md']?.[density === 'touch' ? 'touch' : 'compact'] ?? 8;
   return count * control + Math.max(count - 1, 0) * gap + padding * 2;
 }
 

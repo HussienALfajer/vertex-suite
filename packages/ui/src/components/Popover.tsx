@@ -53,13 +53,23 @@ export function Popover({
         className={clsx(
           'bg-surface-3 rounded-card shadow-lg border-line z-40 border',
           'max-w-[20rem] min-w-[14rem]',
-          'entering:duration-[var(--vx-dur-base)] entering:ease-out',
-          'exiting:duration-[var(--vx-dur-base)] exiting:ease-in',
+          // §8, over `dur-base` — see `Dialog` for why these are the classes.
+          'transition-opacity duration-[var(--vx-dur-base)] ease-out starting:opacity-0',
+          'data-[exiting]:opacity-0 data-[exiting]:ease-in',
           className,
         )}
       >
-        <OverlayArrow>
-          <svg width={12} height={12} viewBox="0 0 12 12" className="fill-surface-3 stroke-line">
+        {/* Drawn pointing down, for an overlay above its trigger. React Aria flips
+            the overlay away from the viewport's edge and says where it went in
+            `data-placement`; the arrow did not follow, and pointed away from the
+            control it belongs to. */}
+        <OverlayArrow className="group">
+          <svg
+            width={12}
+            height={12}
+            viewBox="0 0 12 12"
+            className="fill-surface-3 stroke-line group-data-[placement=bottom]:rotate-180 group-data-[placement=left]:-rotate-90 group-data-[placement=right]:rotate-90"
+          >
             <path d="M0 0 L6 6 L12 0" />
           </svg>
         </OverlayArrow>

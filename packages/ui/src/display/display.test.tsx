@@ -59,6 +59,13 @@ describe('<Money> — §12', () => {
     expect(screen.getByText('USD')).toBeDefined();
   });
 
+  it('refuses to render an amount against a currency it is not expressed in', () => {
+    // Dollars given the pound's precision and code printed `12.50 SYP`.
+    expect(() => {
+      wrap(<Money value={money('12.50', 'USD')} currency={SYP} />);
+    }).toThrow();
+  });
+
   it('shows the amount at exactly the stored precision', () => {
     wrap(<Money value={money('1234.5', 'USD')} currency={USD} />);
     expect(screen.getByText('1,234.50')).toBeDefined();
@@ -140,6 +147,17 @@ describe('<Quantity> — §12', () => {
       wrap(<Quantity value={quantity('1', 'KG')} unit={PIECE} />);
     }).toThrow();
   });
+
+  it('marks a quantity shown at less precision than stored, not only on hover', () => {
+    // A title is a full value for whoever hovers; §12 asks for a marker too.
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <Quantity value={quantity('1.23456', 'KG')} unit={KILOGRAM} />
+      </VertexProvider>,
+    );
+    expect(container.textContent).toContain('≈');
+    expect(container.querySelector('[title]')?.getAttribute('title')).toBe('1.23456 KG');
+  });
 });
 
 describe('<UnitLabel> — a tenant renames a unit', () => {
@@ -186,6 +204,38 @@ describe('<DateTime> — §12', () => {
 describe('<CurrencyRate> — a rate and the day it was set', () => {
   // FX-04 shows a rate's date on every currency-sensitive screen; this is the component, not the rule.
   const asOf = new Date('2026-09-14T00:00:00Z');
+
+  it('marks a rate shown at less precision than it is carried, and keeps its full value', () => {
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <CurrencyRate
+          rate="0.923456"
+          currency="EUR"
+          functionalCurrency="USD"
+          asOf={asOf}
+          timeZone="Asia/Damascus"
+        />
+      </VertexProvider>,
+    );
+    expect(container.textContent).toContain('≈');
+    expect(container.querySelector('[title]')?.getAttribute('title')).toBe('0.923456 EUR / 1 USD');
+  });
+
+  it('writes the one of "per one" in the tenant’s digits, like the rate beside it', () => {
+    const { container } = render(
+      <VertexProvider translator={translator} numerals="arab" root={null}>
+        <CurrencyRate
+          rate="14500"
+          currency="SYP"
+          functionalCurrency="USD"
+          asOf={asOf}
+          timeZone="Asia/Damascus"
+          decimals={0}
+        />
+      </VertexProvider>,
+    );
+    expect(container.textContent).toContain('SYP / ١ USD');
+  });
 
   it('names both halves of the quote, in the stored direction', () => {
     const { container } = render(

@@ -88,39 +88,40 @@ export interface BreadcrumbTrailProps {
  * default rather than a mode.
  */
 export function BreadcrumbTrail({ label, items, className }: BreadcrumbTrailProps): ReactNode {
+  // Inside a named `nav`, which is what makes a trail a landmark a screen reader
+  // can jump to. A labelled list on its own is only a list.
   return (
-    <Breadcrumbs
-      aria-label={label}
-      className={clsx('flex items-center gap-[var(--vx-gap-xs)]', className)}
-    >
-      {items.map((item, index) => (
-        <Breadcrumb key={item.id} className="flex items-center gap-[var(--vx-gap-xs)]">
-          {item.href === undefined || index === items.length - 1 ? (
-            <span
-              className="text-footnote text-fg"
-              {...(index === items.length - 1 ? { 'aria-current': 'page' as const } : {})}
-            >
-              {item.label}
-            </span>
-          ) : (
-            <Link
-              href={item.href}
-              className={clsx(
-                'text-footnote text-fg-secondary hover:text-fg cursor-pointer rounded underline-offset-2',
-                'outline-none hover:underline',
-                focusRing,
-              )}
-            >
-              {item.label}
-            </Link>
-          )}
-          {index === items.length - 1 ? null : (
-            <span aria-hidden="true" className="text-fg-muted text-footnote">
-              /
-            </span>
-          )}
-        </Breadcrumb>
-      ))}
-    </Breadcrumbs>
+    <nav aria-label={label} className={className}>
+      <Breadcrumbs className="flex items-center gap-[var(--vx-gap-xs)]">
+        {items.map((item, index) => (
+          <Breadcrumb key={item.id} className="flex items-center gap-[var(--vx-gap-xs)]">
+            {item.href === undefined || index === items.length - 1 ? (
+              <span
+                className="text-footnote text-fg"
+                {...(index === items.length - 1 ? { 'aria-current': 'page' as const } : {})}
+              >
+                {item.label}
+              </span>
+            ) : (
+              <Link
+                href={item.href}
+                className={clsx(
+                  'text-footnote text-fg-secondary hover:text-fg cursor-pointer rounded underline-offset-2',
+                  'outline-none hover:underline',
+                  focusRing,
+                )}
+              >
+                {item.label}
+              </Link>
+            )}
+            {index === items.length - 1 ? null : (
+              <span aria-hidden="true" className="text-fg-muted text-footnote">
+                /
+              </span>
+            )}
+          </Breadcrumb>
+        ))}
+      </Breadcrumbs>
+    </nav>
   );
 }

@@ -35,6 +35,7 @@
   --color-map-land: var(--vx-map-land);
   --color-map-land-home: var(--vx-map-land-home);
   --color-map-line: var(--vx-map-line);
+  --color-dialog-scrim: var(--vx-dialog-scrim);
   --color-fill-accent: var(--vx-fill-accent);
   --color-fill-accent-hover: var(--vx-fill-accent-hover);
   --color-fg-accent: var(--vx-text-accent);
@@ -83,18 +84,25 @@
 
   /* Type. Both move with the density axis. */
   --text-caption: var(--vx-font-size-caption);
+  --text-caption--line-height: var(--vx-line-height-caption);
   --leading-caption: var(--vx-line-height-caption);
   --text-footnote: var(--vx-font-size-footnote);
+  --text-footnote--line-height: var(--vx-line-height-footnote);
   --leading-footnote: var(--vx-line-height-footnote);
   --text-code: var(--vx-font-size-code);
+  --text-code--line-height: var(--vx-line-height-code);
   --leading-code: var(--vx-line-height-code);
   --text-body: var(--vx-font-size-body);
+  --text-body--line-height: var(--vx-line-height-body);
   --leading-body: var(--vx-line-height-body);
   --text-heading: var(--vx-font-size-heading);
+  --text-heading--line-height: var(--vx-line-height-heading);
   --leading-heading: var(--vx-line-height-heading);
   --text-title: var(--vx-font-size-title);
+  --text-title--line-height: var(--vx-line-height-title);
   --leading-title: var(--vx-line-height-title);
   --text-page: var(--vx-font-size-page);
+  --text-page--line-height: var(--vx-line-height-page);
   --leading-page: var(--vx-line-height-page);
 
   /* Weights. `body-*` is compensated on a dark ground (§5.4). */

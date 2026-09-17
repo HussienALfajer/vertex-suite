@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-import type { Translator } from '@vertex/i18n';
+import { formattingLocale, type Numerals, type Translator } from '@vertex/i18n';
 
 import { DEFAULT_DENSITY, type Density } from '../tokens/scale.js';
 
@@ -8,13 +8,11 @@ import { DEFAULT_DENSITY, type Density } from '../tokens/scale.js';
 export type ThemeChoice = 'light' | 'dark' | 'system';
 
 /**
- * Which digits are *displayed*.
- *
- * §5.5: Western digits by default, Arabic-Indic as a per-tenant display setting
- * that never affects a stored value or a parse. This lives in the interface
- * layer for exactly that reason — nothing below it ever sees the choice.
+ * Which digits are *displayed* — §5.5's per-tenant display setting, which never
+ * affects a stored value or a parse. Declared by `@vertex/i18n`, because the
+ * messages it formats carry figures too.
  */
-export type Numerals = 'latn' | 'arab';
+export type { Numerals };
 
 export interface VertexContextValue {
   readonly locale: string;
@@ -22,6 +20,7 @@ export interface VertexContextValue {
   /** The locale to hand to `Intl`, carrying the numeral choice. */
   readonly formattingLocale: string;
   readonly theme: ThemeChoice;
+  /** Formats its figures in the provider's numerals, like every display component. */
   readonly translator: Translator;
 }
 
@@ -48,7 +47,13 @@ export function useDensity(): Density {
   return useContext(DensityContext);
 }
 
-/** Builds the `Intl` locale for a numeral choice, e.g. `ar` + `latn` → `ar-u-nu-latn`. */
+/**
+ * Builds the `Intl` locale for a numeral choice, e.g. `ar` + `latn` → `ar-u-nu-latn`.
+ *
+ * It once appended `-u-nu-…` to whatever it was given, so a locale already
+ * carrying an extension (`ar-u-ca-gregory`) became a tag `Intl` refuses, and
+ * every figure on the screen threw.
+ */
 export function formattingLocaleFor(locale: string, numerals: Numerals): string {
-  return `${locale}-u-nu-${numerals}`;
+  return formattingLocale(locale, numerals);
 }

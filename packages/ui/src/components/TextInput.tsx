@@ -84,7 +84,7 @@ export function TextInput({
       className={clsx('flex flex-col gap-[var(--vx-gap-xs)]', className)}
       {...(errorMessage === undefined ? {} : { isInvalid: true })}
     >
-      <Label className="text-footnote font-body-medium text-fg-secondary">{label}</Label>
+      <Label className="text-footnote font-medium text-fg-secondary">{label}</Label>
       <div className="relative flex">
         <Input
           {...(placeholder === undefined ? {} : { placeholder })}
@@ -114,11 +114,11 @@ export function TextInput({
             // control height and carries a tooltip, and both are wrong for a
             // control living *inside* a field of exactly that height.
             aria-label={translator.format(isRevealed ? 'password.hide' : 'password.show')}
-            // `excludeFromTabOrder` is deliberate. §11.1 orders the keyboard by
-            // importance, and a reveal control between a password field and the
-            // button that submits it is a stop every signing-in cashier passes
-            // through twice a day to reach something they do want.
-            excludeFromTabOrder
+            // In the tab order. It was once excluded, to spare a cashier a stop
+            // between the password and the button, and §11.1 is plain that a
+            // control a pointer can reach and a keyboard cannot is a defect: on
+            // the register, which has no pointer, nobody could ever check what
+            // they had typed.
             onPress={() => {
               setIsRevealed((was) => !was);
             }}

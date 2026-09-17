@@ -39,13 +39,23 @@ export function WithTooltip({ content, children }: WithTooltipProps): ReactNode 
         className={clsx(
           'bg-fill-primary text-on-primary rounded shadow-md',
           'px-[var(--vx-pad-sm)] py-[var(--vx-pad-xs)]',
-          'text-footnote font-body-medium',
-          'entering:duration-[var(--vx-dur-base)] entering:ease-out',
-          'exiting:duration-[var(--vx-dur-base)] exiting:ease-in',
+          'text-footnote font-medium',
+          // §8, over `dur-base` — see `Dialog` for why these are the classes.
+          'transition-opacity duration-[var(--vx-dur-base)] ease-out starting:opacity-0',
+          'data-[exiting]:opacity-0 data-[exiting]:ease-in',
         )}
       >
-        <OverlayArrow>
-          <svg width={8} height={8} viewBox="0 0 8 8" className="fill-fill-primary">
+        {/* Drawn pointing down, for an overlay above its trigger. React Aria flips
+            the overlay away from the viewport's edge and says where it went in
+            `data-placement`; the arrow did not follow, and pointed away from the
+            control it belongs to. */}
+        <OverlayArrow className="group">
+          <svg
+            width={8}
+            height={8}
+            viewBox="0 0 8 8"
+            className="fill-fill-primary group-data-[placement=bottom]:rotate-180 group-data-[placement=left]:-rotate-90 group-data-[placement=right]:rotate-90"
+          >
             <path d="M0 0 L4 4 L8 0 Z" />
           </svg>
         </OverlayArrow>

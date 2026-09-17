@@ -1,6 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
-import { emitTailwind, tailwindColourAlias } from './emit-integration.js';
+import { emitJson, emitPrimitives } from './emit.js';
+import { emitFonts, emitTailwind, tailwindColourAlias } from './emit-integration.js';
+import { emitTheme } from './emit-theme.js';
+import { generatePalette } from './generate.js';
+import { TYPE_SCALE } from './scale.js';
 import { ACCENT_TOKENS, BORDERS, NEUTRAL_FILLS, SURFACES, TEXT } from './semantic.js';
 
 /**
@@ -24,6 +32,23 @@ const semanticColourTokens = [
   ...Object.keys(NEUTRAL_FILLS),
   ...ACCENT_TOKENS.flatMap(({ tokens }) => Object.keys(tokens)),
 ];
+
+describe('the committed generated files', () => {
+  it('are exactly what the generator emits today', () => {
+    // They are committed so that a consumer never runs a generator, which also
+    // means a generator change that nobody re-ran ships the old tokens with
+    // every test here green. `pnpm --filter @vertex/ui tokens` rewrites them.
+    const palette = generatePalette();
+    const committed = (name: string): string =>
+      readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), name), 'utf8');
+
+    expect(committed('palette.generated.css')).toBe(emitPrimitives(palette));
+    expect(committed('palette.generated.json')).toBe(emitJson(palette));
+    expect(committed('theme.generated.css')).toBe(emitTheme());
+    expect(committed('fonts.generated.css')).toBe(emitFonts());
+    expect(committed('tailwind.generated.css')).toBe(emitTailwind());
+  });
+});
 
 describe('tailwindColourAlias', () => {
   it('never produces an alias that repeats a utility prefix', () => {
@@ -64,6 +89,14 @@ describe('the emitted theme', () => {
     for (const token of semanticColourTokens) {
       const alias = tailwindColourAlias(token);
       expect(css, token).toContain(`--color-${alias}: var(--vx-${token});`);
+    }
+  });
+
+  it('gives every size of the scale its own line height, so a text utility sets both — §5.2', () => {
+    // Emitted only as `--leading-*`, the line heights reached no utility, and a
+    // 26px Arabic page title sat on the body's 22px line.
+    for (const role of Object.keys(TYPE_SCALE)) {
+      expect(css, role).toContain(`--text-${role}--line-height: var(--vx-line-height-${role});`);
     }
   });
 

@@ -35,6 +35,16 @@ export interface MoneyProps {
 export function Money({ value, currency, showSymbol = false, className }: MoneyProps): ReactNode {
   const { formattingLocale } = useVertex();
 
+  // The mix-up §12 exists to prevent, arrived at from the other side: an amount
+  // in dollars handed the pound's precision and code printed `12.50 SYP`.
+  // `Quantity` has always refused its equivalent.
+  if (value.currency !== currency.code) {
+    throw new Error(
+      `An amount in ${value.currency} was given the currency ${currency.code}. ` +
+        'An amount is never rendered against a currency it is not expressed in.',
+    );
+  }
+
   const stored = toDecimalString(value);
   const { text, isRounded } = formatExact(stored, currency.decimals, formattingLocale);
   const negative = value.amount.isNegative() && !value.amount.isZero();

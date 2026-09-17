@@ -115,6 +115,66 @@ describe('useAttempt', () => {
     });
   });
 
+  it('keeps an attempt that outlived its subject off the subject that replaced it', async () => {
+    // Save for branch A, close, reopen for branch B while A is still saving.
+    let releaseA!: (message: string | null) => void;
+    const savingA = new Promise<string | null>((resolve) => {
+      releaseA = resolve;
+    });
+    let releaseB!: (message: string | null) => void;
+    const savingB = new Promise<string | null>((resolve) => {
+      releaseB = resolve;
+    });
+    const { result, rerender } = renderHook(
+      ({ subject }: { subject: string }) => useAttempt(subject, vi.fn()),
+      { initialProps: { subject: 'a' } },
+    );
+
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.attempt(() => savingA);
+    });
+    rerender({ subject: 'b' });
+    expect(result.current.isWorking).toBe(false);
+
+    let second: Promise<void> = Promise.resolve();
+    act(() => {
+      second = result.current.attempt(() => savingB);
+    });
+    expect(result.current.isWorking).toBe(true);
+
+    await act(async () => {
+      releaseA('A: الاسم مستخدم بالفعل');
+      await first;
+    });
+    // A settled: B is still saving, and A's refusal is not B's.
+    expect(result.current.isWorking).toBe(true);
+    expect(result.current.refused).toBeNull();
+
+    await act(async () => {
+      releaseB(null);
+      await second;
+    });
+    expect(result.current.isWorking).toBe(false);
+  });
+
+  it('comes back from an action that threw instead of answering', async () => {
+    const { result } = renderHook(() => useAttempt(true, vi.fn()));
+
+    await act(async () => {
+      await expect(
+        result.current.attempt(() => Promise.reject(new Error('the store node is unreachable'))),
+      ).rejects.toThrow('unreachable');
+    });
+    expect(result.current.isWorking).toBe(false);
+
+    const action = vi.fn(() => Promise.resolve(null));
+    await act(async () => {
+      await result.current.attempt(action);
+    });
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
   it('lets a dialog clear a stale refusal itself, ahead of its own validation error', () => {
     const { result } = renderHook(() => useAttempt(true, vi.fn()));
 

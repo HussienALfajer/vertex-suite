@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { useTranslator } from '../providers/context.js';
 import { IconButton } from './Button.js';
@@ -95,33 +96,45 @@ export function ToastRegion({ children, className }: ToastRegionProps): ReactNod
 
   const api = useMemo<ToastApi>(() => ({ show, dismiss }), [show, dismiss]);
 
+  const region = (
+    <div
+      // `polite` rather than `assertive`: a toast never interrupts a cashier
+      // mid-scan. Anything that must interrupt is a Banner or a dialog.
+      aria-live="polite"
+      aria-relevant="additions"
+      // Outside the application, and marked as a top layer. A dialog hides
+      // everything outside itself from assistive technology and lays a scrim
+      // over it; rendered inside the app, the region went with it, so a toast
+      // a dialog raised about its own work — "assigned", "withdrawn" — was
+      // dimmed, unreachable and never announced. React Aria leaves an element
+      // with this attribute alone.
+      data-react-aria-top-layer=""
+      className={clsx(
+        // Top and centred: the one place on the screen nothing else is ever
+        // laid out against, in either direction — a corner competes with
+        // whatever a right-to-left or left-to-right document already keeps
+        // there (a nav, a brand mark, this app's own theme switch). Above the
+        // z-50 a dialog's scrim is drawn at.
+        'pointer-events-none fixed inset-x-0 top-0 z-[60] flex flex-col items-center',
+        'gap-[var(--vx-gap-sm)] p-[var(--vx-pad-lg)]',
+        className,
+      )}
+    >
+      {toasts.map((toast) => (
+        <ToastItem
+          key={toast.id}
+          toast={toast}
+          onDismiss={dismiss}
+          dismissLabel={translator.format('action.dismiss')}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div
-        // `polite` rather than `assertive`: a toast never interrupts a cashier
-        // mid-scan. Anything that must interrupt is a Banner or a dialog.
-        aria-live="polite"
-        aria-relevant="additions"
-        className={clsx(
-          // Top and centred: the one place on the screen nothing else is ever
-          // laid out against, in either direction — a corner competes with
-          // whatever a right-to-left or left-to-right document already keeps
-          // there (a nav, a brand mark, this app's own theme switch).
-          'pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center',
-          'gap-[var(--vx-gap-sm)] p-[var(--vx-pad-lg)]',
-          className,
-        )}
-      >
-        {toasts.map((toast) => (
-          <ToastItem
-            key={toast.id}
-            toast={toast}
-            onDismiss={dismiss}
-            dismissLabel={translator.format('action.dismiss')}
-          />
-        ))}
-      </div>
+      {createPortal(region, globalThis.document.body)}
     </ToastContext.Provider>
   );
 }
@@ -136,6 +149,10 @@ function ToastItem({
   dismissLabel: string;
 }): ReactNode {
   const [isPaused, setIsPaused] = useState(false);
+  // Where focus was before it entered this toast, so that dismissing the toast
+  // from the keyboard gives it back. The button pressed unmounts with the toast,
+  // and focus used to fall to the document body — the start of the page.
+  const cameFrom = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (toast.duration === null || isPaused) return undefined;
@@ -167,8 +184,12 @@ function ToastItem({
       onMouseLeave={() => {
         setIsPaused(false);
       }}
-      onFocus={() => {
+      onFocus={(event) => {
         setIsPaused(true);
+        const from = event.relatedTarget;
+        if (from instanceof HTMLElement && !event.currentTarget.contains(from)) {
+          cameFrom.current = from;
+        }
       }}
       onBlur={() => {
         setIsPaused(false);
@@ -178,6 +199,8 @@ function ToastItem({
       <IconButton
         aria-label={dismissLabel}
         onPress={() => {
+          const back = cameFrom.current;
+          if (back?.isConnected === true) back.focus();
           onDismiss(toast.id);
         }}
         className="-me-[var(--vx-pad-sm)] -mt-[var(--vx-pad-xs)]"

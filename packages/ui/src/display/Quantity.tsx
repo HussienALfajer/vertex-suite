@@ -45,6 +45,13 @@ export function Quantity({ value, unit, className }: QuantityProps): ReactNode {
       {...(isRounded ? { title: `${stored} ${unit.code}` } : {})}
     >
       <span dir="ltr">{text}</span>
+      {/* §12: a figure shown at less precision than stored carries a marker as
+          well as its full value in `title` — hover alone is not a marker. */}
+      {isRounded ? (
+        <span aria-hidden="true" className="text-fg-muted">
+          ≈
+        </span>
+      ) : null}
       <UnitLabel code={unit.code} className="text-fg-secondary" />
     </span>
   );
