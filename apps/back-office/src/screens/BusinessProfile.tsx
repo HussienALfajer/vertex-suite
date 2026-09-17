@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import {
   Banner,
   Button,
+  ConfirmationDialog,
   EmptyState,
   IconButton,
   PageHeader,
@@ -135,6 +136,7 @@ export function BusinessProfile(): ReactNode {
   const [isSaving, setIsSaving] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [invalid, setInvalid] = useState<readonly string[]>([]);
+  const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
 
   // What was read is what the form starts from, every time a different company
   // is chosen or the record is re-read.
@@ -145,6 +147,12 @@ export function BusinessProfile(): ReactNode {
   }, [stored]);
 
   const isDirty = !isSame(draft, stored);
+
+  function discard(): void {
+    setDraft(stored);
+    setRefused(null);
+    setInvalid([]);
+  }
 
   function change<K extends keyof Draft>(field: K, value: Draft[K]): void {
     setDraft((was) => ({ ...was, [field]: value }));
@@ -262,9 +270,7 @@ export function BusinessProfile(): ReactNode {
             <Button
               isDisabled={!isDirty || isSaving}
               onPress={() => {
-                setDraft(stored);
-                setRefused(null);
-                setInvalid([]);
+                setIsConfirmingDiscard(true);
               }}
             >
               {translator.format('profile.discard')}
@@ -280,6 +286,16 @@ export function BusinessProfile(): ReactNode {
             </Button>
           </>
         }
+      />
+
+      <ConfirmationDialog
+        title={translator.format('profile.discard.title')}
+        message={translator.format('profile.discard.message')}
+        confirmLabel={translator.format('profile.discard')}
+        tone="danger"
+        isOpen={isConfirmingDiscard}
+        onOpenChange={setIsConfirmingDiscard}
+        onConfirm={discard}
       />
 
       <StaleBanner />

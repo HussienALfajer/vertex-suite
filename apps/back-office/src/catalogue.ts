@@ -968,6 +968,9 @@ export const catalogue = {
   'profile.saving': 'جارٍ الحفظ…',
   'profile.saved': 'حُفظ ملف العمل التجاري.',
   'profile.discard': 'تراجع عن التغييرات',
+  'profile.discard.title': 'تراجع عن التغييرات',
+  'profile.discard.message':
+    'سيُفقَد كل ما كتبته منذ آخر حفظ، ولا يمكن التراجع عن هذا. الحقول تعود إلى آخر نسخة محفوظة.',
   'profile.unsaved': 'لديك تغييرات لم تُحفظ بعد.',
   'profile.empty': 'لا توجد شركة بعد',
   'profile.empty.explanation': 'ملف العمل التجاري يخصّ شركة، فابدأ بتسجيل الشركة.',

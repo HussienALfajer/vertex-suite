@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogue } from './catalogue.js';
@@ -107,7 +107,7 @@ describe('The business profile — SYS-05', () => {
     expect(await screen.findByText(catalogue['profile.tax.key.duplicate'])).toBeTruthy();
   });
 
-  it('says there are unsaved changes, and puts them back on request', async () => {
+  it('says there are unsaved changes, asks before discarding them, and puts them back on confirmation', async () => {
     const shop = await aShopOnItsProfile('مؤسسة الشام');
 
     await retype(shop, catalogue['profile.phone'], '021-2345678');
@@ -117,6 +117,24 @@ describe('The business profile — SYS-05', () => {
     // commercial register, and half-copied values reaching a receipt in the
     // meantime is the failure this form exists to prevent.
     await shop.person.click(screen.getByRole('button', { name: catalogue['profile.discard'] }));
+
+    // A confirmation stands between the click and the loss, the same rule
+    // every destructive action in this product follows — the typed value is
+    // still there until it is actually confirmed.
+    expect(screen.getByLabelText<HTMLInputElement>(catalogue['profile.phone']).value).toBe(
+      '021-2345678',
+    );
+    await shop.person.click(screen.getByRole('button', { name: catalogue['action.cancel'] }));
+    expect(screen.getByLabelText<HTMLInputElement>(catalogue['profile.phone']).value).toBe(
+      '021-2345678',
+    );
+
+    await shop.person.click(screen.getByRole('button', { name: catalogue['profile.discard'] }));
+    await shop.person.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: catalogue['profile.discard'],
+      }),
+    );
 
     expect(screen.getByLabelText<HTMLInputElement>(catalogue['profile.phone']).value).toBe('');
     expect(screen.queryByText(catalogue['profile.unsaved'])).toBeNull();

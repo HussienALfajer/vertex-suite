@@ -131,6 +131,34 @@ test('revises the business profile and says it was saved', async ({ page }) => {
   await expect(page.getByText('حُفظ ملف العمل التجاري.')).toBeVisible();
 });
 
+test('asks before discarding an unsaved business-profile edit, and keeps it on cancel', async ({
+  page,
+}) => {
+  await signIn(page);
+
+  await page.getByRole('button', { name: 'تسجيل شركة' }).first().click();
+  await page.getByLabel('اسم الشركة', { exact: true }).fill('مؤسسة الشام');
+  await page.getByRole('button', { name: 'تسجيل', exact: true }).click();
+  await expect(page.getByRole('rowheader', { name: 'مؤسسة الشام' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'ملف العمل التجاري' }).click();
+  const phone = page.getByLabel('الهاتف', { exact: true });
+  await phone.fill('021-2345678');
+
+  await page.getByRole('button', { name: 'تراجع عن التغييرات' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toBeVisible();
+
+  // Cancel changes nothing: the typed value survives the dialog it opened.
+  await page.getByRole('button', { name: 'إلغاء' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(phone).toHaveValue('021-2345678');
+
+  await page.getByRole('button', { name: 'تراجع عن التغييرات' }).click();
+  await dialog.getByRole('button', { name: 'تراجع عن التغييرات' }).click();
+  await expect(phone).toHaveValue('');
+});
+
 test('a withdrawn branch is still there to be put back', async ({ page }) => {
   await signIn(page);
 
