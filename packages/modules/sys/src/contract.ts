@@ -93,8 +93,31 @@ export interface Branch extends TenantOwned {
    * the day a shop installs this — so it is the ordinary state, not a gap.
    */
   readonly point: GeoPoint | null;
+  /**
+   * The IANA time zone the branch's days are counted in: `Asia/Damascus`.
+   *
+   * A field on the branch, because it is a fact about where the shop trades
+   * rather than a preference of anybody using it. Every "today" in the product
+   * is a branch's today — the daily rate of `FX-04` is entered for one, and a
+   * rate entered at half past midnight belongs to the day the shop is in, not
+   * the day the store node's machine happens to be in.
+   *
+   * Never derived from the point or the address (`SYS-14` derives neither from
+   * the other either), and never null: a branch that did not know its zone could
+   * not say which day it is trading on.
+   */
+  readonly timeZone: string;
   readonly active: boolean;
 }
+
+/**
+ * The zone a branch is opened in when nobody says otherwise.
+ *
+ * The market this product is first sold into, and a default only: stated when
+ * the branch is opened and revised with `branches.rezone`, never read again for
+ * a branch that has one — which every branch does.
+ */
+export const DEFAULT_TIME_ZONE = 'Asia/Damascus';
 
 export interface Location extends TenantOwned {
   readonly id: LocationId;
@@ -254,6 +277,11 @@ export type OrganisationRefusalCode =
   /** `SYS-14`: not a decimal, or more degrees than the Earth has. */
   | 'sys.point-out-of-range'
   /**
+   * Not a time zone this store node knows. Checked where it is typed, because a
+   * branch whose zone nobody can read cannot say which day it is trading on.
+   */
+  | 'sys.time-zone-unknown'
+  /**
    * `SYS-14`: a van is a stock location whose place moves with it. Storing a
    * point for one would answer a question about where the stock is with
    * somewhere it was, which is worse than having no answer at all.
@@ -317,6 +345,14 @@ export interface OrganisationAdministration {
     readdress(by: CommandContext, id: BranchId, address: string): Outcome<Branch>;
     /** `null` takes the point off. A place wrongly marked is worse than unmarked. */
     locate(by: CommandContext, id: BranchId, point: GeoPoint | null): Outcome<Branch>;
+    /**
+     * Says which time zone the branch trades in.
+     *
+     * Applies from now on. A day already recorded — a rate entered for the
+     * seventeenth — stays the day it was recorded for; only which day "today"
+     * is changes. A withdrawn branch may be rezoned, as it may be readdressed.
+     */
+    rezone(by: CommandContext, id: BranchId, timeZone: string): Outcome<Branch>;
     deactivate(by: CommandContext, id: BranchId): Outcome<Branch>;
     reactivate(by: CommandContext, id: BranchId): Outcome<Branch>;
   };
@@ -392,6 +428,8 @@ export interface NewBranch {
    */
   readonly address?: string;
   readonly point?: GeoPoint;
+  /** An IANA zone. Omitted, the branch trades in `DEFAULT_TIME_ZONE`. */
+  readonly timeZone?: string;
 }
 
 export interface NewLocation {

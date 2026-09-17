@@ -58,15 +58,18 @@ export {
   fixedClock,
   instant,
   instantFrom,
+  localDateOf,
   manualClock,
   millisBetween,
   offsetClock,
   plusMillis,
   systemClock,
+  timeZoneNamed,
   toDate,
   toISOString,
   type Clock,
   type Instant,
+  type LocalDate,
   type ManualClock,
 } from './clock.js';
 
@@ -109,6 +112,7 @@ export {
   InvalidCurrencyError,
   InvalidIdError,
   InvalidInstantError,
+  InvalidTimeZoneError,
   KernelError,
   UnroundedAmountError,
 } from './errors.js';

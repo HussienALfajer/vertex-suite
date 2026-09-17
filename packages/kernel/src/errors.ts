@@ -47,3 +47,12 @@ export class EntropyUnavailableError extends KernelError {}
 
 /** A value could not be read as a moment in time. */
 export class InvalidInstantError extends KernelError {}
+
+/**
+ * A name this runtime does not know as a time zone was used to read a day.
+ *
+ * A defect rather than a refusal: the name was checked with `timeZoneNamed`
+ * where a person typed it, so reaching here means it was not, or that this
+ * machine's time-zone data is older than the machine that accepted it.
+ */
+export class InvalidTimeZoneError extends KernelError {}

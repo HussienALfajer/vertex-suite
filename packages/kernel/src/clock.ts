@@ -1,4 +1,4 @@
-import { InvalidInstantError } from './errors.js';
+import { InvalidInstantError, InvalidTimeZoneError } from './errors.js';
 
 /**
  * Time, as a value, and the clock that produces it.
@@ -164,4 +164,89 @@ export function manualClock(at: Instant): ManualClock {
       current = next;
     },
   };
+}
+
+declare const LocalDateBrand: unique symbol;
+
+/**
+ * A calendar day as it is somewhere in particular: `2026-09-17`.
+ *
+ * Branded, like an instant, so that a day cannot be mistaken for any other
+ * string. It sorts in date order as text, compares with `===` and serialises as
+ * itself — and it is never a moment. "The rate for the seventeenth in Aleppo" is
+ * a question about a day on a shop's own calendar, and the same instant is the
+ * seventeenth in one branch and the eighteenth in another.
+ */
+export type LocalDate = string & { readonly [LocalDateBrand]: 'LocalDate' };
+
+/**
+ * The years a local date is written for. A year before the first has no
+ * four-digit form, and `Intl` writes the fifth year before the era as a bare
+ * `6` — a day that would sort, compare and read as a different one.
+ */
+const FIRST_YEAR = 1;
+const LAST_YEAR = 9999;
+
+/**
+ * The canonical name of a time zone this runtime knows, or null.
+ *
+ * Canonical, so that `asia/damascus` typed by one administrator and
+ * `Asia/Damascus` by another are stored as one zone. Surrounding whitespace is
+ * not forgiven: a name is data somebody chose, and trimming it here would hide
+ * whatever put the space there.
+ *
+ * The answer is this runtime's, from its own time-zone data. A machine whose
+ * data is years old can refuse a zone a newer one accepted, or count a day with
+ * a daylight rule the country abolished; that is a property of the machine,
+ * and the store node's is the one that decides.
+ */
+export function timeZoneNamed(name: string): string | null {
+  const given = name as unknown;
+  if (typeof given !== 'string' || given === '' || given.trim() !== given) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: given }).resolvedOptions().timeZone;
+  } catch (error) {
+    if (error instanceof RangeError) return null;
+    throw error;
+  }
+}
+
+/**
+ * The calendar day an instant falls on in a time zone.
+ *
+ * Gregorian and in Western digits whatever the runtime's locale: this is a key
+ * that rates are filed under and records are compared by, and a register whose
+ * locale wrote the year in Arabic-Indic digits or in another calendar would file
+ * the same day under a different key.
+ */
+export function localDateOf(at: Instant, timeZone: string): LocalDate {
+  const moment = new Date(at);
+  const year = moment.getUTCFullYear();
+  if (year < FIRST_YEAR || year > LAST_YEAR) {
+    throw new InvalidInstantError(
+      `${toISOString(at)} is outside the years a calendar day is written for.`,
+    );
+  }
+
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      calendar: 'gregory',
+      numberingSystem: 'latn',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new InvalidTimeZoneError(`"${timeZone}" is not a time zone this runtime knows.`);
+    }
+    throw error;
+  }
+
+  const parts = formatter.formatToParts(moment);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((one) => one.type === type)?.value ?? '';
+  return `${part('year').padStart(4, '0')}-${part('month')}-${part('day')}` as LocalDate;
 }
