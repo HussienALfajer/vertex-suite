@@ -1,4 +1,12 @@
-import { Currencies, CurrencyAdministration, FX_PERMISSIONS, fxModule } from '@vertex/fx';
+import {
+  Currencies,
+  CurrencyAdministration,
+  ExchangeRates,
+  FX_PERMISSIONS,
+  fxModule,
+  RateAdministration,
+  type RateQuote,
+} from '@vertex/fx';
 import { newId, orThrow, systemClock, type Refusal, type Result } from '@vertex/kernel';
 import {
   commandContext,
@@ -91,6 +99,8 @@ function install() {
     credentials: registry.require(Credentials),
     currencies: registry.require(Currencies),
     currencyAdmin: registry.require(CurrencyAdministration),
+    rates: registry.require(ExchangeRates),
+    rateAdmin: registry.require(RateAdministration),
   };
 }
 
@@ -282,6 +292,93 @@ describe('SEC seeds the rights FX declares into the seven roles — SEC-01', () 
       expect(role.rights.includes(currency.edit), name).toBe(owner);
       expect(role.rights.includes(functionalCurrency.edit), name).toBe(owner);
     }
+  });
+
+  it('gives the manager a branch’s rates, the owner the suggestions, and the floor the last-known confirmation', async () => {
+    const { roles } = await aShopWithAnOwner();
+    const { rate, suggestedRate, lastKnownRate } = FX_PERMISSIONS;
+    const holding = (right: string): readonly (string | null)[] =>
+      roles.filter((role) => role.rights.some((one) => one === right)).map((role) => role.seeded);
+
+    expect(holding(rate.view)).toHaveLength(7);
+    expect(holding(rate.record)).toEqual(['owner', 'manager']);
+    expect(holding(suggestedRate.suggest)).toEqual(['owner']);
+    expect(holding(lastKnownRate.confirm)).toEqual(['owner', 'manager', 'floor-supervisor']);
+  });
+});
+
+describe('SEC confines who enters a branch’s daily rates — FX-04', () => {
+  const POUNDS: RateQuote = { form: 'units-per-functional', buy: '13100', sell: '12900' };
+  const EUROS: RateQuote = { form: 'functional-per-unit', buy: '1.07', sell: '1.09' };
+
+  it('lets a manager enter and adopt the rates of their own branch, and refuses them the branch next door', async () => {
+    const { owner, roles } = await aShopWithAnOwner();
+    taken(await shop.currencyAdmin.seed(shop.system));
+    const company = taken(await shop.admin.companies.register(owner, { name: 'فيرتكس' }));
+    const aleppo = taken(
+      await shop.admin.branches.open(owner, { company: company.id, name: 'حلب' }),
+    );
+    const homs = taken(await shop.admin.branches.open(owner, { company: company.id, name: 'حمص' }));
+
+    const person = taken(
+      await shop.users.enrol(owner, {
+        handle: 'manager',
+        name: 'مدير',
+        password: 'till-morning-1',
+      }),
+    );
+    taken(
+      await shop.roles.assignments.assign(owner, {
+        user: person.id,
+        role: seededAs(roles, 'manager').id,
+        confinement: { kind: 'branches', branches: [aleppo.id], locations: [] },
+      }),
+    );
+    const manager = shop.as(person.id);
+
+    const recorded = taken(await shop.rateAdmin.record(manager, aleppo.id, 'SYP', POUNDS));
+    expect(refusalOf(await shop.rateAdmin.record(manager, homs.id, 'SYP', POUNDS))).toBe(
+      'fx.not-permitted',
+    );
+
+    // A suggestion speaks for the whole group, so it is the owner's; adopting one
+    // is a branch's rate, so it is judged at the branch like entering one.
+    expect(refusalOf(await shop.rateAdmin.suggest(manager, 'EUR', EUROS))).toBe('fx.not-permitted');
+    taken(await shop.rateAdmin.suggest(owner, 'EUR', EUROS));
+    expect(taken(await shop.rateAdmin.adopt(manager, aleppo.id))).toHaveLength(1);
+    expect(refusalOf(await shop.rateAdmin.adopt(manager, homs.id))).toBe('fx.not-permitted');
+
+    // Filed under the day of the branch `SYS` opened, in the zone `SYS` gave it.
+    const board = taken(await shop.rates.board(manager, aleppo.id));
+    expect(aleppo.timeZone).toBe('Asia/Damascus');
+    expect(recorded.day).toBe(board.day);
+    expect(board.lines.find((line) => line.currency.code === 'SYP')?.revision).toEqual(recorded);
+  });
+
+  it('refuses a cashier the rates, and lets them read the rate a sale is taken at', async () => {
+    const { owner, roles } = await aShopWithAnOwner();
+    taken(await shop.currencyAdmin.seed(shop.system));
+    const company = taken(await shop.admin.companies.register(owner, { name: 'فيرتكس' }));
+    const aleppo = taken(
+      await shop.admin.branches.open(owner, { company: company.id, name: 'حلب' }),
+    );
+    const person = taken(
+      await shop.users.enrol(owner, { handle: 'ahmad', name: 'أحمد', password: 'till-morning-1' }),
+    );
+    taken(
+      await shop.roles.assignments.assign(owner, {
+        user: person.id,
+        role: seededAs(roles, 'cashier').id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+    const cashier = shop.as(person.id);
+    const recorded = taken(await shop.rateAdmin.record(owner, aleppo.id, 'SYP', POUNDS));
+
+    expect(refusalOf(await shop.rateAdmin.record(cashier, aleppo.id, 'SYP', POUNDS))).toBe(
+      'fx.not-permitted',
+    );
+    expect(taken(await shop.rates.current(cashier, aleppo.id, 'SYP')).revision).toEqual(recorded);
   });
 });
 

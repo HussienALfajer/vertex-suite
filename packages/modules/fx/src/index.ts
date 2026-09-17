@@ -1,23 +1,37 @@
-import type { PermissionId } from '@vertex/contracts';
-import { refuse, type CurrencyCode, type Result } from '@vertex/kernel';
+import type { BranchId, PermissionId } from '@vertex/contracts';
+import {
+  localDateOf,
+  ok,
+  refuse,
+  type CurrencyCode,
+  type Instant,
+  type LocalDate,
+  type Result,
+} from '@vertex/kernel';
 import {
   defineModule,
   provideContract,
+  type AuthorisationScope,
   type CommandContext,
   type ModuleContext,
   type ModuleDefinition,
   type PermissionDeclaration,
 } from '@vertex/platform';
+import { Organisation, type Branch } from '@vertex/sys/contract';
 
 import {
   Currencies,
   CurrencyAdministration,
+  ExchangeRates,
   FX_PERMISSION_SEEDS,
   FX_PERMISSIONS,
+  RateAdministration,
   type CurrencyRefusal,
   type CurrencyRevision,
   type Listing,
   type NewCurrency,
+  type RateQuote,
+  type RateRefusal,
   type RecordSession,
   type TenantCurrency,
 } from './contract.js';
@@ -31,6 +45,16 @@ import {
   seedCurrencies,
   setCurrencyEnabled,
 } from './currencies.js';
+import {
+  adoptSuggestions,
+  boardOf,
+  confirmLastKnownRates,
+  rateInForce,
+  recordRate,
+  revisionsOn,
+  suggestRate,
+  type Recording,
+} from './rates.js';
 
 export * from './contract.js';
 
@@ -39,11 +63,21 @@ export * from './contract.js';
  * that `SEC-01` seeds and `SEC-02` grants them without retyping a string.
  */
 function permissions(): readonly PermissionDeclaration[] {
-  return FX_PERMISSION_SEEDS.map(({ id, seededFor }) => ({
+  // `sensitive` travels with the rest, as it does in `SEC`: the role editor
+  // marks it, and `SEC-05`'s re-authorisation will key on it.
+  return FX_PERMISSION_SEEDS.map(({ id, seededFor, sensitive }) => ({
     id,
     labelKey: `permission.${id}`,
     seededFor,
+    ...(sensitive === undefined ? {} : { sensitive }),
   }));
+}
+
+/** A branch, and the one moment a command reads the clock — with the day it makes there. */
+interface BranchToday {
+  readonly branch: Branch;
+  readonly at: Instant;
+  readonly day: LocalDate;
 }
 
 function visible(
@@ -59,10 +93,12 @@ function visible(
  * A factory for the reason `SYS` is one: the session type belongs to the host,
  * and a store node and a register run this same module over different stores.
  *
- * It declares no dependency yet. `modules.md` §3 gives it one, `SYS`, and the
- * first rule here that asks `SYS` anything declares it: a daily rate belongs to
- * a branch (`FX-04`). A dependency declared before it is used is a claim the
- * composition enforces and nothing in the module needs.
+ * It depends on `SYS`, as `modules.md` §3 says, and asks it two things only: a
+ * branch — whether it exists, whether it trades, and the zone its day is counted
+ * in — and the registers of a branch, to know that a confirmation is being given
+ * at one. Both through `SYS`'s contract, and both before this module's own
+ * transaction opens, which is the arrangement `SEC` uses for the same reason:
+ * one command never holds two transactions open at once.
  *
  * No migrations and no events, as in `SYS` and `SEC`: there is no schema until a
  * driver exists and a placeholder migration would burn the name the real one
@@ -72,6 +108,7 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
   return defineModule<Session>({
     code: 'FX',
     labelKey: 'module.fx',
+    dependsOn: ['SYS'],
     permissions: permissions(),
     provides: [
       provideContract(Currencies, (context: ModuleContext<Session>) => {
@@ -140,6 +177,148 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
             ),
         } satisfies CurrencyAdministration;
       }),
+
+      provideContract(ExchangeRates, (context: ModuleContext<Session>) => {
+        const today = branchToday(context);
+        const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
+          context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          // Read for a withdrawn branch as for any other: its board and its
+          // rates are history, and history stays readable (`SYS-09`).
+          board: async (by: CommandContext, id: BranchId) => {
+            const here = await today(by, id, 'reading');
+            if (!here.ok) return here;
+            const { branch, day } = here.value;
+            return read(by, (session) => boardOf(session, by.tenant, id, day, branch.timeZone));
+          },
+          current: async (by: CommandContext, id: BranchId, code: CurrencyCode) => {
+            const here = await today(by, id, 'reading');
+            if (!here.ok) return here;
+            const { day } = here.value;
+            return read(by, (session) => rateInForce(session, by.tenant, id, day, code, by.device));
+          },
+          revisions: (by: CommandContext, id: BranchId, code: CurrencyCode, day: LocalDate) =>
+            read(by, (session) => revisionsOn(session, by.tenant, id, code, day)),
+        } satisfies ExchangeRates;
+      }),
+
+      provideContract(RateAdministration, (context: ModuleContext<Session>) => {
+        const today = branchToday(context);
+        const { rate, suggestedRate, lastKnownRate } = FX_PERMISSIONS;
+
+        /**
+         * Ask, then look, then act.
+         *
+         * The right is asked first, before `SYS` is asked whether the branch
+         * exists: somebody refused learns nothing about branches they could not
+         * have acted on, and a refusal costs no read at all.
+         */
+        const guarded = async <T>(
+          by: CommandContext,
+          right: PermissionId,
+          where: AuthorisationScope | undefined,
+          work: () => Promise<Result<T, RateRefusal>>,
+        ): Promise<Result<T, RateRefusal>> => {
+          if (!(await context.authorise(by, right, where))) {
+            return refuse('fx.not-permitted', { right });
+          }
+          return work();
+        };
+
+        const run = <T>(
+          by: CommandContext,
+          work: (session: Session) => Result<T, RateRefusal>,
+        ): Promise<Result<T, RateRefusal>> =>
+          context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        const recording = (by: CommandContext, at: Instant): Recording => ({
+          tenant: by.tenant,
+          actor: by.actor,
+          at,
+        });
+
+        return {
+          record: (by: CommandContext, id: BranchId, code: CurrencyCode, quote: RateQuote) =>
+            guarded(by, rate.record, { branch: id }, async () => {
+              const here = await today(by, id, 'trading');
+              if (!here.ok) return here;
+              const { at, day } = here.value;
+              return run(by, (session) =>
+                recordRate(session, recording(by, at), id, day, code, quote),
+              );
+            }),
+
+          suggest: (by: CommandContext, code: CurrencyCode, quote: RateQuote) =>
+            guarded(by, suggestedRate.suggest, undefined, () =>
+              run(by, (session) =>
+                suggestRate(session, recording(by, context.clock.now()), code, quote),
+              ),
+            ),
+
+          adopt: (by: CommandContext, id: BranchId) =>
+            guarded(by, rate.record, { branch: id }, async () => {
+              const here = await today(by, id, 'trading');
+              if (!here.ok) return here;
+              const { branch, at, day } = here.value;
+              return run(by, (session) =>
+                adoptSuggestions(session, recording(by, at), id, day, branch.timeZone),
+              );
+            }),
+
+          confirmLastKnown: (by: CommandContext, id: BranchId) =>
+            guarded(by, lastKnownRate.confirm, { branch: id }, async () => {
+              const here = await today(by, id, 'trading');
+              if (!here.ok) return here;
+              const { at, day } = here.value;
+
+              // Standing at a register of this branch: a machine the shop has
+              // assigned to one of its tills, and that till still in use.
+              const device = by.device;
+              const standingAt =
+                device === null
+                  ? undefined
+                  : (await context.require(Organisation).registers(by, id)).find(
+                      (one) => one.heldBy === device,
+                    );
+              if (device === null || standingAt === undefined) {
+                return refuse('fx.not-at-register', { branch: id });
+              }
+
+              return run(by, (session) =>
+                confirmLastKnownRates(session, recording(by, at), id, day, {
+                  register: standingAt.id,
+                  device,
+                }),
+              );
+            }),
+        } satisfies RateAdministration;
+      }),
     ],
   });
+}
+
+/**
+ * A branch as `SYS` has it, the moment this command reads the clock, and the
+ * day that moment is at the branch.
+ *
+ * The clock is read once, here, so that the day a rate is filed under and the
+ * moment it is stamped with can never straddle midnight between two readings.
+ * `trading` refuses a withdrawn branch, which enters and confirms nothing;
+ * `reading` does not, because a withdrawn branch's rates are still its history.
+ */
+function branchToday<Session>(context: ModuleContext<Session>) {
+  return async (
+    by: CommandContext,
+    id: BranchId,
+    purpose: 'trading' | 'reading',
+  ): Promise<Result<BranchToday, RateRefusal>> => {
+    const branch = await context.require(Organisation).branch(by, id);
+    if (branch === null) return refuse('fx.branch-not-found', { branch: id });
+    if (purpose === 'trading' && !branch.active) {
+      return refuse('fx.branch-inactive', { branch: id });
+    }
+    const at = context.clock.now();
+    return ok({ branch, at, day: localDateOf(at, branch.timeZone) });
+  };
 }

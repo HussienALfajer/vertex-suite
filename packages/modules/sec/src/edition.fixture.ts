@@ -26,6 +26,7 @@ import {
   type Registry,
 } from '@vertex/platform';
 import {
+  DEFAULT_TIME_ZONE,
   Organisation,
   SYS_PERMISSION_SEEDS,
   type Branch,
@@ -284,6 +285,7 @@ function bring(
         // them in would be inventing a fact these suites never read.
         address: '',
         point: null,
+        timeZone: DEFAULT_TIME_ZONE,
         active: true,
       };
       places.branches.set(branch.id, branch);

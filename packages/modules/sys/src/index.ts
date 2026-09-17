@@ -58,6 +58,7 @@ import {
   renameCompany,
   renameLocation,
   renameRegister,
+  rezoneBranch,
   setBranchActive,
   setCompanyActive,
   setLocationActive,
@@ -263,6 +264,13 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
             locate: (by: CommandContext, id: BranchId, point: GeoPoint | null) =>
               guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
                 locateBranch(session, by.tenant, id, point),
+              ),
+            // The zone a branch trades in is an edit to the branch, judged at
+            // the branch, like where it is: the manager who runs it says which
+            // day it is trading on.
+            rezone: (by: CommandContext, id: BranchId, timeZone: string) =>
+              guarded(by, SYS_PERMISSIONS.branch.edit, { branch: id }, (session) =>
+                rezoneBranch(session, by.tenant, id, timeZone),
               ),
             deactivate: (by: CommandContext, id: BranchId) =>
               guarded(by, SYS_PERMISSIONS.branch.withdraw, { branch: id }, (session) =>

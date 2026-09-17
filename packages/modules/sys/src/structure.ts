@@ -6,9 +6,19 @@ import type {
   RegisterId,
   TenantId,
 } from '@vertex/contracts';
-import { isErr, isId, newId, ok, parseId, refuse, type Result } from '@vertex/kernel';
+import {
+  isErr,
+  isId,
+  newId,
+  ok,
+  parseId,
+  refuse,
+  timeZoneNamed,
+  type Result,
+} from '@vertex/kernel';
 
 import {
+  DEFAULT_TIME_ZONE,
   LOCATION_KINDS,
   type Branch,
   type Company,
@@ -65,6 +75,23 @@ const PREFIX = /^[A-Za-z0-9]{1,8}$/;
  */
 function placeFrom(point: GeoPoint | null | undefined): Outcome<GeoPoint | null> {
   return point === undefined || point === null ? ok(null) : normalisePoint(point);
+}
+
+/**
+ * A time zone as it will be stored — the runtime's canonical spelling — or the
+ * refusal that stops the write.
+ *
+ * Canonical so that one zone typed two ways is one zone: a report grouping
+ * branches by the day they trade on would otherwise see two.
+ */
+function zoneFrom(timeZone: string): Outcome<string> {
+  const named = timeZoneNamed(timeZone);
+  // Echoed as text whatever arrived: the refusal is read by a person, and a
+  // value that came off a wire as something other than a string is exactly the
+  // thing to show them.
+  return named === null
+    ? refuse('sys.time-zone-unknown', { timeZone: String(timeZone as unknown) })
+    : ok(named);
 }
 
 /**
@@ -267,6 +294,9 @@ export function openBranch(
   const placed = placeFrom(input.point);
   if (isErr(placed)) return placed;
 
+  const zoned = zoneFrom(input.timeZone ?? DEFAULT_TIME_ZONE);
+  if (isErr(zoned)) return zoned;
+
   const branch: Branch = {
     id: newId<'branch'>(),
     tenant,
@@ -274,6 +304,7 @@ export function openBranch(
     name: trimmed,
     address: writtenAddress(input.address ?? ''),
     point: placed.value,
+    timeZone: zoned.value,
     active: true,
   };
   return ok(writeRecord(session, 'branch', tenant, [branch.id], branch));
@@ -523,6 +554,27 @@ export function locateBranch(
   const placed = placeFrom(point);
   if (isErr(placed)) return placed;
   return ok(writeRecord(session, 'branch', tenant, [id], { ...branch, point: placed.value }));
+}
+
+/**
+ * Which time zone a branch trades in, from now on.
+ *
+ * A withdrawn branch may be rezoned, for the reason it may be readdressed: the
+ * record outlives its trading, and a branch whose zone was wrong while it
+ * traded is one whose history is read against the wrong days until somebody
+ * corrects it.
+ */
+export function rezoneBranch(
+  session: RecordSession,
+  tenant: TenantId,
+  id: BranchId,
+  timeZone: string,
+): Outcome<Branch> {
+  const branch = branchIn(session, tenant, id);
+  if (branch === null) return refuse('sys.branch-not-found', { branch: id });
+  const zoned = zoneFrom(timeZone);
+  if (isErr(zoned)) return zoned;
+  return ok(writeRecord(session, 'branch', tenant, [id], { ...branch, timeZone: zoned.value }));
 }
 
 export function readdressLocation(

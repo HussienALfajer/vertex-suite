@@ -1,7 +1,7 @@
 import { isErr, isOk, newId, orThrow, type Id, type Refusal, type Result } from '@vertex/kernel';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { SYS_PERMISSIONS, type Branch, type Company } from './contract.js';
+import { DEFAULT_TIME_ZONE, SYS_PERMISSIONS, type Branch, type Company } from './contract.js';
 import { installSys, type Installed } from './edition.fixture.js';
 
 function taken<T>(result: Result<T, Refusal>): T {
@@ -186,6 +186,12 @@ describe('Organisation structure — SYS-09', () => {
         here,
       ],
       ['branches.locate', () => sys.admin.branches.locate(sys.by, branch.id, point), b.edit, here],
+      [
+        'branches.rezone',
+        () => sys.admin.branches.rezone(sys.by, branch.id, 'Europe/Istanbul'),
+        b.edit,
+        here,
+      ],
       [
         'branches.deactivate',
         () => sys.admin.branches.deactivate(sys.by, branch.id),
@@ -671,5 +677,78 @@ describe('Organisation structure — SYS-09', () => {
     // than to nothing, and does so without deleting a row.
     taken(await sys.admin.settings.forBranch(sys.by, branch.id, 'sys.branch.address', null));
     expect(await sys.read.setting(sys.by, branch.id, 'sys.branch.address')).toBe('Head office');
+  });
+});
+
+describe('A branch keeps the time zone its days are counted in — SYS-09', () => {
+  it('opens a branch in the zone it is given, spelt the one way the runtime spells it', async () => {
+    const company = await aCompany();
+
+    const istanbul = taken(
+      await sys.admin.branches.open(sys.by, {
+        company: company.id,
+        name: 'Gaziantep',
+        timeZone: 'europe/istanbul',
+      }),
+    );
+
+    expect(istanbul.timeZone).toBe('Europe/Istanbul');
+    expect((await sys.read.branch(sys.by, istanbul.id))?.timeZone).toBe('Europe/Istanbul');
+  });
+
+  it('opens a branch nobody gave a zone to in the default one, so no branch is ever without a day', async () => {
+    const branch = await aBranch();
+
+    expect(branch.timeZone).toBe(DEFAULT_TIME_ZONE);
+  });
+
+  it('refuses a zone it does not know, when opening and when rezoning, and writes nothing', async () => {
+    const company = await aCompany();
+    const branch = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' }),
+    );
+    const before = new Map(sys.store.committed());
+
+    for (const timeZone of ['Mars/Olympus', '', ' Asia/Damascus', 'GMT+3 Syria']) {
+      const opened = await sys.admin.branches.open(sys.by, {
+        company: company.id,
+        name: 'Homs',
+        timeZone,
+      });
+      expect(refusalOf(opened), JSON.stringify(timeZone)).toBe('sys.time-zone-unknown');
+      expect(opened.ok ? null : opened.error.values).toEqual({ timeZone });
+      expect(refusalOf(await sys.admin.branches.rezone(sys.by, branch.id, timeZone))).toBe(
+        'sys.time-zone-unknown',
+      );
+    }
+
+    expect(sys.store.committed()).toEqual(before);
+  });
+
+  it('rezones a branch without touching anything else about it', async () => {
+    const branch = await aBranch();
+
+    const rezoned = taken(await sys.admin.branches.rezone(sys.by, branch.id, 'Europe/Istanbul'));
+
+    expect(rezoned).toEqual({ ...branch, timeZone: 'Europe/Istanbul' });
+    expect(await sys.read.branch(sys.by, branch.id)).toEqual(rezoned);
+  });
+
+  it('rezones a withdrawn branch, as it readdresses one', async () => {
+    const branch = await aBranch();
+    taken(await sys.admin.branches.deactivate(sys.by, branch.id));
+
+    const rezoned = taken(await sys.admin.branches.rezone(sys.by, branch.id, 'UTC'));
+
+    expect(rezoned).toMatchObject({ timeZone: 'UTC', active: false });
+  });
+
+  it('refuses to rezone a branch of another tenant', async () => {
+    const branch = await aBranch();
+
+    expect(refusalOf(await sys.admin.branches.rezone(sys.byOther, branch.id, 'UTC'))).toBe(
+      'sys.branch-not-found',
+    );
+    expect((await sys.read.branch(sys.by, branch.id))?.timeZone).toBe(DEFAULT_TIME_ZONE);
   });
 });

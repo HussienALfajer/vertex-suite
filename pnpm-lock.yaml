@@ -366,6 +366,9 @@ importers:
       '@vertex/platform':
         specifier: workspace:*
         version: link:../../platform
+      '@vertex/sys':
+        specifier: workspace:*
+        version: link:../sys
     devDependencies:
       typescript:
         specifier: 6.0.2
