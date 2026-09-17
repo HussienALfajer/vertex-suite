@@ -25,10 +25,16 @@ comments reference them.
 ```
 packages/kernel      exact money and quantities, identifiers, time, refusals
 packages/platform    module registry, editions, event bus, unit of work
-packages/…           contracts, ui, i18n, modules, adapters
-apps/…               store-node, register, back-office, count-app
-editions/            which modules and switches ship to a given customer
+packages/contracts   the shared vocabulary: identifiers, permission grammar, seeded roles
+packages/i18n        messages, terminology, direction
+packages/ui          the design system, and the map
+packages/modules/…   sys, sec — and the fourteen to come
+apps/back-office     the administration screens, over a development stand-in until U07
+apps/sandbox         where the components are looked at and keyboard journeys run
 ```
+
+Still to come, in the order `docs/modules.md` §7 builds them: `packages/adapters`,
+`apps/store-node`, `apps/register`, `apps/count-app` and `editions/`.
 
 ## Working on it
 
@@ -68,6 +74,7 @@ exists.
 | `pnpm typecheck` | types only                                |
 | `pnpm lint`      | lint only                                 |
 | `pnpm format`    | rewrite files to the formatter's opinion  |
+| `pnpm e2e`       | the keyboard journeys, in a browser       |
 | `pnpm next`      | the next unit, derived from the documents |
 
 ## Conventions
