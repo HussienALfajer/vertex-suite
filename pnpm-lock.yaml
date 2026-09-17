@@ -199,6 +199,9 @@ importers:
       '@vertex/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@vertex/fx':
+        specifier: workspace:*
+        version: link:../../packages/modules/fx
       '@vertex/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
@@ -345,6 +348,25 @@ importers:
       fast-check:
         specifier: 4.10.0
         version: 4.10.0
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@24.13.4)(happy-dom@20.14.5)(vite@8.3.0(@types/node@24.13.4)(jiti@2.7.0))
+
+  packages/modules/fx:
+    dependencies:
+      '@vertex/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@vertex/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@vertex/platform':
+        specifier: workspace:*
+        version: link:../../platform
+    devDependencies:
       typescript:
         specifier: 6.0.2
         version: 6.0.2

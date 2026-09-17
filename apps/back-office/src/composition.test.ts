@@ -1,3 +1,4 @@
+import { Currencies, CurrencyAdministration, FX_PERMISSIONS, fxModule } from '@vertex/fx';
 import { newId, orThrow, systemClock, type Refusal, type Result } from '@vertex/kernel';
 import {
   commandContext,
@@ -23,27 +24,31 @@ import { Organisation, OrganisationAdministration, sysModule, SYS_PERMISSIONS } 
 import { beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * The real `SYS` and the real `SEC`, in one edition.
+ * The real `SYS`, the real `SEC` and the real `FX`, in one edition.
  *
  * **Nothing else in this repository can run this test, and that is why it is
  * here.** `modules.md` §4 lets a module see another module's contract and
- * nothing more, so `SEC`'s own suite stands `SYS` in and `SYS`'s stands `SEC`
- * in — each proves its half against an interface. An **app** is the one thing
- * allowed to name both, which makes the first app the first place the two
- * halves have ever met.
+ * nothing more, so each module's own suite stands the others in — each proves
+ * its half against an interface. An **app** is the one thing allowed to name
+ * them all, which makes the first app the first place the halves have ever met.
  *
  * What it pins down is the wiring the screens are about to be built on: that
  * the edition composes, that `SEC` answers the authorisation the platform asks
- * on `SYS`'s behalf, and that `SEC-04` confinement survives the trip across the
- * boundary. It also pins the one behaviour the browser stand-in of
- * `dev-system.ts` reproduces — one refusal for an unknown handle and for a
- * wrong password — so that the stand-in cannot quietly teach the screen a lie.
+ * on behalf of `SYS` and `FX`, that it seeds the rights they declare, and that
+ * `SEC-04` confinement survives the trip across the boundary. It also pins the
+ * one behaviour the browser stand-in of `dev-system.ts` reproduces — one refusal
+ * for an unknown handle and for a wrong password — so that the stand-in cannot
+ * quietly teach the screen a lie.
  */
 
 function install() {
-  const catalogue = [sysModule<MemorySession>(), secModule<MemorySession>()];
+  const catalogue = [
+    sysModule<MemorySession>(),
+    secModule<MemorySession>(),
+    fxModule<MemorySession>(),
+  ];
   const plan = orThrow(
-    composeEdition(catalogue, { modules: ['SYS', 'SEC'] }),
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX'] }),
     (refusal) => new Error(`The edition would not compose: ${refusal.code}`),
   );
 
@@ -84,6 +89,8 @@ function install() {
     roles: registry.require(RoleAdministration),
     users: registry.require(UserAdministration),
     credentials: registry.require(Credentials),
+    currencies: registry.require(Currencies),
+    currencyAdmin: registry.require(CurrencyAdministration),
   };
 }
 
@@ -225,6 +232,56 @@ describe('A confinement survives the trip between the two modules — SEC-04', (
     );
     expect(await shop.read.branches(owner)).toHaveLength(2);
     expect(SYS_PERMISSIONS.location.create.startsWith('sys.')).toBe(true);
+  });
+});
+
+describe('SEC answers for FX as it answers for SYS — FX-02', () => {
+  it('lets the owner alone choose the currency the books are kept in', async () => {
+    const { owner, roles } = await aShopWithAnOwner();
+    taken(await shop.currencyAdmin.seed(shop.system));
+
+    const person = taken(
+      await shop.users.enrol(owner, {
+        handle: 'manager',
+        name: 'مدير',
+        password: 'till-morning-1',
+      }),
+    );
+    taken(
+      await shop.roles.assignments.assign(owner, {
+        user: person.id,
+        role: seededAs(roles, 'manager').id,
+        confinement: TENANT_WIDE,
+      }),
+    );
+    const manager = shop.as(person.id);
+
+    // Unconfined, and still refused: every figure in the books is written in
+    // this currency, `FX` seeds the right to nobody but the owner, and `SEC` is
+    // what says so — neither module importing the other.
+    expect(refusalOf(await shop.currencyAdmin.makeFunctional(manager, 'EUR'))).toBe(
+      'fx.not-permitted',
+    );
+    expect((await shop.currencies.functional(manager))?.code).toBe('USD');
+
+    taken(await shop.currencyAdmin.makeFunctional(owner, 'EUR'));
+    expect((await shop.currencies.functional(manager))?.code).toBe('EUR');
+  });
+});
+
+describe('SEC seeds the rights FX declares into the seven roles — SEC-01', () => {
+  it('lets every role read the currencies, and leaves their rules to the owner', async () => {
+    const { roles } = await aShopWithAnOwner();
+    const { currency, functionalCurrency } = FX_PERMISSIONS;
+
+    expect(roles).toHaveLength(7);
+    for (const role of roles) {
+      const name = role.seeded ?? role.id;
+      const owner = role.seeded === 'owner';
+      expect(role.rights.includes(currency.view), name).toBe(true);
+      expect(role.rights.includes(currency.edit), name).toBe(owner);
+      expect(role.rights.includes(functionalCurrency.edit), name).toBe(owner);
+    }
   });
 });
 

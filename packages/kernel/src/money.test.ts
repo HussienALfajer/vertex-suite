@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { defineCurrency } from './currency.js';
+import {
+  defineCurrency,
+  flawOf,
+  isRoundingMode,
+  ROUNDING_MODES,
+  type Currency,
+  type CurrencyFlaw,
+} from './currency.js';
 import { Dec } from './decimal.js';
 import {
   AllocationError,
@@ -52,6 +59,11 @@ const EUR = defineCurrency({
   roundingMode: 'half-even',
 });
 
+/** Characters Arabic keyboards and pasted text carry, and that nothing on screen shows. */
+const RIGHT_TO_LEFT_MARK = String.fromCodePoint(0x200f);
+const LEFT_TO_RIGHT_MARK = String.fromCodePoint(0x200e);
+const NO_BREAK_SPACE = String.fromCodePoint(0x00a0);
+
 describe('defineCurrency', () => {
   it('refuses an increment finer than the stored precision', () => {
     expect(() =>
@@ -94,6 +106,79 @@ describe('defineCurrency', () => {
 
   it('freezes the definition', () => {
     expect(Object.isFrozen(USD)).toBe(true);
+  });
+
+  it('refuses a symbol with nothing visible in it', () => {
+    // A right-to-left mark survives a trim, and would print nothing beside every
+    // amount of the currency.
+    for (const symbol of ['', '   ', RIGHT_TO_LEFT_MARK, LEFT_TO_RIGHT_MARK + NO_BREAK_SPACE]) {
+      expect(() =>
+        defineCurrency({
+          code: 'SYP',
+          symbol,
+          decimals: 2,
+          roundingIncrement: '1',
+          roundingMode: 'half-up',
+        }),
+      ).toThrow(InvalidCurrencyError);
+    }
+  });
+});
+
+describe('flawOf', () => {
+  const valid = {
+    code: 'USD',
+    symbol: '$',
+    decimals: 4,
+    roundingIncrement: '0.01',
+    roundingMode: 'half-up',
+  } as const;
+
+  it('finds nothing wrong with a coherent definition', () => {
+    expect(flawOf(valid)).toBeNull();
+    expect(flawOf(SYP)).toBeNull();
+  });
+
+  it('names what is wrong, so that data can be refused rather than thrown', () => {
+    const cases: readonly [Partial<Record<keyof typeof valid, unknown>>, CurrencyFlaw][] = [
+      [{ code: ' ' }, 'code-empty'],
+      [{ symbol: RIGHT_TO_LEFT_MARK }, 'symbol-empty'],
+      [{ decimals: -1 }, 'decimals-out-of-range'],
+      [{ decimals: 13 }, 'decimals-out-of-range'],
+      [{ decimals: 1.5 }, 'decimals-out-of-range'],
+      [{ roundingIncrement: '1e2' }, 'increment-not-decimal'],
+      [{ roundingMode: 'half_even' }, 'rounding-mode-unknown'],
+      [{ roundingIncrement: '0' }, 'increment-not-positive'],
+      [{ roundingIncrement: '-0.01' }, 'increment-not-positive'],
+      [{ roundingIncrement: '0.00001' }, 'increment-finer-than-decimals'],
+    ];
+    for (const [change, flaw] of cases) {
+      expect(flawOf({ ...valid, ...change } as Currency), JSON.stringify(change)).toBe(flaw);
+    }
+  });
+
+  it('judges a field by its kind as well as its value, since the type is gone at run time', () => {
+    // `0.01` as a number passed the decimal test by being coerced to "0.01" —
+    // a float, entering the rule every amount of the currency is settled by.
+    const arriving: readonly [Partial<Record<keyof typeof valid, unknown>>, CurrencyFlaw][] = [
+      [{ code: 840 }, 'code-empty'],
+      [{ symbol: null }, 'symbol-empty'],
+      [{ decimals: '2' }, 'decimals-out-of-range'],
+      [{ roundingIncrement: 0.01 }, 'increment-not-decimal'],
+      [{ roundingMode: undefined }, 'rounding-mode-unknown'],
+    ];
+    for (const [change, flaw] of arriving) {
+      expect(flawOf({ ...valid, ...change } as Currency), JSON.stringify(change)).toBe(flaw);
+    }
+  });
+
+  it('publishes exactly the rounding modes a definition may name', () => {
+    for (const mode of ROUNDING_MODES) {
+      expect(isRoundingMode(mode)).toBe(true);
+      expect(flawOf({ ...valid, roundingMode: mode })).toBeNull();
+    }
+    expect(isRoundingMode('half_even')).toBe(false);
+    expect(Object.isFrozen(ROUNDING_MODES)).toBe(true);
   });
 });
 
