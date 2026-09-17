@@ -58,6 +58,27 @@ async function openRole(shop: OpenShop, name: string): Promise<void> {
   );
 }
 
+describe('Every right the grid offers has a name — SEC-02', () => {
+  it('names each right this edition declares, rather than falling back', async () => {
+    // The grid of `SEC-02` lists a tick for every right the edition's modules
+    // declared, and names each one through `nameOfPermission`. A right nobody
+    // added a line for here does not fail: it falls back to the wording for a
+    // right this screen has never been told about, and an administrator is
+    // offered a tick beside a sentence that says nothing about what it grants.
+    //
+    // `sys.branch.rezone` was that right for as long as it took to write this.
+    const shop = await enterTheShop();
+    const declared = await shop.system.users.roles.rights();
+    const unnamed = catalogue['permission.unknown'];
+
+    expect(declared.length).toBeGreaterThan(0);
+    const nameless = declared
+      .map((right) => right.id)
+      .filter((id) => nameOfPermission(say, id) === unnamed);
+    expect(nameless).toEqual([]);
+  });
+});
+
 describe('Roles — SEC-01', () => {
   it('shows the seven seeded roles, present the moment the shop is', async () => {
     await aShopOnRoles();

@@ -502,6 +502,18 @@ export type RateRefusalCode =
    * the other side is allowed, exactly as it is on a board.
    */
   | 'fx.override-crosses-spread'
+  /**
+   * The direction of the money is not one of the two there are.
+   *
+   * Checked rather than trusted, for the reason every other field arriving from
+   * outside this module is checked: the type is gone at run time, and a command
+   * reaches here off a wire and out of a queue `SYN-02` replays. Read on trust,
+   * anything that was not exactly `received` selects the sell rate — so a
+   * direction misspelt by one character stamps every receipt at the far side of
+   * the spread, on every document, with nothing refusing and nothing logged,
+   * because nothing was overridden.
+   */
+  | 'fx.cash-direction-unknown'
   /** Today's rates are all here; there is nothing a last-known rate would stand in for. */
   | 'fx.rates-current'
   /** The caller does not hold the right this command declares (`SEC-02`). */

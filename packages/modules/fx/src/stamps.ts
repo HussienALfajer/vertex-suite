@@ -2,7 +2,6 @@ import type { BranchId, TenantId } from '@vertex/contracts';
 import { Dec, newId, ok, refuse, type Decimal, type LocalDate, type Result } from '@vertex/kernel';
 
 import type {
-  CashDirection,
   PreparedStamp,
   QuoteForm,
   RateInForce,
@@ -15,6 +14,7 @@ import type {
   RecordSession,
   Stamping,
 } from './contract.js';
+import { CASH_DIRECTIONS, type CashDirection } from './contract.js';
 import { settleRate } from './quotes.js';
 import { readRecord, scanRecords, writeRecord } from './records.js';
 import type { Recording } from './rates.js';
@@ -30,6 +30,27 @@ import type { Recording } from './rates.js';
 
 type Stamped<T> = Result<T, RateRefusal>;
 
+const DIRECTIONS: ReadonlySet<string> = new Set(CASH_DIRECTIONS);
+
+/**
+ * The direction of the money, judged.
+ *
+ * Checked rather than trusted, because the type is gone at run time and a
+ * command reaches this module off a wire and out of a queue `SYN-02` replays —
+ * the reason `settleQuote` reads a board the same way. And judged **first**, by
+ * the caller, before anybody is asked anything: which way the money is moving
+ * is the shape of the command rather than a question about who is issuing it,
+ * and a command that is not one of the two things a command can be should cost
+ * neither a question to `SEC` nor a read.
+ */
+export function directionOf(stamping: Stamping): Stamped<CashDirection> {
+  const { direction } = stamping as { direction: unknown };
+  if (typeof direction !== 'string' || !DIRECTIONS.has(direction)) {
+    return refuse('fx.cash-direction-unknown', { direction: String(direction) });
+  }
+  return ok(direction as CashDirection);
+}
+
 /**
  * The side of the board a direction of money selects (`FX-06`).
  *
@@ -38,14 +59,26 @@ type Stamped<T> = Result<T, RateRefusal>;
  * the currency, sell when paying it out. There is nothing here for a caller to
  * pass in and nothing for a screen to choose, which is what "applied
  * automatically" means.
+ *
+ * It takes a direction already known to be one, because the alternative — a
+ * default for everything that is not `received` — is a misspelling that trades
+ * at the wrong side of the spread and says nothing. See
+ * `fx.cash-direction-unknown`.
  */
 export function sideFor(direction: CashDirection): RateSide {
   return direction === 'received' ? 'buy' : 'sell';
 }
 
-/** Something a person wrote: not blank, and not punctuation standing in for words. */
+/**
+ * Something a person wrote: letters, and not punctuation or a bare figure
+ * standing in for words.
+ *
+ * The standard the exemption comments in `tools/` are held to, for the same
+ * reason — a reason is what makes an exception reviewable, and one that is not
+ * words is a shrug. A figure is not an explanation of a figure.
+ */
 function isWritten(reason: unknown): reason is string {
-  return typeof reason === 'string' && /\p{L}|\p{N}/u.test(reason);
+  return typeof reason === 'string' && /\p{L}/u.test(reason);
 }
 
 /** An override as it will be logged: what will be applied, and what was typed. */
@@ -115,11 +148,15 @@ export function prepareStamp(
   recording: Recording,
   here: StampingHere,
   stamping: Stamping,
+  direction: CashDirection,
 ): Stamped<PreparedStamp> {
   const { tenant, actor, at } = recording;
   const { branch, day, inForce } = here;
   const { revision, lastKnown } = inForce;
-  const side = sideFor(stamping.direction);
+  // Handed in rather than read off `stamping` again: it was judged by
+  // `directionOf` before this command cost anybody a question, and reading the
+  // field a second time would be reading one that nothing had judged.
+  const side = sideFor(direction);
   const automatic = side === 'buy' ? revision.buy : revision.sell;
 
   let applied = automatic;
@@ -140,16 +177,24 @@ export function prepareStamp(
       side,
       automatic,
       applied,
-      quoted: settled.value.quoted,
+      quoted: Object.freeze(settled.value.quoted),
       reason: settled.value.reason,
       revision: revision.id,
       by: actor,
       at,
     };
+    Object.freeze(override);
   }
 
+  // Frozen, both of them, and that is not tidiness.
+  //
+  // The rate on this stamp is a decision `SEC` was asked about and the log
+  // records, and it travels through a caller — in `U07` through a queue and a
+  // replay — before `writeStamp` stores it without asking again. An object that
+  // could be altered on the way would let a rate nobody was permitted, and
+  // nothing logged, be written as though it were the one that was decided.
   return ok({
-    stamp: {
+    stamp: Object.freeze({
       id,
       tenant,
       branch,
@@ -160,7 +205,7 @@ export function prepareStamp(
       // nobody could state.
       functional: revision.functional,
       day,
-      direction: stamping.direction,
+      direction,
       side,
       rate: applied,
       revision: revision.id,
@@ -172,7 +217,7 @@ export function prepareStamp(
       lastKnown: lastKnown?.id ?? null,
       stampedBy: actor,
       stampedAt: at,
-    },
+    }),
     override,
   });
 }

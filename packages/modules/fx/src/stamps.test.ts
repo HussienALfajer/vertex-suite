@@ -388,7 +388,10 @@ describe('Correct rate selection — FX-06', () => {
   });
 
   it('refuses an override with nothing written in the reason', async () => {
-    for (const reason of ['', '   ', '...', '—']) {
+    // A reason is words, judged the way the exemption comments in `tools/` are
+    // judged. A figure is not an explanation of a figure, so a bare number is a
+    // shrug the same way a dash is.
+    for (const reason of ['', '   ', '...', '—', '13050', '1']) {
       const refusal = refused(
         await fx.stamps.prepare(fx.by, {
           branch: aleppo,
@@ -495,6 +498,74 @@ describe('Correct rate selection — FX-06', () => {
     fx.answers(() => false);
 
     expect((await stampOf('SYP', 'received')).rate).toBe('13100');
+  });
+
+  it('refuses a direction it does not know, rather than reading it as paying out', async () => {
+    // The type is gone at run time and a command reaches this module off a
+    // wire and out of a replayed queue. Read on trust, anything that was not
+    // exactly `received` selected the sell rate — so a misspelt direction
+    // stamped every receipt at the wrong side of the spread, silently, and the
+    // log had nothing to say because nothing had been overridden.
+    for (const direction of ['receive', 'Received', 'received ', '', null, undefined]) {
+      const refusal = refused(
+        await fx.stamps.prepare(fx.by, {
+          branch: aleppo,
+          currency: 'SYP',
+          direction: direction as CashDirection,
+        }),
+      );
+      expect(refusal.code, JSON.stringify(direction)).toBe('fx.cash-direction-unknown');
+      expect(refusal.values, JSON.stringify(direction)).toEqual({ direction: String(direction) });
+    }
+  });
+
+  it('refuses the unknown direction before it asks anything of anybody', async () => {
+    // Asked in the order everything else in this module is asked: nothing is
+    // read and nobody is troubled for a command that cannot be carried out.
+    const asked: string[] = [];
+    fx.answers((_by, right) => {
+      asked.push(right);
+      return true;
+    });
+
+    refused(
+      await fx.stamps.prepare(fx.by, {
+        branch: aleppo,
+        currency: 'SYP',
+        direction: 'sideways' as CashDirection,
+        override: { form: 'units-per-functional', rate: '13050', reason: 'سبب' },
+      }),
+    );
+
+    expect(asked).toEqual([]);
+  });
+
+  it('hands back a stamp nothing can alter between deciding it and writing it', async () => {
+    const prepared = taken(
+      await fx.stamps.prepare(fx.by, {
+        branch: aleppo,
+        currency: 'SYP',
+        direction: 'received',
+        override: { form: 'units-per-functional', rate: '13050', reason: 'سعر الصراف' },
+      }),
+    );
+
+    // The rate on this object is a decision `SEC` was asked about and the log
+    // records. Between `prepare` and `stamp` it travels through a caller — and
+    // in `U07` through a queue and a replay — and `stamp` writes what it is
+    // handed without asking again. Frozen, so what was authorised is what is
+    // stored.
+    expect(Object.isFrozen(prepared.stamp)).toBe(true);
+    expect(Object.isFrozen(prepared.override)).toBe(true);
+    expect(Object.isFrozen(prepared.override?.quoted)).toBe(true);
+
+    const tampered = prepared.stamp as { rate: string };
+    expect(() => {
+      tampered.rate = '1';
+    }).toThrow(TypeError);
+
+    const stamp = await fx.asCaller(fx.by, (session) => fx.stamps.stamp(fx.by, session, prepared));
+    expect(stamp.rate).toBe('13050');
   });
 
   it('stamps under the tenant of the caller and nowhere else', async () => {

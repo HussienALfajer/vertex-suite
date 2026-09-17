@@ -59,7 +59,7 @@ import {
   suggestRate,
   type Recording,
 } from './rates.js';
-import { overridesOn, prepareStamp, stampIn, writeStamp } from './stamps.js';
+import { directionOf, overridesOn, prepareStamp, stampIn, writeStamp } from './stamps.js';
 
 export * from './contract.js';
 
@@ -225,8 +225,15 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
 
         return {
           prepare: async (by: CommandContext, stamping: Stamping) => {
-            // Asked first and asked only when there is one, before `SYS` is
-            // asked whether the branch exists: somebody refused an override
+            // The shape of the command before anything else. Which way the
+            // money is moving is not a question about who is asking, and a
+            // command that names neither direction costs no question and no
+            // read — see `directionOf`.
+            const direction = directionOf(stamping);
+            if (!direction.ok) return direction;
+
+            // Then the right, and only when there is an override, before `SYS`
+            // is asked whether the branch exists: somebody refused an override
             // learns nothing about branches they could not have stamped in.
             if (
               stamping.override !== undefined &&
@@ -259,6 +266,7 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
                 { tenant: by.tenant, actor: by.actor, at },
                 { branch: stamping.branch, day, inForce: inForce.value },
                 stamping,
+                direction.value,
               );
             });
           },
