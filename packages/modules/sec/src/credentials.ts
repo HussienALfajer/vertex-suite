@@ -43,12 +43,48 @@ const SALT_BYTES = 16;
  */
 const MEMORY_CEILING = 512 * 1024 * 1024;
 
+/**
+ * The most work one stored credential may ask for: sixteen times today's.
+ *
+ * The memory ceiling above bounds `N` and `r` and says nothing about `p`,
+ * which Node runs sequentially — so a synced row saying `p = 32766` pinned a
+ * thread-pool thread for the better part of an hour per sign-in attempt, at the
+ * start of a shift, with nothing refusing it. Room is left to raise the cost
+ * without a release that refuses the credentials the previous one wrote.
+ */
+const WORK_CEILING = COST * BLOCK_SIZE * PARALLELISM * 16;
+
 function memoryFor(cost: number, blockSize: number): number {
   return Math.min(128 * cost * blockSize * 2, MEMORY_CEILING);
 }
 
-/** The shortest password this system will store. */
+/**
+ * The shortest and the longest password this system will store, in characters
+ * as a person counts them.
+ *
+ * Counted after composition and by code point. `length` counts UTF-16 units,
+ * so an Arabic letter written as a base and a combining mark counted twice and
+ * a four-letter password passed as eight.
+ *
+ * The ceiling is generous and exists so that a password is a password: a
+ * megabyte pasted into the field is hashed in full, inside a transaction, on
+ * the machine every till in the shop depends on.
+ */
 export const MINIMUM_PASSWORD_LENGTH = 8;
+export const MAXIMUM_PASSWORD_LENGTH = 1024;
+
+/** What is wrong with a password as a password, before anything is hashed. */
+export function passwordLengthProblem(
+  password: string,
+): { readonly atLeast: number } | { readonly atMost: number } | null {
+  // Code points, deliberately, and not grapheme clusters: a password is compared
+  // as the code points it hashes, and an emoji sequence is as many characters to
+  // a guesser as it has code points.
+  const characters = Array.from(password.normalize('NFC')).length;
+  if (characters < MINIMUM_PASSWORD_LENGTH) return { atLeast: MINIMUM_PASSWORD_LENGTH };
+  if (characters > MAXIMUM_PASSWORD_LENGTH) return { atMost: MAXIMUM_PASSWORD_LENGTH };
+  return null;
+}
 
 interface Parameters {
   readonly cost: number;
@@ -122,6 +158,7 @@ function parse(stored: string): Parameters | null {
   const numbers = [Number(cost), Number(blockSize), Number(parallelism)];
   if (numbers.some((one) => !Number.isInteger(one) || one <= 0)) return null;
   const [parsedCost, parsedBlock, parsedParallel] = numbers as [number, number, number];
+  if (parsedCost * parsedBlock * parsedParallel > WORK_CEILING) return null;
 
   return {
     cost: parsedCost,

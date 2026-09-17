@@ -57,11 +57,20 @@ import {
 
 export * from './contract.js';
 
+/**
+ * What `SEC` declares, as the registry reports it.
+ *
+ * `sensitive` travels with the rest. It was once dropped here, so the registry
+ * reported a password reset and a forced sign-out as ordinary rights — to the
+ * role editor that shows the mark, and to `SEC-05`'s re-authorisation that
+ * will key on it.
+ */
 function permissions(): readonly PermissionDeclaration[] {
-  return SEC_PERMISSION_SEEDS.map(({ id, seededFor }) => ({
+  return SEC_PERMISSION_SEEDS.map(({ id, seededFor, sensitive }) => ({
     id,
     labelKey: `permission.${id}`,
     seededFor,
+    ...(sensitive === undefined ? {} : { sensitive }),
   }));
 }
 
@@ -223,7 +232,9 @@ export function secModule<Session extends RecordSession>(): ModuleDefinition<Ses
           reactivate: (by: CommandContext, id: UserId) =>
             run(by, (session) => setUserActive(session, by, declared, id, true)),
           resetPassword: (by: CommandContext, id: UserId, password: string) =>
-            run(by, (session) => resetPassword(session, by, declared, id, password)),
+            run(by, (session) =>
+              resetPassword(session, by, declared, id, password, context.clock.now()),
+            ),
           forceSignOut: (by: CommandContext, id: UserId) =>
             // The moment comes from the clock this module was handed, never from
             // the machine: a register's own clock is a claim, and this stamp is
@@ -250,9 +261,11 @@ export function secModule<Session extends RecordSession>(): ModuleDefinition<Ses
             open: (by: CommandContext, user: UserId) =>
               run(by, (session) => openRecovery(session, by, declared, user, context.clock.now())),
             approve: (by: CommandContext, id: RecoveryId) =>
-              run(by, (session) => approveRecovery(session, by, declared, id)),
+              run(by, (session) => approveRecovery(session, by, declared, id, context.clock.now())),
             complete: (by: CommandContext, id: RecoveryId, password: string) =>
-              run(by, (session) => completeRecovery(session, by, declared, id, password)),
+              run(by, (session) =>
+                completeRecovery(session, by, declared, id, password, context.clock.now()),
+              ),
           },
         } satisfies Credentials;
       }),

@@ -1,10 +1,4 @@
-import {
-  OWNER,
-  SEEDED_ROLES,
-  type PermissionId,
-  type SeededRole,
-  type TenantId,
-} from '@vertex/contracts';
+import { OWNER, SEEDED_ROLES, type PermissionId, type SeededRole } from '@vertex/contracts';
 import { err, newId, ok, refusal, refuse, type Result } from '@vertex/kernel';
 import type { CommandContext, PermissionDeclaration } from '@vertex/platform';
 
@@ -16,8 +10,8 @@ import {
   type RoleId,
   type SecRefusal,
 } from './contract.js';
-import { decideFor, stillHeldByAnybody } from './decide.js';
-import { roleIn, rolesIn, writeRecord } from './records.js';
+import { decideFor, reachesAllOf, strandedBy, strandingRefusal } from './decide.js';
+import { assignmentsIn, roleIn, rolesIn, writeRecord } from './records.js';
 
 /**
  * Roles: `SEC-01`, and the two rules that keep `SEC-02` from being a way round
@@ -88,6 +82,33 @@ function grantable(
     if (!decideFor(session, by, declared, right, undefined).granted) {
       return refusal('sec.right-not-held', { right });
     }
+  }
+  return null;
+}
+
+/**
+ * Whether the caller could have handed this role to everybody who holds it.
+ *
+ * Taking a right off a role, or withdrawing the role, acts on every person in
+ * it, and needs only the right to edit roles. Without this, a person trusted to
+ * maintain the cashier role could take role editing, company creation and
+ * enrolment off the **owner's** role; the owner could then neither take them
+ * back — granting needs them held — nor put themselves into the editor's role,
+ * and the shop's roles belonged to whoever had been asked to tidy them.
+ *
+ * So the caller must reach every right of the role over the reach of each
+ * assignment of it, active or not: an assignment standing withdrawn is one
+ * click from counting again.
+ */
+function outranksHolders(
+  session: RecordSession,
+  by: CommandContext,
+  role: Role,
+): SecRefusal | null {
+  for (const assignment of assignmentsIn(session, by.tenant)) {
+    if (assignment.role !== role.id) continue;
+    const outranked = reachesAllOf(session, by, role.rights, assignment.confinement);
+    if (outranked !== null) return outranked;
   }
   return null;
 }
@@ -248,6 +269,11 @@ export function grantRights(
  * right before they may remove it would mean an administrator who cannot do a
  * thing also cannot stop somebody else doing it — and the moment that matters
  * is the one where a right has to come off a role quickly.
+ *
+ * Two things are still asked. The caller must outrank the people in the role
+ * (`outranksHolders`), and the last tenant-wide holding of a right may not be
+ * the one removed (`strandedBy`): a right nobody holds tenant-wide is a right
+ * nobody can ever grant again.
  */
 export function revokeRights(
   session: RecordSession,
@@ -259,8 +285,11 @@ export function revokeRights(
   const found = revised(session, by, declared, id, SEC_PERMISSIONS.role.edit);
   if (!found.ok) return found;
 
-  const lockout = wouldStrandTheTenant(session, by.tenant, found.value, rights);
-  if (lockout !== null) return err(lockout);
+  const outranked = outranksHolders(session, by, found.value);
+  if (outranked !== null) return err(outranked);
+
+  const stranded = strandedBy(session, by.tenant, { kind: 'role', role: id }, rights);
+  if (stranded !== null) return err(strandingRefusal(stranded, { role: id }));
 
   return ok(
     writeRecord(session, 'role', by.tenant, [id], {
@@ -281,40 +310,23 @@ export function setRoleActive(
   if (!found.ok) return found;
 
   if (!active) {
-    const lockout = wouldStrandTheTenant(session, by.tenant, found.value, found.value.rights);
-    if (lockout !== null) return err(lockout);
+    const outranked = outranksHolders(session, by, found.value);
+    if (outranked !== null) return err(outranked);
+
+    const stranded = strandedBy(session, by.tenant, { kind: 'role', role: id });
+    if (stranded !== null) return err(strandingRefusal(stranded, { role: id }));
+  } else if (!found.value.active) {
+    // Restoring a role switches every right in it back on for everybody still
+    // assigned to it, which is granting those rights by another door. It was
+    // guarded by the right to withdraw roles alone, so an administrator still
+    // assigned to a withdrawn role could restore it and take back what the owner
+    // had withdrawn it to remove.
+    const wrong = grantable(session, by, declared, found.value.rights);
+    if (wrong !== null) return err(wrong);
   }
 
   // Idempotent: `SYN-02` replays a command that may already have been applied,
   // and a second withdrawal that refused would turn a sync that worked into a
   // sync that failed over a state that is already what was asked for.
   return ok(writeRecord(session, 'role', by.tenant, [id], { ...found.value, active }));
-}
-
-/**
- * Whether this change would leave the shop with nobody who can undo it.
- *
- * `SYS-09` and `SEC-09` both say the same thing in different words: this is
- * done by the tenant's own administrator and **never by the vendor**. A tenant
- * that has revoked the last right to edit a role has no way back that does not
- * involve somebody with a database client, which is the one outcome those two
- * features exist to rule out. So the command that would do it is refused, and
- * the administrator is told why while there is still somebody who can act.
- *
- * The question is about **people, not roles** — see `stillHeldByAnybody`. A
- * second role carrying the keystone that nobody was put into is not a way back,
- * and counting it as one is what let this command lock a shop out of itself.
- */
-export function wouldStrandTheTenant(
-  session: RecordSession,
-  tenant: TenantId,
-  role: Role,
-  losing: readonly PermissionId[],
-): SecRefusal | null {
-  const keystone = SEC_PERMISSIONS.role.edit;
-  if (!role.rights.includes(keystone) || !losing.includes(keystone)) return null;
-
-  return stillHeldByAnybody(session, tenant, keystone, { kind: 'role', role: role.id })
-    ? null
-    : refusal('sec.last-owner', { role: role.id });
 }

@@ -108,10 +108,11 @@ const ALWAYS: Authoriser = { may: () => Promise.resolve(true) };
  * below) — but the declarations themselves are not a fiction to stand in for.
  */
 function secPermissionDeclarations(): readonly PermissionDeclaration[] {
-  return SEC_PERMISSION_SEEDS.map(({ id, seededFor }) => ({
+  return SEC_PERMISSION_SEEDS.map(({ id, seededFor, sensitive }) => ({
     id,
     labelKey: `permission.${id}`,
     seededFor,
+    ...(sensitive === undefined ? {} : { sensitive }),
   }));
 }
 

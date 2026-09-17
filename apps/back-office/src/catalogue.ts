@@ -69,10 +69,10 @@ export const catalogue = {
   'refusal.sec.role-name-required': 'أدخل اسم الدور.',
   /**
    * `SEC-02`: a grant naming a right no module in this edition declared.
-   * `{right}` is resolved through `nameOfPermission` like every other refusal
-   * that carries one — except this one names a right that has no name here,
-   * so what a person actually reads is its raw identifier, which is the honest
-   * answer to a request for something that does not exist.
+   * Every other refusal carrying `{right}` has it resolved to a name; this one
+   * names a right that has no name here, so `messageForRefusal` leaves the
+   * identifier as it came — the honest answer to a request for something that
+   * does not exist, where "the unknown right is unknown" would say nothing.
    */
   'refusal.sec.right-undeclared': 'الصلاحية «{right}» غير معروفة في هذا الإصدار من النظام.',
   /**
@@ -83,6 +83,36 @@ export const catalogue = {
    */
   'refusal.sec.last-owner':
     'هذا آخر من يملك صلاحية إدارة الأدوار والمستخدمين في هذا المتجر. امنح هذه الصلاحية لجهة أخرى أولًا، وإلا لن يبقى من يستطيع التراجع عن هذا القرار.',
+  /**
+   * The same rule for any other right: a right nobody holds across the whole
+   * shop is one nobody can ever grant again, so the last holding of it stays.
+   */
+  'refusal.sec.last-holder':
+    'هذا آخر من يملك صلاحية «{right}» على مستوى المتجر كله. امنحها لجهة أخرى على مستوى المتجر كله أولًا، وإلا لن يستطيع أحد منحها من جديد.',
+  /**
+   * The two escalation refusals. Both were once missing here, so an
+   * administrator refused for reaching beyond their own rights read "try
+   * again" — an instruction that could never work.
+   */
+  'refusal.sec.right-not-held':
+    'لا يمكنك تنفيذ هذا لأنه يمسّ صلاحية «{right}»، وأنت لا تملكها بالنطاق نفسه. راجع مالك المتجر.',
+  'refusal.sec.confinement-exceeds-own':
+    'هذا يتجاوز الفروع التي تغطيها صلاحياتك. اختر نطاقًا ضمن فروعك، أو راجع مالك المتجر.',
+  'refusal.sec.location-not-found': 'لم يعد هذا الموقع موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.location-outside-confinement':
+    'الموقع «{location}» لا يتبع أيًا من الفروع المختارة. اختر فرعه أيضًا، أو أزل الموقع.',
+  'refusal.sec.identity-not-found': 'تعذّر العثور على حساب الدخول لهذا المستخدم. راجع مالك المتجر.',
+  'refusal.sec.no-actor': 'انتهت جلستك. سجّل الدخول من جديد.',
+  'refusal.sec.own-password':
+    'لا تُعاد كلمة مرورك من هنا. غيّرها من «تغيير كلمة المرور» بإدخال كلمتك الحالية.',
+  'refusal.sec.password-too-long':
+    'كلمة المرور أطول من المسموح. أدخل {atMost, number} حرفًا أو أقل.',
+  'refusal.sec.recovery-not-found':
+    'لم يعد طلب الاسترداد هذا موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.sec.recovery-settled': 'اكتمل طلب الاسترداد هذا من قبل.',
+  'refusal.sec.recovery-incomplete':
+    'لم يوافق بعد كل متجر يعتمد على حساب الدخول هذا. يكتمل الاسترداد بعد موافقتهم جميعًا.',
+  'refusal.sec.recovery-expired': 'انتهت مهلة طلب الاسترداد هذا. افتح طلبًا جديدًا.',
 
   /**
    * `SYS`'s own refusals, as sentences.
@@ -860,10 +890,13 @@ export function messageForRefusal(translator: Translator, refused: Refusal): str
   if (!translator.has(key)) return translator.format('refusal.unknown');
 
   const right = refused.values['right'];
+  // A permission identifier is a name for a program, not for a person — except
+  // when the refusal is that no such right exists, and the identifier is all
+  // there is to say.
+  const named = typeof right === 'string' && refused.code !== 'sec.right-undeclared';
   return translator.format(key, {
     ...formattable(refused.values),
-    // A permission identifier is a name for a program, not for a person.
-    ...(typeof right === 'string' ? { right: nameOfPermission(translator, right) } : {}),
+    ...(named ? { right: nameOfPermission(translator, right) } : {}),
   });
 }
 

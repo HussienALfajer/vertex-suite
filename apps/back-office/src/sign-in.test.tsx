@@ -88,16 +88,17 @@ describe('Sign-in — SEC-09', () => {
   });
 
   it('renders a refusal the catalogue has no words for rather than a raw code', async () => {
-    // A real refusal `SEC` can return and this screen has never been given a
-    // sentence for — which is the ordinary way the two drift, since the domain
-    // grows and a catalogue lags. A screen that printed `sec.identity-not-found`
-    // at somebody would be showing them a symbol from a program they cannot
-    // read.
-    open(systemThatAnswers(() => Promise.resolve(refuse('sec.identity-not-found'))));
+    // A refusal `SEC` added after this catalogue was written — the ordinary
+    // way the two drift, since the domain grows and a catalogue lags. A screen
+    // that printed the code at somebody would be showing them a symbol from a
+    // program they cannot read. Named here by cast, because every refusal the
+    // contract knows today has its sentence.
+    const unworded = 'sec.added-after-this-catalogue' as 'sec.identity-not-found';
+    open(systemThatAnswers(() => Promise.resolve(refuse(unworded))));
     await signIn('owner', 'till-morning-1');
 
     expect(screen.getByRole('alert').textContent).toContain(catalogue['refusal.unknown']);
-    expect(screen.getByRole('alert').textContent).not.toContain('sec.identity-not-found');
+    expect(screen.getByRole('alert').textContent).not.toContain(unworded);
   });
 
   it('says so rather than failing silently when the store node cannot be reached', async () => {

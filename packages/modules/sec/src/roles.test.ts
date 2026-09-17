@@ -195,8 +195,9 @@ describe('Seven seeded roles — SEC-01', () => {
     // still act, which is the whole of the rule.
     expect(await sec.auth.may(owner, SEC_PERMISSIONS.role.edit)).toBe(true);
 
-    // Put somebody into the second role and there are genuinely two ways back,
-    // so standing the first one down is an ordinary decision again.
+    // Put somebody into the second role and role editing has a way back. The
+    // owner's role still cannot go: every other right in it would then be held
+    // by nobody tenant-wide, and a right nobody holds is one nobody can grant.
     const second = await sec.hire('deputy-1');
     taken(
       await sec.admin.assignments.assign(owner, {
@@ -205,6 +206,13 @@ describe('Seven seeded roles — SEC-01', () => {
         confinement: TENANT_WIDE,
       }),
     );
+    const stranded = await sec.admin.roles.withdraw(owner, ownerRole.id);
+    expect(refusalOf(stranded)).toBe('sec.last-holder');
+
+    // Give the deputy everything the owner's role carries and there are
+    // genuinely two ways back, so standing the first one down is an ordinary
+    // decision again.
+    taken(await sec.admin.roles.grant(owner, deputy.id, ownerRole.rights));
     taken(await sec.admin.roles.withdraw(owner, ownerRole.id));
     expect(await sec.auth.may(sec.as(second), SEC_PERMISSIONS.role.edit)).toBe(true);
   });

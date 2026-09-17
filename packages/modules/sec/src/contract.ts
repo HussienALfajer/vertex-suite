@@ -306,18 +306,22 @@ export type SecRefusalCode =
   | 'sec.location-outside-confinement'
   | 'sec.assignment-not-found'
   | 'sec.last-owner'
+  | 'sec.last-holder'
   | 'sec.user-not-found'
   | 'sec.user-inactive'
   | 'sec.user-name-required'
   | 'sec.handle-required'
   | 'sec.handle-taken'
   | 'sec.password-too-short'
+  | 'sec.password-too-long'
+  | 'sec.own-password'
   | 'sec.password-wrong'
   | 'sec.identity-shared'
   | 'sec.identity-not-found'
   | 'sec.recovery-not-found'
   | 'sec.recovery-settled'
   | 'sec.recovery-incomplete'
+  | 'sec.recovery-expired'
   | 'sec.no-actor';
 
 export type SecRefusal = Refusal<SecRefusalCode>;

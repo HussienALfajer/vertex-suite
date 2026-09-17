@@ -1,13 +1,17 @@
 import type { PermissionId, TenantId, UserId } from '@vertex/contracts';
 import type { CommandContext } from '@vertex/platform';
 
-import type {
-  Assignment,
-  Confinement,
-  Decision,
-  RecordSession,
-  RoleId,
-  Where,
+import { refusal } from '@vertex/kernel';
+
+import {
+  SEC_PERMISSIONS,
+  type Assignment,
+  type Confinement,
+  type Decision,
+  type RecordSession,
+  type RoleId,
+  type SecRefusal,
+  type Where,
 } from './contract.js';
 import { assignmentsIn, rolesIn, userIn } from './records.js';
 
@@ -109,25 +113,40 @@ export interface Grant {
   readonly rights: readonly PermissionId[];
 }
 
+function grants(
+  session: RecordSession,
+  tenant: TenantId,
+  user: UserId,
+  live: boolean,
+): readonly Grant[] {
+  const roles = new Map(rolesIn(session, tenant).map((role) => [role.id, role] as const));
+  return assignmentsIn(session, tenant)
+    .filter((assignment) => assignment.user === user && (!live || assignment.active))
+    .flatMap((assignment) => {
+      const role = roles.get(assignment.role);
+      if (role === undefined || (live && !role.active)) return [];
+      return [{ assignment, rights: role.rights }];
+    });
+}
+
 /**
  * Everything a role would give this person, whether or not they still work
- * here.
+ * here — and whether or not the assignment, or the role, is still in force.
  *
  * The distinction from `liveGrants` is not pedantry. It is what a **password
  * reset** has to be measured against (`SEC-09`): resetting the password of a
  * withdrawn administrator, then putting them back, is the same escalation as
  * resetting a working one — and a check that read only live grants would wave
  * the first one through because a withdrawn person appears to hold nothing.
+ *
+ * A withdrawn assignment and a withdrawn role are the same move one step
+ * removed, and this once counted neither: withdraw the co-owner's assignment,
+ * reset the password of an account that now held nothing, wait for the owner
+ * to put the assignment back, sign in as a co-owner. So what somebody **could
+ * be given back** counts, because giving it back is one click by somebody else.
  */
 export function grantsOf(session: RecordSession, tenant: TenantId, user: UserId): readonly Grant[] {
-  const roles = new Map(rolesIn(session, tenant).map((role) => [role.id, role] as const));
-  return assignmentsIn(session, tenant)
-    .filter((assignment) => assignment.user === user && assignment.active)
-    .flatMap((assignment) => {
-      const role = roles.get(assignment.role);
-      if (!role?.active) return [];
-      return [{ assignment, rights: role.rights }];
-    });
+  return grants(session, tenant, user, false);
 }
 
 /**
@@ -146,7 +165,7 @@ export function liveGrants(
 ): readonly Grant[] {
   const here = userIn(session, tenant, user);
   if (!here?.active) return [];
-  return grantsOf(session, tenant, user);
+  return grants(session, tenant, user, true);
 }
 
 /**
@@ -167,6 +186,29 @@ export function reachFor(
       .filter((grant) => grant.rights.includes(right))
       .map((grant) => grant.assignment.confinement),
   );
+}
+
+/**
+ * Whether the caller could hand every one of these rights over that much of the
+ * shop group — the rule an assignment is held to, right by right, because a
+ * role is a set and it takes one member of it to escalate.
+ *
+ * The system reaches everything. `null` is a refusal naming the first right
+ * the caller does not reach there.
+ */
+export function reachesAllOf(
+  session: RecordSession,
+  by: CommandContext,
+  rights: readonly PermissionId[],
+  confinement: Confinement,
+): SecRefusal | null {
+  if (by.actor === null) return null;
+  for (const right of rights) {
+    if (!coveredBy(reachFor(session, by.tenant, by.actor, right), confinement)) {
+      return refusal('sec.right-not-held', { right });
+    }
+  }
+  return null;
 }
 
 /**
@@ -194,13 +236,20 @@ function removed(assignment: Assignment, removing: Removing): boolean {
 }
 
 /**
- * Whether anybody would still hold a right once that grant is gone.
+ * Whether anybody would still hold a right **across the whole tenant** once
+ * that grant is gone.
  *
  * **A person holds a right only when three things are live at once**: the
  * person, the assignment, and the role. Counting any one of them by itself is
  * how a shop is told it has a way back that nobody can walk — a second role
  * carrying the right that nobody was ever put into, or an assignment to
  * somebody who no longer works here. Both look like cover and neither is.
+ *
+ * **And only tenant-wide.** Every role and user command is guarded with no
+ * branch, which only an unconfined grant admits, and a right can be put into a
+ * role only by somebody holding it tenant-wide. An owner confined to Aleppo was
+ * once counted as the way back, and after the real owner stood down nobody
+ * could edit a role, enrol a person or put the owner back.
  *
  * One function for all three commands on purpose. The rule was written out
  * three times, each counting something different, and the one that counted
@@ -219,10 +268,71 @@ export function stillHeldByAnybody(
 
   return assignmentsIn(session, tenant).some((assignment) => {
     if (!assignment.active || removed(assignment, removing)) return false;
+    if (assignment.confinement.kind !== 'tenant') return false;
     const role = roles.get(assignment.role);
     if (role === undefined || !role.active || !role.rights.includes(right)) return false;
     return userIn(session, tenant, assignment.user)?.active === true;
   });
+}
+
+/**
+ * The first right a removal would leave nobody holding across the tenant.
+ *
+ * Every right, and not only the right to edit roles. Granting a right needs it
+ * held tenant-wide, so the moment nobody holds one tenant-wide is the moment
+ * nobody can ever grant it again — and taking a right off a role needs only the
+ * right to edit the role. An owner who unticked "assign roles" on their own
+ * role, alone in their shop, had removed it from the product for good: nobody
+ * could re-grant it, define a role with it, or staff anybody. `SEC-09` says the
+ * way back is never the vendor, so that has to be refused while it can be.
+ *
+ * Only rights the removed grants actually hold tenant-wide are weighed: a
+ * removal that takes nothing away from the tenant-wide picture strands nothing,
+ * whatever else is already missing from it. `among` narrows the rights to the
+ * ones being taken, for a revocation that leaves the rest of the role alone.
+ *
+ * Role editing is weighed first, so the refusal names the loss that matters most.
+ */
+export function strandedBy(
+  session: RecordSession,
+  tenant: TenantId,
+  removing: Removing,
+  among?: readonly PermissionId[],
+): PermissionId | null {
+  const roles = new Map(rolesIn(session, tenant).map((role) => [role.id, role] as const));
+  const losing = new Set<PermissionId>();
+
+  for (const assignment of assignmentsIn(session, tenant)) {
+    if (!assignment.active || assignment.confinement.kind !== 'tenant') continue;
+    if (!removed(assignment, removing)) continue;
+    const role = roles.get(assignment.role);
+    if (!role?.active) continue;
+    if (!userIn(session, tenant, assignment.user)?.active) continue;
+    for (const right of role.rights) {
+      if (among === undefined || among.includes(right)) losing.add(right);
+    }
+  }
+
+  const keystone = SEC_PERMISSIONS.role.edit;
+  const ordered = [...losing].sort(
+    (one, two) => Number(two === keystone) - Number(one === keystone),
+  );
+  return ordered.find((right) => !stillHeldByAnybody(session, tenant, right, removing)) ?? null;
+}
+
+/**
+ * The refusal for a removal that would strand a right.
+ *
+ * Role editing keeps its own code: it is the loss after which nothing else can
+ * be repaired, and the sentence a person reads says so.
+ */
+export function strandingRefusal(
+  right: PermissionId,
+  values: Readonly<Record<string, string>>,
+): SecRefusal {
+  return right === SEC_PERMISSIONS.role.edit
+    ? refusal('sec.last-owner', values)
+    : refusal('sec.last-holder', { ...values, right });
 }
 
 /**
