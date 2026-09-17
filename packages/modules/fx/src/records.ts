@@ -3,8 +3,10 @@ import type { CurrencyCode, Instant, LocalDate } from '@vertex/kernel';
 
 import type {
   LastKnownRates,
+  RateOverride,
   RateRevision,
   RateRevisionId,
+  RateStamp,
   RecordSession,
   SuggestedRate,
   SuggestedRateId,
@@ -94,6 +96,17 @@ export interface StoredShapes {
   readonly 'last-known': LastKnownRates;
   /** `fx/latest-day/<tenant>/<branch>` */
   readonly 'latest-day': LatestRateDay;
+  /**
+   * `fx/stamp/<tenant>/<id>`
+   *
+   * By identifier alone, because that is how it is read: a document carries the
+   * identifier and asks for that one stamp. Nothing lists a branch's stamps —
+   * what a review reads is the override log below, which is much smaller and
+   * keyed for exactly that question.
+   */
+  readonly stamp: RateStamp;
+  /** `fx/override/<tenant>/<branch>/<day>/<id>` */
+  readonly override: RateOverride;
 }
 
 export type Collection = keyof StoredShapes;

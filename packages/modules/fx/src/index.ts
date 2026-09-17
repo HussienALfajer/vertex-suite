@@ -26,13 +26,17 @@ import {
   FX_PERMISSION_SEEDS,
   FX_PERMISSIONS,
   RateAdministration,
+  RateStamps,
   type CurrencyRefusal,
   type CurrencyRevision,
   type Listing,
   type NewCurrency,
+  type PreparedStamp,
   type RateQuote,
   type RateRefusal,
+  type RateStampId,
   type RecordSession,
+  type Stamping,
   type TenantCurrency,
 } from './contract.js';
 import {
@@ -55,6 +59,7 @@ import {
   suggestRate,
   type Recording,
 } from './rates.js';
+import { overridesOn, prepareStamp, stampIn, writeStamp } from './stamps.js';
 
 export * from './contract.js';
 
@@ -99,6 +104,11 @@ function visible(
  * at one. Both through `SYS`'s contract, and both before this module's own
  * transaction opens, which is the arrangement `SEC` uses for the same reason:
  * one command never holds two transactions open at once.
+ *
+ * `RateStamps` is the one contract here that writes into somebody else's
+ * transaction rather than its own, and it is split in two so that it can: see
+ * the contract for why a document and the rate it was priced at cannot be
+ * allowed to commit separately.
  *
  * No migrations and no events, as in `SYS` and `SEC`: there is no schema until a
  * driver exists and a placeholder migration would burn the name the real one
@@ -201,6 +211,67 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
           revisions: (by: CommandContext, id: BranchId, code: CurrencyCode, day: LocalDate) =>
             read(by, (session) => revisionsOn(session, by.tenant, id, code, day)),
         } satisfies ExchangeRates;
+      }),
+
+      provideContract(RateStamps, (context: ModuleContext<Session>) => {
+        const today = branchToday(context);
+        const { rate } = FX_PERMISSIONS;
+
+        // Unguarded but for the override, as the rest of this module's reads
+        // are: a cashier stamps the rate of every sale they ring up, and
+        // whether they may open the rates screen has nothing to do with it.
+        const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
+          context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          prepare: async (by: CommandContext, stamping: Stamping) => {
+            // Asked first and asked only when there is one, before `SYS` is
+            // asked whether the branch exists: somebody refused an override
+            // learns nothing about branches they could not have stamped in.
+            if (
+              stamping.override !== undefined &&
+              !(await context.authorise(by, rate.override, { branch: stamping.branch }))
+            ) {
+              return refuse('fx.not-permitted', { right: rate.override });
+            }
+
+            // Trading, not reading: a withdrawn branch issues no documents, so
+            // there is nothing for it to stamp.
+            const here = await today(by, stamping.branch, 'trading');
+            if (!here.ok) return here;
+            const { at, day } = here.value;
+
+            return read(by, (session) => {
+              const inForce = rateInForce(
+                session,
+                by.tenant,
+                stamping.branch,
+                day,
+                stamping.currency,
+                by.device,
+              );
+              // Including `fx.rate-missing`, and including it when an override
+              // was typed: an override replaces the rate that would have
+              // applied, and `FX-04` blocks the operation where none would.
+              if (!inForce.ok) return inForce;
+
+              return prepareStamp(
+                { tenant: by.tenant, actor: by.actor, at },
+                { branch: stamping.branch, day, inForce: inForce.value },
+                stamping,
+              );
+            });
+          },
+
+          stamp: (by: CommandContext, session: RecordSession, prepared: PreparedStamp) =>
+            writeStamp(session, by.tenant, prepared),
+
+          stamped: (by: CommandContext, id: RateStampId) =>
+            read(by, (session) => stampIn(session, by.tenant, id)),
+
+          overrides: (by: CommandContext, id: BranchId, day: LocalDate) =>
+            read(by, (session) => overridesOn(session, by.tenant, id, day)),
+        } satisfies RateStamps;
       }),
 
       provideContract(RateAdministration, (context: ModuleContext<Session>) => {

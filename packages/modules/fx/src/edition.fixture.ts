@@ -25,6 +25,7 @@ import {
   CurrencyAdministration,
   ExchangeRates,
   RateAdministration,
+  RateStamps,
 } from './contract.js';
 import { fxModule } from './index.js';
 
@@ -50,6 +51,7 @@ export interface Installed {
   readonly admin: CurrencyAdministration;
   readonly rates: ExchangeRates;
   readonly rateAdmin: RateAdministration;
+  readonly stamps: RateStamps;
   /**
    * The shop's time, and the one thing about it a test may choose. It starts at
    * noon in Damascus on 17 September 2026, which is 09:00 UTC.
@@ -73,6 +75,16 @@ export interface Installed {
    * test of this module a test of permissions.
    */
   answers(decide: (by: CommandContext, right: string, where?: AuthorisationScope) => boolean): void;
+
+  /**
+   * A command of some *other* module, with its transaction open: what `SAL`
+   * does while it writes an invoice, and the only place a stamp is written.
+   *
+   * The same transactor the module itself runs on, so a stamp written here
+   * commits with the caller's own work or rolls back with it — which is the
+   * claim `FX-05` makes and which nothing else in this fixture could prove.
+   */
+  asCaller<T>(by: CommandContext, work: (session: MemorySession) => T): Promise<T>;
 
   /** A branch of the tenant, as far as `FX` can see one. */
   openBranch(options?: { readonly timeZone?: string; readonly tenant?: Id<'tenant'> }): BranchId;
@@ -214,6 +226,7 @@ export function installFx(): Installed {
     admin: registry.require(CurrencyAdministration),
     rates: registry.require(ExchangeRates),
     rateAdmin: registry.require(RateAdministration),
+    stamps: registry.require(RateStamps),
     clock,
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),
@@ -226,6 +239,9 @@ export function installFx(): Installed {
       next: (by: CommandContext, right: string, where?: AuthorisationScope) => boolean,
     ): void {
       decide = next;
+    },
+    asCaller<T>(by: CommandContext, work: (session: MemorySession) => T): Promise<T> {
+      return transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
     },
 
     openBranch(options = {}): BranchId {
