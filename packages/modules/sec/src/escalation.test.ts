@@ -140,6 +140,26 @@ describe('Staffing cannot be turned into ownership — SEC-04, SEC-09', () => {
     );
   });
 
+  it('refuses two owners withdrawing each other at the same moment', async () => {
+    // Each withdrawal alone leaves somebody who can put the other back; both
+    // together leave nobody. The second to commit decided on a state that no
+    // longer holds, and is refused rather than written.
+    const ownerRole = await seeded('owner');
+    const coOwner = await hiredInto('co-owner', ownerRole, TENANT_WIDE);
+
+    const outcomes = await Promise.allSettled([
+      sec.admin.assignments.withdraw(owner, coOwner, ownerRole.id),
+      sec.admin.assignments.withdraw(sec.as(coOwner), theOwner, ownerRole.id),
+    ]);
+
+    expect(outcomes.filter((one) => one.status === 'fulfilled' && one.value.ok)).toHaveLength(1);
+    const standing = [
+      await sec.auth.may(owner, SEC_PERMISSIONS.role.edit),
+      await sec.auth.may(sec.as(coOwner), SEC_PERMISSIONS.role.edit),
+    ];
+    expect(standing.filter(Boolean)).toHaveLength(1);
+  });
+
   it('refuses an assignment to somebody who does not work here', async () => {
     const stranger = sec.as(await sec.hireIn(sec.otherTenant, 'elsewhere')).actor;
     if (stranger === null) throw new Error('A hired person has an identifier.');

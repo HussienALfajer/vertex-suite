@@ -7,6 +7,7 @@ export {
   ModuleDeclarationError,
   PlatformError,
   RegistryError,
+  SerialisationConflictError,
   UndeclaredEventError,
 } from './errors.js';
 

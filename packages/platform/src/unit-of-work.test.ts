@@ -2,6 +2,7 @@ import { newId, systemClock } from '@vertex/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { commandContext } from './context.js';
+import { SerialisationConflictError } from './errors.js';
 import { createEventBus, eventType, type DomainEvent, type HandlerFailure } from './events.js';
 import {
   createMemoryStore,
@@ -335,6 +336,87 @@ describe('the memory store', () => {
     ).rejects.toThrow('changed my mind');
 
     expect(store.committed().get('a')).toBe(1);
+  });
+
+  it('refuses to commit a decision taken on what another command changed meanwhile', async () => {
+    // The shape of every read-then-write invariant a module keeps: two
+    // commands each read the counter, each write the next number, and both
+    // print 000001 — unless the second to commit is refused.
+    const { store, transactor } = harness();
+    await transactor.run(context, (uow) => {
+      uow.session.put('counter', 1);
+      return Promise.resolve();
+    });
+
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = transactor.run(context, async (uow) => {
+      const next = uow.session.get('counter') as number;
+      await held;
+      uow.session.put('counter', next + 1);
+      uow.session.put('issued:slow', next);
+    });
+    await transactor.run(context, (uow) => {
+      const next = uow.session.get('counter') as number;
+      uow.session.put('counter', next + 1);
+      uow.session.put('issued:quick', next);
+      return Promise.resolve();
+    });
+    release();
+
+    await expect(slow).rejects.toThrow(SerialisationConflictError);
+    expect(store.committed().get('counter')).toBe(2);
+    expect(store.committed().has('issued:slow')).toBe(false);
+  });
+
+  it('refuses a decision taken on a listing that another command has since added to', async () => {
+    // "Is anybody else still an owner?" is a listing, not one key.
+    const { transactor } = harness();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = transactor.run(context, async (uow) => {
+      const owners = uow.session.keys().filter((key) => key.startsWith('owner:'));
+      await held;
+      uow.session.put('decision', owners.length);
+    });
+    await transactor.run(context, (uow) => {
+      uow.session.put('owner:2', true);
+      return Promise.resolve();
+    });
+    release();
+
+    await expect(slow).rejects.toThrow(SerialisationConflictError);
+  });
+
+  it('never refuses a command that wrote nothing, nor one whose reads were left alone', async () => {
+    const { store, transactor } = harness();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reader = transactor.run(context, async (uow) => {
+      uow.session.keys();
+      await held;
+      return uow.session.get('a');
+    });
+    const writer = transactor.run(context, async (uow) => {
+      uow.session.get('b');
+      await held;
+      uow.session.put('b', 1);
+    });
+    await transactor.run(context, (uow) => {
+      uow.session.put('a', 1);
+      return Promise.resolve();
+    });
+    release();
+
+    await expect(reader).resolves.toBe(1);
+    await expect(writer).resolves.toBeUndefined();
+    expect(store.committed().get('b')).toBe(1);
   });
 
   it('holds values, not the objects it was handed', async () => {

@@ -1,6 +1,7 @@
 import { newId, type Clock, type Instant } from '@vertex/kernel';
 
 import type { CommandContext } from './context.js';
+import { SerialisationConflictError } from './errors.js';
 import type { DomainEvent, EventBus, EventType } from './events.js';
 
 /**
@@ -52,6 +53,15 @@ export interface UnitOfWork<Session = unknown> {
  * and none of those opinions belongs in a package that hosts modules. The
  * drivers arrive with U07; what is fixed here is that a command is bracketed,
  * and that the bracket is the same shape on both.
+ *
+ * One opinion is not a driver's to hold: **conflicting commands serialise.**
+ * The modules decide by reading and then writing — whether anybody else still
+ * holds the right about to be removed, what the next document number is, whether
+ * a handle is taken — and each of those is a lost update under anything weaker.
+ * Two owners withdrawing each other at the same moment would both succeed, and
+ * two tills would print one number. A driver provides serialisable isolation,
+ * or locks that amount to it, and rejects the commit of a transaction that lost
+ * — as the memory store below does.
  */
 export interface SessionDriver<Session> {
   begin(context: CommandContext): Promise<Session>;
@@ -250,6 +260,14 @@ export function createTransactor<Session>(
  * objects themselves, so a command that edited what `get` returned and then
  * failed had changed committed state anyway — and a module could forget a
  * `put`, pass every test here, and lose the write against a real store.
+ *
+ * And it serialises, optimistically. A transaction that writes is refused at
+ * commit with `SerialisationConflictError` when anything it read was changed by
+ * a commit made while it ran, or when it listed the keys and a commit since
+ * added or removed one. Without that, every read-then-write invariant a module
+ * keeps passed its tests here and was a lost update the first time two commands
+ * overlapped. A transaction that writes nothing is never refused: there is
+ * nothing it could commit that rests on what it saw.
  */
 export interface MemorySession {
   put(key: string, value: unknown): void;
@@ -276,9 +294,42 @@ type Slot = { readonly removed: true } | { readonly value: unknown };
 
 const REMOVED: Slot = Object.freeze({ removed: true });
 
+/** What a commit changed, for the transactions that were running while it did. */
+interface CommitRecord {
+  readonly version: number;
+  readonly written: ReadonlySet<string>;
+  /** A key was added or removed, which is what a listing of the keys can see. */
+  readonly reshaped: boolean;
+}
+
+/** What a transaction saw, for the check at its own commit. */
+interface Observed {
+  readonly since: number;
+  readonly read: Set<string>;
+  scanned: boolean;
+}
+
 export function createMemoryStore(): MemoryStore {
   const committed = new Map<string, unknown>();
   const overlays = new WeakMap<MemorySession, Map<string, Slot>>();
+  const observations = new WeakMap<MemorySession, Observed>();
+  const running = new Set<Observed>();
+  let version = 0;
+  let history: CommitRecord[] = [];
+
+  /** Forgets the commits no running transaction began before. */
+  const prune = (): void => {
+    const oldest = Math.min(version, ...[...running].map((one) => one.since));
+    history = history.filter((record) => record.version > oldest);
+  };
+
+  const conflicts = (observed: Observed): boolean =>
+    history.some(
+      (record) =>
+        record.version > observed.since &&
+        ((observed.scanned && record.reshaped) ||
+          [...record.written].some((key) => observed.read.has(key))),
+    );
 
   const overlayOf = (session: MemorySession): Map<string, Slot> => {
     const overlay = overlays.get(session);
@@ -290,19 +341,24 @@ export function createMemoryStore(): MemoryStore {
 
   const begin = (): Promise<MemorySession> => {
     const overlay = new Map<string, Slot>();
+    const observed: Observed = { since: version, read: new Set(), scanned: false };
     const session: MemorySession = {
       put(key: string, value: unknown): void {
         overlay.set(key, { value: structuredClone(value) });
       },
       get(key: string): unknown {
         const slot = overlay.get(key);
-        if (slot === undefined) return structuredClone(committed.get(key));
+        if (slot === undefined) {
+          observed.read.add(key);
+          return structuredClone(committed.get(key));
+        }
         return 'removed' in slot ? undefined : structuredClone(slot.value);
       },
       remove(key: string): void {
         overlay.set(key, REMOVED);
       },
       keys(): readonly string[] {
+        observed.scanned = true;
         const all = new Set(committed.keys());
         for (const [key, slot] of overlay) {
           if ('removed' in slot) all.delete(key);
@@ -312,24 +368,56 @@ export function createMemoryStore(): MemoryStore {
       },
     };
     overlays.set(session, overlay);
+    observations.set(session, observed);
+    running.add(observed);
     return Promise.resolve(session);
+  };
+
+  const end = (session: MemorySession): void => {
+    const observed = observations.get(session);
+    if (observed !== undefined) running.delete(observed);
+    overlays.delete(session);
+    observations.delete(session);
+    prune();
   };
 
   return {
     driver: {
       begin,
       commit(session: MemorySession): Promise<void> {
-        for (const [key, slot] of overlayOf(session)) {
-          if ('removed' in slot) committed.delete(key);
-          else committed.set(key, slot.value);
+        const overlay = overlayOf(session);
+        const observed = observations.get(session);
+        if (overlay.size > 0 && observed !== undefined && conflicts(observed)) {
+          end(session);
+          return Promise.reject(
+            new SerialisationConflictError(
+              'Another command committed a change to what this one read while it ran. ' +
+                'Nothing was written; running the command again decides on the current state.',
+            ),
+          );
         }
-        overlays.delete(session);
+
+        let reshaped = false;
+        for (const [key, slot] of overlay) {
+          if ('removed' in slot) {
+            reshaped ||= committed.has(key);
+            committed.delete(key);
+          } else {
+            reshaped ||= !committed.has(key);
+            committed.set(key, slot.value);
+          }
+        }
+        if (overlay.size > 0) {
+          version += 1;
+          history.push({ version, written: new Set(overlay.keys()), reshaped });
+        }
+        end(session);
         return Promise.resolve();
       },
       rollback(session: MemorySession): Promise<void> {
         // The overlay is simply dropped, which is the whole of it: nothing the
         // command wrote was ever visible to anything outside its own session.
-        overlays.delete(session);
+        end(session);
         return Promise.resolve();
       },
     },
