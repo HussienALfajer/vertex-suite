@@ -114,6 +114,13 @@ function revisionInForce(
  *
  * Fixes the functional currency in the same transaction: this revision is
  * expressed per one unit of it, and it commits only if the revision does.
+ *
+ * **Every rate this module records is written here**, which is why the rule that
+ * a branch's day only ever moves forward is enforced here rather than at each
+ * caller: a third way of recording a rate cannot be added without passing
+ * through it. It refuses before it writes, so a caller that records several
+ * currencies in one transaction — `adoptSuggestions` — leaves nothing behind
+ * when it stops at the first.
  */
 function writeRevision(
   session: RecordSession,
@@ -123,8 +130,14 @@ function writeRevision(
   { functional, currency }: Traded,
   settled: SettledQuote,
   adoptedFrom: SuggestedRateId | null,
-): RateRevision {
+): Rated<RateRevision> {
   const { tenant } = recording;
+  const latest = readRecord(session, 'latest-day', tenant, [branch]);
+  // Days compare as text: a local date is written to sort in date order.
+  if (latest !== null && day < latest.day) {
+    return refuse('fx.rate-day-behind', { branch, day, latest: latest.day });
+  }
+
   const head = readRecord(session, 'revision-head', tenant, [branch, currency.code, day]);
   const revision: RateRevision = {
     id: newId<'rate-revision'>(),
@@ -147,8 +160,13 @@ function writeRevision(
     revision: revision.id,
     sequence: revision.sequence,
   });
+  // Only when the day advances. Rewriting it with the same day would make every
+  // rate entered on an open day collide with every other, for nothing.
+  if (latest === null || day > latest.day) {
+    writeRecord(session, 'latest-day', tenant, [branch], { day });
+  }
   fixFunctional(session, tenant, recording.at);
-  return revision;
+  return ok(revision);
 }
 
 /** Records a branch's rate for its today: the day's first, or a correction. */
@@ -165,7 +183,7 @@ export function recordRate(
   const settled = settleQuote(quote);
   if (!settled.ok) return settled;
 
-  return ok(writeRevision(session, recording, branch, day, currency.value, settled.value, null));
+  return writeRevision(session, recording, branch, day, currency.value, settled.value, null);
 }
 
 /** Publishes the tenant's suggested rate for a currency, replacing the last one. */
@@ -251,17 +269,20 @@ export function adoptSuggestions(
       adopted.push(inForce);
       continue;
     }
-    adopted.push(
-      writeRevision(
-        session,
-        recording,
-        branch,
-        day,
-        { functional, currency },
-        suggestion,
-        suggestion.id,
-      ),
+    const written = writeRevision(
+      session,
+      recording,
+      branch,
+      day,
+      { functional, currency },
+      suggestion,
+      suggestion.id,
     );
+    // Every currency here is being recorded for the same day, so a day that is
+    // behind is behind for all of them: stopping at the first is the whole
+    // answer, and it has written nothing.
+    if (!written.ok) return written;
+    adopted.push(written.value);
   }
 
   if (adopted.length === 0) return refuse('fx.suggested-rate-missing', { branch, day });

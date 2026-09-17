@@ -461,6 +461,21 @@ export type RateRefusalCode =
    * has to tell somebody to go and enter.
    */
   | 'fx.rate-missing'
+  /**
+   * The branch's today is a day it has already traded past.
+   *
+   * A rate is filed under the branch's own day, and a branch's day only ever
+   * moves forward. It can be made to move backwards three ways — the zone is
+   * revised, the machine clock is corrected the wrong way, an hour is handed
+   * back at the end of summer time — and each of them would file a rate under a
+   * day that has closed, beneath the documents already stamped on it (`FX-05`).
+   *
+   * The values name the branch, the day being asked for and the latest day it
+   * has recorded, so the prompt can say what is wrong rather than that
+   * something is. Refused rather than accepted and marked: `SYS` decides who
+   * may move a branch's zone, and this decides what a moved zone cannot do.
+   */
+  | 'fx.rate-day-behind'
   /** Nothing the tenant suggested was published on this branch's today. */
   | 'fx.suggested-rate-missing'
   /** A last-known rate is confirmed at a register in the branch, by somebody standing at it. */

@@ -77,6 +77,8 @@ export interface Installed {
   /** A branch of the tenant, as far as `FX` can see one. */
   openBranch(options?: { readonly timeZone?: string; readonly tenant?: Id<'tenant'> }): BranchId;
   shutBranch(branch: BranchId): void;
+  /** `SYS`'s `branches.rezone`, as `FX` sees the result of it: the branch's day moves. */
+  rezoneBranch(branch: BranchId, timeZone: string): void;
   /** A till in a branch, with a machine standing at it. */
   openRegister(branch: BranchId): { readonly register: RegisterId; readonly device: DeviceId };
 }
@@ -244,6 +246,11 @@ export function installFx(): Installed {
       const branch = places.branches.get(id);
       if (branch === undefined) throw new Error('That branch was never opened.');
       places.branches.set(id, { ...branch, active: false });
+    },
+    rezoneBranch(id: BranchId, timeZone: string): void {
+      const branch = places.branches.get(id);
+      if (branch === undefined) throw new Error('That branch was never opened.');
+      places.branches.set(id, { ...branch, timeZone });
     },
     openRegister(branch: BranchId) {
       const of = places.branches.get(branch);

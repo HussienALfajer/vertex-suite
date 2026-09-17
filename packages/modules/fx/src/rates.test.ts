@@ -463,3 +463,109 @@ describe('Who may enter, suggest and confirm rates', () => {
     ]);
   });
 });
+
+describe('A branch’s day only ever moves forward — FX-04', () => {
+  /**
+   * The hole this closes, which two rights opened together.
+   *
+   * A branch's rate is filed under the branch's own day, read from the branch's
+   * time zone — which was revised under `sys.branch.edit`, the right a manager
+   * is seeded. So a manager holding that and `fx.rate.create` could move the
+   * shop's calendar backwards, file a rate under a day that had closed, and move
+   * it back: `FX-04`'s "two rates per currency per day" became two rates for
+   * whichever day they chose, and every document stamped on the real day
+   * (`FX-05`) now sat beside a rate recorded after it.
+   *
+   * `SYS` answered the first half by putting the zone behind a right of its own.
+   * This is the other half, and the one that does not depend on who holds what:
+   * a rate is refused for a day the branch has already traded past, however its
+   * day came to move — a rezoning, a machine clock stepped backwards, or a
+   * daylight change that hands the same hour back.
+   */
+  it('refuses a rate for a day before the last one this branch recorded, and writes nothing', async () => {
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    const committed = new Map(fx.store.committed());
+
+    // Damascus keeps UTC+3 and Honolulu is UTC-10, so the moment that is noon
+    // on the seventeenth in Aleppo is still the sixteenth there.
+    fx.rezoneBranch(aleppo, 'Pacific/Honolulu');
+
+    const refusal = refused(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+
+    expect(refusal.code).toBe('fx.rate-day-behind');
+    expect(refusal.values).toEqual({
+      branch: aleppo,
+      day: '2026-09-16',
+      latest: '2026-09-17',
+    });
+    expect(fx.store.committed()).toEqual(committed);
+  });
+
+  it('refuses it when the clock steps backwards, which takes no rights at all', async () => {
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    // A store node whose machine clock was corrected the wrong way, or an hour
+    // handed back at the end of summer time. Nobody had to be granted anything.
+    fx.clock.set(plusMillis(NOON_IN_DAMASCUS, -DAY));
+
+    expect(refused(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS)).code).toBe(
+      'fx.rate-day-behind',
+    );
+  });
+
+  it('measures the day against the branch rather than against the currency', async () => {
+    // A day the branch has traded in is a day that is over, whichever currency
+    // proved it — otherwise the rule would be escaped by recording the currency
+    // nobody had entered yet.
+    fx.clock.set(plusMillis(NOON_IN_DAMASCUS, DAY));
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'EUR', EUROS));
+    fx.clock.set(NOON_IN_DAMASCUS);
+
+    expect(refused(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS)).code).toBe(
+      'fx.rate-day-behind',
+    );
+  });
+
+  it('still corrects today’s rate, and still records tomorrow’s', async () => {
+    // The rule forbids going back, and `FX-04` requires both of these: a
+    // mistyped rate is corrected by a new revision the same day, and the next
+    // day is entered as usual.
+    const first = taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    const corrected = taken(
+      await fx.rateAdmin.record(fx.by, aleppo, 'SYP', { ...POUNDS, buy: '13150' }),
+    );
+
+    expect(corrected.sequence).toBe(2);
+    expect(corrected.supersedes).toBe(first.id);
+
+    fx.clock.set(plusMillis(NOON_IN_DAMASCUS, DAY));
+    expect(taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS)).day).toBe('2026-09-18');
+  });
+
+  it('refuses an adoption into a day that has closed, and writes nothing', async () => {
+    // Adopting the tenant's suggestion records the branch's rates, so it is the
+    // same act by another door — and a door the rule would be useless without.
+    taken(await fx.rateAdmin.suggest(fx.by, 'SYP', POUNDS));
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'EUR', EUROS));
+    const committed = new Map(fx.store.committed());
+    fx.rezoneBranch(aleppo, 'Pacific/Honolulu');
+
+    expect(refused(await fx.rateAdmin.adopt(fx.by, aleppo)).code).toBe('fx.rate-day-behind');
+    expect(fx.store.committed()).toEqual(committed);
+  });
+
+  it('holds the rule to the branch whose day moved, and to its tenant', async () => {
+    const homs = fx.openBranch();
+    const elsewhere = fx.openBranch({ tenant: fx.otherTenant });
+    taken(await fx.admin.seed(fx.byOther));
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    fx.rezoneBranch(aleppo, 'Pacific/Honolulu');
+    fx.rezoneBranch(elsewhere, 'Pacific/Honolulu');
+
+    // Neither of them left the seventeenth, and neither of them holds Aleppo's
+    // rates: a branch's rates are its own, and so is the day it is on.
+    expect(taken(await fx.rateAdmin.record(fx.by, homs, 'SYP', POUNDS)).day).toBe('2026-09-17');
+    expect(taken(await fx.rateAdmin.record(fx.byOther, elsewhere, 'SYP', POUNDS)).day).toBe(
+      '2026-09-16',
+    );
+  });
+});

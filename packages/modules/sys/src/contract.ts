@@ -1,5 +1,7 @@
 import {
+  operation,
   permissionId,
+  type Action,
   type BranchId,
   type CompanyId,
   type DeviceId,
@@ -351,6 +353,13 @@ export interface OrganisationAdministration {
      * Applies from now on. A day already recorded — a rate entered for the
      * seventeenth — stays the day it was recorded for; only which day "today"
      * is changes. A withdrawn branch may be rezoned, as it may be readdressed.
+     *
+     * Asked under `branch.rezone` rather than `branch.edit`, which is the one
+     * command here that does not take the right its neighbours take. What this
+     * revises is not a fact about the branch but the calendar the branch's
+     * records are filed under, and moving it backwards is how a day that has
+     * closed is reopened. `FX` refuses a rate for a day it has already traded
+     * past, whoever moved the day; this is the half that says who may move it.
      */
     rezone(by: CommandContext, id: BranchId, timeZone: string): Outcome<Branch>;
     deactivate(by: CommandContext, id: BranchId): Outcome<Branch>;
@@ -704,6 +713,17 @@ export interface EditableRights {
 }
 
 /**
+ * The four, and the one thing about a branch that is not an edit like the rest.
+ *
+ * `rezone` is split out of `edit` because it is not a fact *about* the branch in
+ * the way its name and its address are — it is the calendar every record of the
+ * branch is filed under. See `branches.rezone`.
+ */
+export interface BranchRights extends StructuralRights {
+  readonly rezone: PermissionId;
+}
+
+/**
  * Every right defined below, collected as each one is built, with the roles
  * that hold it on the day a shop is set up.
  *
@@ -765,6 +785,16 @@ function rightsToReadAndRevise(resource: string, seeds: EditableSeeds): Editable
   return rights;
 }
 
+/**
+ * One right that belongs to no set, built through the same grammar so that it
+ * cannot differ by a character from the one a command asks for.
+ */
+function rightTo(resource: string, action: Action, seededFor: readonly SeededRole[]): PermissionId {
+  const id = permissionId('sys', resource, action);
+  DECLARED.push({ id, seededFor });
+  return id;
+}
+
 /** Everyone who works in a shop can see which shop they are working in. */
 const EVERYONE: readonly SeededRole[] = Object.freeze([
   'manager',
@@ -788,7 +818,7 @@ const OWNER_ONLY: readonly SeededRole[] = Object.freeze([]);
 
 export interface SysPermissions {
   readonly company: StructuralRights;
-  readonly branch: StructuralRights;
+  readonly branch: BranchRights;
   readonly location: StructuralRights;
   readonly register: StructuralRights;
   readonly businessProfile: EditableRights;
@@ -803,13 +833,23 @@ export const SYS_PERMISSIONS: SysPermissions = Object.freeze({
     edit: OWNER_ONLY,
     withdraw: OWNER_ONLY,
   }),
-  branch: rightsOver('branch', {
-    view: EVERYONE,
-    // Opening and shutting a shop is the owner's; running the one you are in is
-    // the manager's.
-    create: OWNER_ONLY,
-    edit: MANAGER,
-    withdraw: OWNER_ONLY,
+  branch: Object.freeze({
+    ...rightsOver('branch', {
+      view: EVERYONE,
+      // Opening and shutting a shop is the owner's; running the one you are in
+      // is the manager's.
+      create: OWNER_ONLY,
+      edit: MANAGER,
+      withdraw: OWNER_ONLY,
+    }),
+    // The owner's, and nobody else's until somebody is deliberately granted it.
+    // A branch's zone is not one more field of the branch: it decides which day
+    // every record of that branch is filed under, and moving it backwards files
+    // a record under a day that has already closed. Under `edit` it travelled
+    // with renaming and readdressing, so the manager seeded to run a shop could
+    // move the shop's calendar — and `FX-04`'s one rate per currency per day
+    // became one rate per day the manager chose.
+    rezone: rightTo('branch', operation('rezone'), OWNER_ONLY),
   }),
   location: rightsOver('location', {
     view: ['manager', 'purchasing', 'warehouse-keeper', 'floor-supervisor'],
