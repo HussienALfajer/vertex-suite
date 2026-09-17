@@ -1,6 +1,15 @@
 export { Dec, isDecimalString, type Decimal, type Rounding } from './decimal.js';
 
-export { defineCurrency, type Currency, type CurrencyCode, type RoundingMode } from './currency.js';
+export {
+  defineCurrency,
+  flawOf,
+  isRoundingMode,
+  ROUNDING_MODES,
+  type Currency,
+  type CurrencyCode,
+  type CurrencyFlaw,
+  type RoundingMode,
+} from './currency.js';
 
 export {
   absolute,

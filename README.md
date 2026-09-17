@@ -28,7 +28,7 @@ packages/platform    module registry, editions, event bus, unit of work
 packages/contracts   the shared vocabulary: identifiers, permission grammar, seeded roles
 packages/i18n        messages, terminology, direction
 packages/ui          the design system, and the map
-packages/modules/…   sys, sec — and the fourteen to come
+packages/modules/…   sys, sec, fx — and the thirteen to come
 apps/back-office     the administration screens, over a development stand-in until U07
 apps/sandbox         where the components are looked at and keyboard journeys run
 ```
