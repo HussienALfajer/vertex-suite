@@ -14,6 +14,7 @@ import {
   PageHeader,
   Panel,
   Select,
+  Switch,
   TableRowAction,
   TableRowActions,
   TextInput,
@@ -39,12 +40,13 @@ import { RenameIcon, RestoreIcon, StatusBadge, WithdrawIcon } from './structure.
  * answers), so unlike `Roles` or `Branches` there is no first-run emptiness
  * to explain — this table is never the first thing an owner has to fill in.
  *
- * No search bar and no "show withdrawn" switch: a tenant's currencies number
- * in the low single digits for as long as this product exists, and
- * `ListingBar` exists for lists an owner scrolls, not one an owner reads in
- * full at a glance. Every currency is always on screen, disabled ones
- * included — a currency taken out of use is exactly the one an owner is most
- * likely to come back and re-enable.
+ * No search bar: a tenant's currencies number in the low single digits for as
+ * long as this product exists, and `ListingBar`'s search exists for lists an
+ * owner scrolls, not one an owner reads in full at a glance. The withdrawn
+ * switch is offered anyway, for the same reason `SYS-09`'s structural screens
+ * all offer it: a currency taken out of use is exactly the one an owner is
+ * most likely to come back and re-enable, and it stays hidden by default so
+ * a shop's small, active set of currencies is what a glance actually shows.
  */
 export function Currencies(): ReactNode {
   const translator = useTranslator();
@@ -52,6 +54,7 @@ export function Currencies(): ReactNode {
   const { currencies, functional, isLoading, run } = useCurrencies();
   const messageFor = useDeliveryMessage();
 
+  const [includeWithdrawn, setIncludeWithdrawn] = useState(false);
   const [isDefining, setIsDefining] = useState(false);
   const [revising, setRevising] = useState<TenantCurrency | null>(null);
   const [disabling, setDisabling] = useState<TenantCurrency | null>(null);
@@ -59,8 +62,11 @@ export function Currencies(): ReactNode {
   const [adopting, setAdopting] = useState<TenantCurrency | null>(null);
 
   const rows: readonly TenantCurrency[] = useMemo(
-    () => [...currencies].sort((a, b) => a.code.localeCompare(b.code)),
-    [currencies],
+    () =>
+      [...currencies]
+        .filter((currency) => includeWithdrawn || currency.enabled)
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    [currencies, includeWithdrawn],
   );
 
   async function command(
@@ -183,6 +189,12 @@ export function Currencies(): ReactNode {
       />
 
       <CurrenciesStaleBanner />
+
+      <div className="flex justify-end">
+        <Switch isSelected={includeWithdrawn} onChange={setIncludeWithdrawn}>
+          {translator.format('listing.includeWithdrawn')}
+        </Switch>
+      </div>
 
       <Panel flush>
         <DataTable
