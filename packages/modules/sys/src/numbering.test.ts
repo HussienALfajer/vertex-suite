@@ -1,3 +1,4 @@
+import type { DeviceId } from '@vertex/contracts';
 import { newId, orThrow, type Id, type Refusal, type Result } from '@vertex/kernel';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -46,9 +47,21 @@ function scopeFor(register: Register, documentType = 'pos.sale'): SeriesScope {
   };
 }
 
-/** Numbering joins the caller's transaction, so a test has to open one first. */
-async function issue(scope: SeriesScope, document: string): Promise<Result<IssuedNumber, Refusal>> {
-  return sys.inTransaction((uow) => sys.numbering.next(uow, scope, document));
+/**
+ * Numbering joins the caller's transaction, so a test has to open one first —
+ * and a till's number is taken on the machine standing at it, so unless a test
+ * says otherwise, that is the machine it runs on.
+ */
+async function issue(
+  scope: SeriesScope,
+  document: string,
+  device?: DeviceId | null,
+): Promise<Result<IssuedNumber, Refusal>> {
+  const standing =
+    device !== undefined || scope.register === null
+      ? (device ?? null)
+      : ((await sys.read.register(sys.by, scope.register))?.heldBy ?? null);
+  return sys.inTransaction((uow) => sys.numbering.next(uow, scope, document), standing);
 }
 
 describe('Document numbering series — SYS-02', () => {
@@ -81,6 +94,26 @@ describe('Document numbering series — SYS-02', () => {
 
     expect(taken(await issue(sale, newId<'document'>())).sequence).toBe(2);
     expect(taken(await issue(refund, newId<'document'>())).sequence).toBe(2);
+  });
+
+  it('keeps a series per branch, even for a document no till issues', async () => {
+    // The dimension the test above cannot isolate: its two branches also have
+    // different tills. Here the type, the year and the absent till are the
+    // same, and only the branch differs.
+    const branch = await aBranch();
+    const other = taken(
+      await sys.admin.branches.open(sys.by, { company: branch.company, name: 'Homs' }),
+    );
+    const invoice = (of: Branch): SeriesScope => ({
+      documentType: 'pur.invoice',
+      branch: of.id,
+      register: null,
+      fiscalYear: '2026',
+    });
+
+    taken(await issue(invoice(branch), newId<'document'>()));
+    taken(await issue(invoice(branch), newId<'document'>()));
+    expect(taken(await issue(invoice(other), newId<'document'>())).sequence).toBe(1);
   });
 
   it('carries the register prefix and the device generation in every number', async () => {
@@ -197,7 +230,7 @@ describe('Document numbering series — SYS-02', () => {
 
   it('takes the number back when the transaction that asked for it rolls back', async () => {
     const branch = await aBranch();
-    const { register } = await aWorkingRegister(branch, 'AL1');
+    const { register, device } = await aWorkingRegister(branch, 'AL1');
     const scope = scopeFor(register);
 
     await expect(
@@ -206,7 +239,7 @@ describe('Document numbering series — SYS-02', () => {
         // The sale fails after its number was taken. A gap here is a question a
         // tax inspector asks and nobody can answer.
         throw new Error('the sale failed');
-      }),
+      }, device),
     ).rejects.toThrow('the sale failed');
 
     expect(taken(await issue(scope, newId<'document'>())).sequence).toBe(1);
@@ -337,10 +370,12 @@ describe('Document numbering series — SYS-02', () => {
     expect(before.format).toBe('{prefix}-{generation}-{year}-{sequence:6}');
     expect(before.specimen).toBe('AL1-1-2026-000001');
 
-    taken(await sys.admin.numbering.define(sys.by, scope, '{prefix}{generation}-{sequence:3}'));
+    taken(
+      await sys.admin.numbering.define(sys.by, scope, '{prefix}.{generation}/{year}/{sequence:3}'),
+    );
     const after = taken(await sys.numbering.preview(sys.by, scope, null));
     expect(after.isDefault).toBe(false);
-    expect(after.specimen).toBe('AL11-001');
+    expect(after.specimen).toBe('AL1.1/2026/001');
   });
 
   it('refuses a proposed format where it can still be retyped', async () => {
@@ -371,6 +406,136 @@ describe('Document numbering series — SYS-02', () => {
     expect(refusalOf(await issue(scope, newId<'document'>()))).toBe('sys.register-has-no-device');
   });
 
+  it('numbers a till only from the machine standing at it', async () => {
+    // A machine replaced but not dead — set aside, switched on again, synced —
+    // reads the new generation and counts from one under it. So would the store
+    // node, which stands at no till. Either would print the replacement's
+    // numbers a second time.
+    const branch = await aBranch();
+    const { register, device: first } = await aWorkingRegister(branch, 'AL1');
+    const scope = scopeFor(register);
+    const second = newId<'device'>();
+    taken(await sys.admin.registers.assignDevice(sys.by, register.id, second));
+
+    expect(taken(await issue(scope, newId<'document'>(), second)).number).toBe('AL1-2-2026-000001');
+    expect(refusalOf(await issue(scope, newId<'document'>(), first))).toBe(
+      'sys.register-held-elsewhere',
+    );
+    expect(refusalOf(await issue(scope, newId<'document'>(), null))).toBe(
+      'sys.register-held-elsewhere',
+    );
+    // The machine's identifier as it may arrive from outside: the same machine.
+    expect(
+      taken(await issue(scope, newId<'document'>(), second.toUpperCase() as DeviceId)).sequence,
+    ).toBe(2);
+  });
+
+  it('refuses a format whose printed numbers cannot be read back into their parts', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    const scope = scopeFor(register);
+
+    for (const format of [
+      // Till T1's 23rd and till T12's 3rd.
+      '{prefix}{sequence}-{generation}-{year}',
+      // Generation 1's 11th and generation 11's 1st.
+      '{prefix}-{year}-{generation}{sequence}',
+      // AL1's 1001st and AL's 1st.
+      '{prefix}1{sequence}-{generation}-{year}',
+    ]) {
+      expect(refusalOf(await sys.admin.numbering.define(sys.by, scope, format)), format).toBe(
+        'sys.series-format-fields-adjacent',
+      );
+    }
+
+    // Readable from one side is readable: a count holds no dash, and a
+    // generation no letter.
+    for (const format of [
+      '{prefix}g{generation}-{year}-{sequence}',
+      '{year}-{prefix}-{generation}-{sequence}',
+    ]) {
+      taken(await sys.admin.numbering.define(sys.by, scope, format));
+    }
+  });
+
+  it('refuses a format without the year its series is counted under', async () => {
+    // Counted from one each fiscal year, a format without the year prints last
+    // year's numbers again.
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    expect(
+      refusalOf(
+        await sys.admin.numbering.define(
+          sys.by,
+          scopeFor(register),
+          '{prefix}-{generation}-{sequence}',
+        ),
+      ),
+    ).toBe('sys.series-format-must-carry-year');
+  });
+
+  it('carries a chosen format into the next fiscal year rather than lapsing to the default', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    const scope = scopeFor(register);
+    taken(
+      await sys.admin.numbering.define(
+        sys.by,
+        scope,
+        'INV/{year}/{prefix}g{generation}/{sequence:4}',
+      ),
+    );
+
+    const nextYear: SeriesScope = { ...scope, fiscalYear: '2027' };
+    expect(taken(await issue(nextYear, newId<'document'>())).number).toBe('INV/2027/AL1g1/0001');
+    expect(taken(await sys.numbering.preview(sys.by, nextYear, null)).isDefault).toBe(false);
+  });
+
+  it('refuses to number a document for a company taken out of use', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    taken(await sys.admin.companies.deactivate(sys.by, branch.company));
+
+    expect(refusalOf(await issue(scopeFor(register), newId<'document'>()))).toBe(
+      'sys.company-inactive',
+    );
+  });
+
+  it('numbers one document once, however its reference is spelled', async () => {
+    const branch = await aBranch();
+    const { register } = await aWorkingRegister(branch, 'AL1');
+    const document = newId<'document'>();
+
+    const first = taken(await issue(scopeFor(register), document));
+    expect(taken(await issue(scopeFor(register), document.toUpperCase()))).toEqual(first);
+  });
+
+  it('refuses the second of two overlapping issues rather than printing one number twice', async () => {
+    // Two users at the store node numbering purchase invoices at the same moment.
+    const branch = await aBranch();
+    const scope: SeriesScope = {
+      documentType: 'pur.invoice',
+      branch: branch.id,
+      register: null,
+      fiscalYear: '2026',
+    };
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const slow = sys.inTransaction(async (uow) => {
+      const issued = await sys.numbering.next(uow, scope, newId<'document'>());
+      await held;
+      return issued;
+    });
+    const quick = await issue(scope, newId<'document'>());
+    release();
+
+    expect(taken(quick).number).toBe('2026-000001');
+    await expect(slow).rejects.toThrow(/committed a change/u);
+  });
+
   it('lists the series configured in one branch, in an order that holds still', async () => {
     const branch = await aBranch();
     const { register } = await aWorkingRegister(branch, 'AL1');
@@ -392,22 +557,22 @@ describe('Document numbering series — SYS-02', () => {
       await sys.admin.numbering.define(
         sys.by,
         scopeFor(register),
-        '{prefix}-{generation}-{sequence:5}',
+        '{prefix}-{generation}-{year}-{sequence:5}',
       ),
     );
-    taken(await sys.admin.numbering.define(sys.by, typed, 'PUR-{sequence:5}'));
+    taken(await sys.admin.numbering.define(sys.by, typed, 'PUR-{year}-{sequence:5}'));
     taken(
       await sys.admin.numbering.define(
         sys.by,
         { ...typed, fiscalYear: '2027' },
-        'PUR-{sequence:6}',
+        'PUR-{year}-{sequence:6}',
       ),
     );
     taken(
       await sys.admin.numbering.define(
         sys.by,
         { documentType: 'pur.invoice', branch: elsewhere.id, register: null, fiscalYear: '2026' },
-        'HO-{sequence:5}',
+        'HO-{year}-{sequence:5}',
       ),
     );
 
@@ -420,7 +585,11 @@ describe('Document numbering series — SYS-02', () => {
     // Homs is not in Aleppo's list, and the order does not depend on the order
     // the four were defined in.
     expect(here.every((one) => one.scope.branch === branch.id)).toBe(true);
-    expect(here.map((one) => one.specimen)).toEqual(['AL1-1-00001', 'PUR-00001', 'PUR-000001']);
+    expect(here.map((one) => one.specimen)).toEqual([
+      'AL1-1-2026-00001',
+      'PUR-2026-00001',
+      'PUR-2027-000001',
+    ]);
     expect(here.every((one) => !one.isDefault)).toBe(true);
   });
 });

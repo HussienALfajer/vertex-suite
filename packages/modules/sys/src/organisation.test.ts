@@ -113,6 +113,236 @@ describe('Organisation structure — SYS-09', () => {
     expect(await sys.read.branches(sys.by)).toEqual([]);
   });
 
+  it('guards every command it offers, with the right it declares and the place it acts in', async () => {
+    // One command's guard was tested and the rest were trusted. Removing any of
+    // them, or asking for the wrong right, failed nothing. So every command is
+    // run by somebody who holds nothing, and what each one asked is recorded.
+    const company = await aCompany();
+    const branch = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' }),
+    );
+    const location = taken(
+      await sys.admin.locations.open(sys.by, {
+        branch: branch.id,
+        name: 'Store room',
+        kind: 'store-room',
+      }),
+    );
+    const register = taken(
+      await sys.admin.registers.open(sys.by, { branch: branch.id, name: 'Till', prefix: 'AL1' }),
+    );
+    const here = { branch: branch.id };
+    const inLocation = { branch: branch.id, location: location.id };
+    const point = { lat: '36.2', lng: '37.1' };
+    const scope = {
+      documentType: 'pur.invoice',
+      branch: branch.id,
+      register: null,
+      fiscalYear: '2026',
+    };
+
+    const { company: c, branch: b, location: l, register: r } = SYS_PERMISSIONS;
+    const commands: readonly [
+      string,
+      () => Promise<Result<unknown, Refusal>>,
+      string,
+      object | undefined,
+    ][] = [
+      [
+        'companies.register',
+        () => sys.admin.companies.register(sys.by, { name: 'X' }),
+        c.create,
+        undefined,
+      ],
+      [
+        'companies.rename',
+        () => sys.admin.companies.rename(sys.by, company.id, 'X'),
+        c.edit,
+        undefined,
+      ],
+      [
+        'companies.deactivate',
+        () => sys.admin.companies.deactivate(sys.by, company.id),
+        c.withdraw,
+        undefined,
+      ],
+      [
+        'companies.reactivate',
+        () => sys.admin.companies.reactivate(sys.by, company.id),
+        c.withdraw,
+        undefined,
+      ],
+      [
+        'branches.open',
+        () => sys.admin.branches.open(sys.by, { company: company.id, name: 'X' }),
+        b.create,
+        undefined,
+      ],
+      ['branches.rename', () => sys.admin.branches.rename(sys.by, branch.id, 'X'), b.edit, here],
+      [
+        'branches.readdress',
+        () => sys.admin.branches.readdress(sys.by, branch.id, 'X'),
+        b.edit,
+        here,
+      ],
+      ['branches.locate', () => sys.admin.branches.locate(sys.by, branch.id, point), b.edit, here],
+      [
+        'branches.deactivate',
+        () => sys.admin.branches.deactivate(sys.by, branch.id),
+        b.withdraw,
+        here,
+      ],
+      [
+        'branches.reactivate',
+        () => sys.admin.branches.reactivate(sys.by, branch.id),
+        b.withdraw,
+        here,
+      ],
+      [
+        'locations.open',
+        () =>
+          sys.admin.locations.open(sys.by, { branch: branch.id, name: 'X', kind: 'shop-floor' }),
+        l.create,
+        here,
+      ],
+      [
+        'locations.rename',
+        () => sys.admin.locations.rename(sys.by, location.id, 'X'),
+        l.edit,
+        inLocation,
+      ],
+      [
+        'locations.readdress',
+        () => sys.admin.locations.readdress(sys.by, location.id, 'X'),
+        l.edit,
+        inLocation,
+      ],
+      [
+        'locations.locate',
+        () => sys.admin.locations.locate(sys.by, location.id, point),
+        l.edit,
+        inLocation,
+      ],
+      [
+        'locations.deactivate',
+        () => sys.admin.locations.deactivate(sys.by, location.id),
+        l.withdraw,
+        inLocation,
+      ],
+      [
+        'locations.reactivate',
+        () => sys.admin.locations.reactivate(sys.by, location.id),
+        l.withdraw,
+        inLocation,
+      ],
+      [
+        'registers.open',
+        () => sys.admin.registers.open(sys.by, { branch: branch.id, name: 'X', prefix: 'X1' }),
+        r.create,
+        here,
+      ],
+      [
+        'registers.rename',
+        () => sys.admin.registers.rename(sys.by, register.id, 'X'),
+        r.edit,
+        here,
+      ],
+      [
+        'registers.deactivate',
+        () => sys.admin.registers.deactivate(sys.by, register.id),
+        r.withdraw,
+        here,
+      ],
+      [
+        'registers.reactivate',
+        () => sys.admin.registers.reactivate(sys.by, register.id),
+        r.withdraw,
+        here,
+      ],
+      [
+        'registers.assignDevice',
+        () => sys.admin.registers.assignDevice(sys.by, register.id, newId<'device'>()),
+        r.edit,
+        here,
+      ],
+      [
+        'profile.revise',
+        () => sys.admin.profile.revise(sys.by, company.id, { phone: '0' }),
+        SYS_PERMISSIONS.businessProfile.edit,
+        undefined,
+      ],
+      [
+        'numbering.define',
+        () => sys.admin.numbering.define(sys.by, scope, '{year}-{sequence}'),
+        SYS_PERMISSIONS.numberingSeries.edit,
+        here,
+      ],
+      [
+        'settings.forBranch',
+        () => sys.admin.settings.forBranch(sys.by, branch.id, 'k', 'v'),
+        SYS_PERMISSIONS.branchSetting.edit,
+        here,
+      ],
+      [
+        'settings.forTenant',
+        () => sys.admin.settings.forTenant(sys.by, 'k', 'v'),
+        SYS_PERMISSIONS.branchSetting.edit,
+        undefined,
+      ],
+    ];
+
+    for (const [name, run, right, where] of commands) {
+      const asked: { right: string; where: object | undefined }[] = [];
+      sys.answers((_by, one, place) => {
+        asked.push({ right: one, where: place });
+        return false;
+      });
+      const refused = await run();
+      expect(refusalOf(refused), name).toBe('sys.not-permitted');
+      expect(asked, name).toEqual([{ right, where }]);
+    }
+  });
+
+  it('refuses a location or a till below a live branch of a company taken out of use', async () => {
+    // Opening a branch under a withdrawn company was refused; one level further
+    // down, the company's shops went on growing.
+    const company = await aCompany();
+    const branch = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' }),
+    );
+    taken(await sys.admin.companies.deactivate(sys.by, company.id));
+
+    expect(
+      refusalOf(
+        await sys.admin.locations.open(sys.by, {
+          branch: branch.id,
+          name: 'Room',
+          kind: 'store-room',
+        }),
+      ),
+    ).toBe('sys.company-inactive');
+    expect(
+      refusalOf(
+        await sys.admin.registers.open(sys.by, { branch: branch.id, name: 'Till', prefix: 'AL1' }),
+      ),
+    ).toBe('sys.company-inactive');
+  });
+
+  it('refuses a stock location of a kind it does not know', async () => {
+    // A kind arrives from outside, where the type does not reach, and a van
+    // spelled differently got round the rule that a van has no fixed place.
+    const branch = taken(
+      await sys.admin.branches.open(sys.by, { company: (await aCompany()).id, name: 'Aleppo' }),
+    );
+    const refused = await sys.admin.locations.open(sys.by, {
+      branch: branch.id,
+      name: 'Van',
+      kind: 'Vehicle' as 'vehicle',
+      point: { lat: '36.2', lng: '37.1' },
+    });
+    expect(refusalOf(refused)).toBe('sys.location-kind-unknown');
+  });
+
   it('judges the caller against the branch the thing is actually in', async () => {
     const company = await aCompany();
     const aleppo = taken(
@@ -220,6 +450,26 @@ describe('Organisation structure — SYS-09', () => {
         }),
       ),
     ).toBe('sys.name-taken');
+  });
+
+  it('reads two names as one when nothing on screen tells them apart', async () => {
+    // A right-to-left mark, a zero-width joiner, a tatweel, a doubled or a
+    // non-breaking space: all invisible, all common in pasted Arabic.
+    const company = await aCompany();
+    taken(await sys.admin.branches.open(sys.by, { company: company.id, name: 'الفرع الرئيسي' }));
+
+    for (const lookalike of [
+      'الفرع الرئيسي\u200f',
+      'الفرع\u200c الرئيسي',
+      'الفـرع الرئيسي',
+      'الفرع  الرئيسي',
+      'الفرع\u00a0الرئيسي',
+    ]) {
+      expect(
+        refusalOf(await sys.admin.branches.open(sys.by, { company: company.id, name: lookalike })),
+        JSON.stringify(lookalike),
+      ).toBe('sys.name-taken');
+    }
   });
 
   it('frees a name when the thing carrying it closes, and defends it on the way back', async () => {

@@ -8,19 +8,20 @@ import type {
 } from '@vertex/contracts';
 import { isErr, isId, newId, ok, parseId, refuse, type Result } from '@vertex/kernel';
 
-import type {
-  Branch,
-  Company,
-  GeoPoint,
-  Listing,
-  Location,
-  LocationKind,
-  NewBranch,
-  NewLocation,
-  NewRegister,
-  OrganisationRefusal,
-  RecordSession,
-  Register,
+import {
+  LOCATION_KINDS,
+  type Branch,
+  type Company,
+  type GeoPoint,
+  type Listing,
+  type Location,
+  type LocationKind,
+  type NewBranch,
+  type NewLocation,
+  type NewRegister,
+  type OrganisationRefusal,
+  type RecordSession,
+  type Register,
 } from './contract.js';
 import { normalisePoint, writtenAddress } from './place.js';
 import { readRecord, scanRecords, writeRecord } from './records.js';
@@ -77,6 +78,24 @@ function mayHoldPoint(kind: LocationKind, point: GeoPoint | null): boolean {
   return point === null || kind !== 'vehicle';
 }
 
+/**
+ * A refusal when the branch's company has been withdrawn from use.
+ *
+ * Opening a branch under a withdrawn company was refused and restoring one was
+ * too, but a location or a till could still be opened below a live branch of a
+ * withdrawn company — so the entity that issues the documents was withdrawn and
+ * its shops went on growing.
+ */
+function companyWithdrawn(
+  session: RecordSession,
+  tenant: TenantId,
+  branch: Branch,
+): Result<never, OrganisationRefusal> | null {
+  const company = companyIn(session, tenant, branch.company);
+  if (company === null) return refuse('sys.company-not-found', { company: branch.company });
+  return company.active ? null : refuse('sys.company-inactive', { company: company.name });
+}
+
 function named(value: string): string | null {
   const name = value.trim();
   return name === '' ? null : name;
@@ -94,8 +113,25 @@ function named(value: string): string | null {
  * when the name is typed.
  */
 function sameName(one: string, two: string): boolean {
-  const fold = (value: string): string => value.normalize('NFC').trim().toLowerCase();
-  return fold(one) === fold(two);
+  return foldedName(one) === foldedName(two);
+}
+
+/**
+ * A name as the eye reads it.
+ *
+ * Composition and case were folded, and that was not what the eye cannot see.
+ * A trailing right-to-left mark or a zero-width joiner — which Arabic keyboards
+ * and pasted text carry all the time — a tatweel stretching a letter, and a
+ * doubled or non-breaking space each left two identical-looking names distinct.
+ * Folded for the comparison only: the stored name is the one somebody typed.
+ */
+function foldedName(value: string): string {
+  return value
+    .normalize('NFC')
+    .replace(/[\p{Cf}\u0640]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 /**
@@ -251,9 +287,18 @@ export function openLocation(
   const trimmed = named(input.name);
   if (trimmed === null) return refuse('sys.name-required', { of: 'location' });
 
+  // A kind is a closed list and it arrives from outside, where the type does not
+  // reach: an unknown one was stored, and a van spelled differently got round
+  // the rule that a van has no fixed place.
+  if (!(LOCATION_KINDS as readonly string[]).includes(input.kind)) {
+    return refuse('sys.location-kind-unknown', { kind: input.kind });
+  }
+
   const branch = branchIn(session, tenant, input.branch);
   if (branch === null) return refuse('sys.branch-not-found', { branch: input.branch });
   if (!branch.active) return refuse('sys.branch-inactive', { branch: branch.name });
+  const inactiveCompany = companyWithdrawn(session, tenant, branch);
+  if (inactiveCompany !== null) return inactiveCompany;
 
   if (nameTaken(locationsIn(session, tenant, branch.id, { including: 'all' }), trimmed)) {
     return refuse('sys.name-taken', { of: 'location', name: trimmed });
@@ -292,6 +337,8 @@ export function openRegister(
   const branch = branchIn(session, tenant, input.branch);
   if (branch === null) return refuse('sys.branch-not-found', { branch: input.branch });
   if (!branch.active) return refuse('sys.branch-inactive', { branch: branch.name });
+  const inactiveCompany = companyWithdrawn(session, tenant, branch);
+  if (inactiveCompany !== null) return inactiveCompany;
 
   // Unique across the tenant rather than within the branch. The number format
   // of `SYS-02` is configurable and need not carry the branch, so a prefix

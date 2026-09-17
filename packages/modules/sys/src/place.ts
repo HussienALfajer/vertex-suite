@@ -71,12 +71,24 @@ function written(degrees: Decimal): string {
  * help them find it.
  */
 export function normalisePoint(point: GeoPoint): Result<GeoPoint, OrganisationRefusal> {
-  const latitude = axis(point.lat, LATITUDE_LIMIT);
-  const longitude = axis(point.lng, LONGITUDE_LIMIT);
-  if (latitude === null || longitude === null) {
-    return refuse('sys.point-out-of-range', { lat: point.lat, lng: point.lng });
+  // The type says strings, and a point arrives from a request body or a
+  // replayed command where the type does not reach. `{ lat: 36.2 }` used to
+  // throw on `.trim` instead of reaching a person as a refusal.
+  const offered = point as { readonly lat: unknown; readonly lng: unknown };
+  if (typeof offered.lat !== 'string' || typeof offered.lng !== 'string') {
+    return refuse('sys.point-out-of-range', { lat: String(offered.lat), lng: String(offered.lng) });
   }
-  return ok({ lat: written(latitude), lng: written(longitude) });
+  const latitude = axis(offered.lat, LATITUDE_LIMIT);
+  const longitude = axis(offered.lng, LONGITUDE_LIMIT);
+  if (latitude === null || longitude === null) {
+    return refuse('sys.point-out-of-range', { lat: offered.lat, lng: offered.lng });
+  }
+  // One meridian, one spelling. `-180` and `180` are the same line, and a
+  // point just west of it rounds onto `-180.000000`; both are written east.
+  const lng = written(longitude);
+  return ok(
+    Object.freeze({ lat: written(latitude), lng: lng === '-180.000000' ? '180.000000' : lng }),
+  );
 }
 
 /**

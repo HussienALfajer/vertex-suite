@@ -1,5 +1,5 @@
-import type { BranchId, TenantId } from '@vertex/contracts';
-import { ok, refuse, type Result } from '@vertex/kernel';
+import type { BranchId, DeviceId, TenantId } from '@vertex/contracts';
+import { isId, ok, parseId, refuse, type Result } from '@vertex/kernel';
 
 import {
   NUMBERING_FIELDS,
@@ -12,7 +12,7 @@ import {
   type SeriesScope,
 } from './contract.js';
 import { readRecord, scanRecords, writeRecord } from './records.js';
-import { branchIn, registerIn } from './structure.js';
+import { branchIn, companyIn, registerIn } from './structure.js';
 
 /**
  * `SYS-02`: the document number, and why it needs nobody's permission to exist.
@@ -104,7 +104,54 @@ function fieldsOf(tokens: readonly Token[]): ReadonlySet<FieldName> {
 }
 
 /**
- * The format is configurable, and bounded by the thing that makes it safe.
+ * What each field can print, from the rules that shape its value: a count and a
+ * generation are digits, a prefix is `PREFIX` in `structure.ts`, a fiscal year
+ * is `FISCAL_YEAR` below.
+ */
+const PRINTS: Readonly<Record<FieldName, RegExp>> = {
+  sequence: /^\d$/,
+  generation: /^\d$/,
+  prefix: /^[A-Za-z0-9]$/,
+  year: /^[A-Za-z0-9-]$/,
+};
+
+/**
+ * Whether a printed number can be read back into the fields that made it.
+ *
+ * Two fields with nothing between them run into each other: `{prefix}{sequence}`
+ * prints `T123` for till `T1`'s 23rd document and for till `T12`'s 3rd, and
+ * padding does not rescue it, because a count outgrows its width.
+ *
+ * With something between them, the boundary can be found from one side or the
+ * other: from the left when the first character between them is one the left
+ * field cannot print, from the right when the last character is one the right
+ * field cannot print. `{year}-{sequence}` reads back although a year may hold a
+ * dash — the count holds none — and `{prefix}g{generation}` reads back although
+ * a prefix may hold a `g`. What cannot be read from either side is refused:
+ * `{prefix}1{sequence}` prints `AL11001` for `AL1`'s 1001st and `AL`'s 1st.
+ */
+function fieldsSeparated(tokens: readonly Token[]): boolean {
+  let left: FieldName | null = null;
+  let between = '';
+  for (const token of tokens) {
+    if (token.kind === 'literal') {
+      between += token.text;
+      continue;
+    }
+    if (left !== null) {
+      if (between === '') return false;
+      const fromLeft = !PRINTS[left].test(between.at(0) ?? '');
+      const fromRight = !PRINTS[token.name].test(between.at(-1) ?? '');
+      if (!fromLeft && !fromRight) return false;
+    }
+    left = token.name;
+    between = '';
+  }
+  return true;
+}
+
+/**
+ * The format is configurable, and bounded by the things that make it safe.
  *
  * An administrator who could drop `{generation}` from a register's format would
  * be turning off `SYS-02`'s guarantee from a settings screen, with nothing
@@ -112,6 +159,11 @@ function fieldsOf(tokens: readonly Token[]): ReadonlySet<FieldName> {
  * decoration on a register series; a format without them is refused, and a
  * format that asks for them where there is no register is refused too, because
  * there would be nothing to fill them from.
+ *
+ * The same reasoning holds for the year and for the separators. A series counts
+ * from one each fiscal year, so a format without `{year}` prints last year's
+ * numbers again; and parts that run into each other print two different
+ * documents under one number. Both are refused where they can still be retyped.
  */
 export function checkFormat(
   format: string,
@@ -135,6 +187,8 @@ export function checkFormat(
   if (!hasRegister && mentionsRegister) {
     return refuse('sys.series-format-carries-absent-register', { format });
   }
+  if (!present.has('year')) return refuse('sys.series-format-must-carry-year', { format });
+  if (!fieldsSeparated(tokens)) return refuse('sys.series-format-fields-adjacent', { format });
   return ok(tokens);
 }
 
@@ -214,15 +268,26 @@ interface Place {
   readonly generation: number;
 }
 
-/** Resolves what the number will say about where it came from. */
+/**
+ * Resolves what the number will say about where it came from — and whether this
+ * machine is the one entitled to say it.
+ */
 function placeOf(
   session: RecordSession,
   tenant: TenantId,
   scope: SeriesScope,
+  device: DeviceId | null,
 ): Result<Place, NumberingRefusal> {
   const branch = branchIn(session, tenant, scope.branch);
   if (branch === null) return refuse('sys.branch-not-found', { branch: scope.branch });
   if (!branch.active) return refuse('sys.branch-inactive', { branch: branch.name });
+  // The legal entity that issues the document, one level further up. A company
+  // withdrawn from use went on numbering documents in its branches, because only
+  // the branch was asked.
+  const company = companyIn(session, tenant, branch.company);
+  if (company?.active !== true) {
+    return refuse('sys.company-inactive', { company: company?.name ?? branch.company });
+  }
 
   if (scope.register === null) return ok({ prefix: '', generation: 0 });
 
@@ -236,6 +301,16 @@ function placeOf(
     // Nothing is standing at the till, so the number would have no generation
     // to carry and the guarantee would be a blank.
     return refuse('sys.register-has-no-device', { register: register.name });
+  }
+  // The generation keeps a replacement's numbers apart from the machine it
+  // replaced — **provided the replaced machine stops**. It need not be dead: set
+  // aside and switched on again, it reads the new generation after a sync and
+  // counts from one under it, printing the replacement's numbers a second time.
+  // The store node, which stands at no till, would print them a third. So only
+  // the machine named as holding the till numbers its documents.
+  const machine = device !== null && isId(device) ? parseId<'device'>(device) : null;
+  if (machine === null || machine !== register.heldBy) {
+    return refuse('sys.register-held-elsewhere', { register: register.name });
   }
   return ok({ prefix: register.prefix, generation: register.generation });
 }
@@ -299,7 +374,17 @@ function placeAsConfigured(
   return ok({ prefix: register.prefix, generation: register.generation });
 }
 
-/** The format a scope's numbers are actually taken under, and where it came from. */
+/**
+ * The format a scope's numbers are actually taken under, and where it came from.
+ *
+ * A format defined for one fiscal year carries into the years after it until
+ * somebody defines another. A series is counted per year, but a format is a
+ * decision about what a document looks like, and it once lapsed silently at the
+ * year's end: the first sale of the new year printed under the default, on a
+ * document that cannot be reprinted. The nearest earlier year's format is the
+ * one in force; years are compared as the labels they are, which orders
+ * `2026`, `2026-27` and `1447` the way each scheme counts.
+ */
 function formatInForce(
   session: RecordSession,
   tenant: TenantId,
@@ -307,6 +392,18 @@ function formatInForce(
 ): { readonly format: string; readonly isDefault: boolean } {
   const defined = seriesIn(session, tenant, scope);
   if (defined !== null) return { format: defined.format, isDefault: false };
+
+  const earlier = scanRecords(session, 'series', tenant)
+    .filter(
+      (one) =>
+        one.scope.documentType === scope.documentType &&
+        one.scope.branch === scope.branch &&
+        one.scope.register === scope.register &&
+        one.scope.fiscalYear < scope.fiscalYear,
+    )
+    .sort((one, two) => (one.scope.fiscalYear < two.scope.fiscalYear ? 1 : -1))[0];
+  if (earlier !== undefined) return { format: earlier.format, isDefault: false };
+
   return {
     format: scope.register === null ? DEFAULT_BRANCH_FORMAT : DEFAULT_REGISTER_FORMAT,
     isDefault: true,
@@ -433,11 +530,17 @@ export function nextNumber(
   session: RecordSession,
   tenant: TenantId,
   scope: SeriesScope,
-  document: string,
+  reference: string,
+  device: DeviceId | null,
 ): Result<IssuedNumber, NumberingRefusal> {
   const scoped = checkScope(scope);
   if (!scoped.ok) return scoped;
-  if (document.trim() === '') {
+  // One document, one spelling. The reference is usually the document's own
+  // identifier, and a UUID is case-insensitive by specification: the same sale
+  // replayed with its identifier upper-cased took a second number.
+  const trimmed = reference.trim();
+  const document = isId(trimmed) ? parseId(trimmed) : trimmed;
+  if (document === '') {
     // The caller's own reference is what makes the issue repeatable, so an
     // empty one is not a small omission: two documents that both passed it
     // would be told they are the same document and would print one number
@@ -458,7 +561,7 @@ export function nextNumber(
   // slice that owns the outbox — `U07` — and until then it is unbounded and
   // known to be.
 
-  const place = placeOf(session, tenant, scope);
+  const place = placeOf(session, tenant, scope, device);
   if (!place.ok) return place;
 
   // Through the same function a specimen asks. Written out here once and there

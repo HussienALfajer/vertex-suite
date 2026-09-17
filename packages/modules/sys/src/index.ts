@@ -109,10 +109,9 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
     permissions: permissions(),
     provides: [
       provideContract(Organisation, (context: ModuleContext<Session>) => {
-        // Every read opens its own transaction. It is the only way to reach the
-        // store, and it is also the seam SEC-04 will need: scoping a user's
-        // sight to their branches happens once, here, rather than in each
-        // caller.
+        // Every read opens its own transaction, which is the only way to reach
+        // the store. Unguarded on purpose — see `Organisation` in the contract
+        // for why a person's sight is decided where their request enters.
         const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
           context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
 
@@ -142,7 +141,9 @@ export function sysModule<Session extends RecordSession>(): ModuleDefinition<Ses
           // transaction. It is handed the caller's, so that the counter moves
           // only if the document it is numbering does.
           next: (uow: UnitOfWork<RecordSession>, scope: SeriesScope, document: string) =>
-            Promise.resolve(nextNumber(uow.session, uow.context.tenant, scope, document)),
+            Promise.resolve(
+              nextNumber(uow.session, uow.context.tenant, scope, document, uow.context.device),
+            ),
           series: (by: CommandContext, scope: SeriesScope) =>
             context.transactor.run(by, (uow) =>
               Promise.resolve(seriesIn(uow.session, by.tenant, scope)),

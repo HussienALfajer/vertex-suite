@@ -91,5 +91,13 @@ export function reviseProfile(
   // profile, because that is the thing the administrator got wrong.
   if (profile === null) return refuse('sys.company-not-found', { company });
 
-  return ok(writeRecord(session, 'profile', tenant, [company], merged(profile, changes)));
+  // The name printed on every receipt (`SYS-05`) may be revised and may not be
+  // blanked. The company itself refuses an empty name; its profile took one.
+  if (changes.name?.trim() === '') {
+    return refuse('sys.name-required', { of: 'profile' });
+  }
+  const revised = merged(profile, changes);
+  return ok(
+    writeRecord(session, 'profile', tenant, [company], { ...revised, name: revised.name.trim() }),
+  );
 }
