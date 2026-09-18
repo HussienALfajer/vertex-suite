@@ -183,9 +183,9 @@ export const catalogue = {
   /**
    * `FX`'s own refusals, as sentences.
    *
-   * `FX-01`'s currencies and `FX-02`'s functional currency alone: the rate,
-   * stamping and rounding refusals belong to the screen that first triggers
-   * them, which is not this one yet.
+   * `FX-01`'s currencies and `FX-02`'s functional currency, and — from the
+   * rates board — `FX-04`'s own: the stamping and rounding refusals still
+   * belong to the screen that first triggers them, which is not this one yet.
    */
   'refusal.fx.currency-code-invalid':
     'الرمز «{code}» لا يصلح: ثلاثة حروف لاتينية كبيرة بالضبط، كما يكتبها ISO 4217 — مثل AED أو GBP.',
@@ -206,6 +206,20 @@ export const catalogue = {
     'عملة الدفاتر ثبتت عند «{functional}» بأول سعر يومي سُجِّل عليها، فلا تتغيّر بعد ذلك.',
   'refusal.fx.not-permitted':
     'هذا الإجراء يحتاج صلاحية «{right}»، وهي غير ممنوحة لك. راجع مالك المتجر.',
+  'refusal.fx.branch-not-found': 'لم يعد هذا الفرع موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.fx.branch-inactive': 'الفرع «{branch}» مسحوب من الخدمة، فلا سعر يُسجَّل له اليوم.',
+  'refusal.fx.functional-currency-unset': 'لم تُحدَّد عملة الدفاتر بعد لهذا المتجر.',
+  'refusal.fx.rate-form-unknown': 'صيغة السعر «{form}» غير معروفة.',
+  'refusal.fx.rate-invalid':
+    'السعر الذي أُدخل لسعر {side, select, buy {الشراء} sell {البيع} other {الصرف}} غير صالح: «{rate}». أدخل رقمًا عشريًا موجبًا.',
+  'refusal.fx.rate-too-precise':
+    'السعر «{rate}» لسعر {side, select, buy {الشراء} sell {البيع} other {الصرف}} أدق مما يُخزَّن — {decimals, number} خانة عشرية على الأكثر.',
+  'refusal.fx.rate-spread-inverted':
+    'سعر الشراء ({buy}) أقل من سعر البيع ({sell})، وهذا يعني خسارة في كل عملية صرف بهذين السعرين. تأكّد من اتجاه اللوحة التي تقرأ منها.',
+  'refusal.fx.rate-day-behind':
+    'يوم هذا الفرع تجاوز {day} بالفعل — آخر يوم سُجِّل له سعر هو {latest}. لا يمكن تسجيل سعر ليوم انقضى.',
+  'refusal.fx.suggested-rate-missing':
+    'لا يوجد سعر مقترح جديد لهذا الفرع اليوم — إمّا لم يُنشر شيء بعد، أو تبنّاه هذا الفرع من قبل.',
 
   /**
    * The rights `SYS` declares, named the way an administrator would say them.
@@ -254,10 +268,12 @@ export const catalogue = {
   'permission.sec.role-assignment.edit': 'تعديل تكليف دور',
   'permission.sec.role-assignment.delete': 'سحب تكليف دور',
   /**
-   * `FX`'s own rights. `rate` and `suggested-rate` are named even though no
-   * screen here grants them through a command yet — `SEC-02`'s grid names
-   * every right the edition declares, not only the ones a screen already acts
-   * on (`roles.test.tsx`'s own rule, proven once for `sys.branch.rezone`).
+   * `FX`'s own rights. `rate.override` and `last-known-rate.confirm` are named
+   * even though no screen here grants either through a command yet — both
+   * belong to a register this codebase does not host (`Rates.tsx`'s own
+   * comment says why) — because `SEC-02`'s grid names every right the edition
+   * declares, not only the ones a screen already acts on (`roles.test.tsx`'s
+   * own rule, proven once for `sys.branch.rezone`).
    */
   'permission.fx.currency.view': 'الاطلاع على العملات',
   'permission.fx.currency.create': 'إضافة عملة',
@@ -321,6 +337,7 @@ export const catalogue = {
   /** `FX`'s own group in the side navigation — see `nav.currencies` below. */
   'nav.group.fx': 'العملات',
   'nav.currencies': 'إدارة العملات',
+  'nav.rates': 'الأسعار اليومية',
 
   'action.close': 'إغلاق',
   'action.cancel': 'إلغاء',
@@ -916,6 +933,70 @@ export const catalogue = {
     'ستُحسب التكلفة والهامش وتقييم المخزون بعملة «{code}» من الآن. عملة الدفاتر تثبت نهائيًا بمجرد أن يُسجَّل عليها أول سعر يومي، فاختر بعناية.',
   'currencies.makeFunctional.submit': 'اعتماد',
   'currencies.functionalChanged': 'صارت «{code}» عملة الدفاتر.',
+
+  /**
+   * `FX-04`: a branch's own daily rate board. One line per currency other
+   * than the books' own, and the tenant's suggestion beside it when there is
+   * one to adopt.
+   */
+  'rates.title': 'لوحة الأسعار اليومية',
+  'rates.description':
+    'سعرا الشراء والبيع لكل عملة في هذا الفرع، لهذا اليوم — والسعر الذي ينشره المالك لتتبنّاه كل عملة له سعر مقترح.',
+  'rates.table': 'الأسعار',
+  'rates.branch': 'الفرع',
+  'rates.branch.placeholder': 'اختر الفرع',
+  'rates.noBranches': 'لا يوجد فرع بعد',
+  'rates.noBranches.explanation': 'السعر اليومي يُسجَّل داخل فرع، فابدأ بفتح الفرع.',
+  'rates.noBranches.action': 'الذهاب إلى الفروع',
+  'rates.column.currency': 'العملة',
+  'rates.column.buy': 'سعر الشراء',
+  'rates.column.sell': 'سعر البيع',
+  'rates.column.suggested': 'السعر المقترح',
+  'rates.column.actions': 'إجراءات',
+  'rates.missing': 'لا يوجد سعر اليوم',
+  /** A candidate pair nobody has adopted yet — pre-formatted, not run through `{x, number}`. */
+  'rates.suggested.value': '{buy} / {sell}',
+  'rates.suggested.none': '—',
+
+  'rates.record.action': 'تسجيل سعر اليوم',
+  'rates.record.title': 'تسجيل سعر اليوم — {code}',
+  'rates.record.submit': 'تسجيل',
+  'rates.recorded': 'سُجِّل سعر «{code}» لليوم.',
+  'rates.correct.action': 'تصحيح سعر اليوم',
+  'rates.correct.title': 'تصحيح سعر اليوم — {code}',
+  'rates.correct.submit': 'حفظ',
+  'rates.corrected': 'صُحِّح سعر «{code}» لليوم.',
+
+  'rates.field.form': 'صيغة السعر',
+  'rates.field.buy': 'سعر الشراء',
+  'rates.field.buy.description': 'السعر المطبَّق عند استلام هذه العملة.',
+  'rates.field.buy.required': 'أدخل سعر الشراء.',
+  'rates.field.sell': 'سعر البيع',
+  'rates.field.sell.description': 'السعر المطبَّق عند دفع هذه العملة.',
+  'rates.field.sell.required': 'أدخل سعر البيع.',
+  /**
+   * `FX-04`: "may be entered in the form the local market quotes." Named by
+   * the two currencies it stands between rather than by an abstract "form A"
+   * or "form B", so the choice reads as the board it was copied off.
+   */
+  'rate.quoteForm.units-per-functional': '{currency} مقابل 1 {functional}',
+  'rate.quoteForm.functional-per-unit': '{functional} مقابل 1 {currency}',
+
+  'rates.adopt.banner.title': 'يوجد سعر مقترح لهذا اليوم',
+  'rates.adopt.banner.description':
+    'نشر مالك المتجر سعرًا مقترحًا لعملة واحدة أو أكثر. تبنّيه يجعله سعر هذا الفرع لكل عملة له سعر مقترح، بضغطة واحدة.',
+  'rates.adopt.banner.action': 'تبنّي السعر المقترح',
+  'rates.adopted': 'تبنّى هذا الفرع السعر المقترح.',
+
+  'rates.suggest.action': 'اقتراح سعر لكل الفروع',
+  'rates.suggest.title': 'اقتراح سعر لكل الفروع',
+  'rates.suggest.description':
+    'يُنشر هذا السعر لكل فروع المتجر، ويتبنّاه كل فرع بضغطة واحدة من لوحته الخاصة.',
+  'rates.suggest.field.currency': 'العملة',
+  'rates.suggest.field.currency.placeholder': 'اختر العملة',
+  'rates.suggest.field.currency.required': 'اختر العملة.',
+  'rates.suggest.submit': 'نشر',
+  'rates.suggested': 'نُشر سعر مقترح لـ «{code}».',
 
   /**
    * `Credentials.changeOwnPassword`: the one action here that belongs to

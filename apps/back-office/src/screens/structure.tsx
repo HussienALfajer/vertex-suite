@@ -493,6 +493,16 @@ export function PlaceIcon(): ReactNode {
   );
 }
 
+/** Two arrows crossing in opposite directions: one currency traded for another. */
+export function RateIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <path d="M4 7h10.5M12 4.2L14.7 7 12 9.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 13H5.5M8 10.2L5.3 13 8 15.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** A sheet with lines on it: the profile a document is printed from. */
 export function ProfileIcon(): ReactNode {
   return (

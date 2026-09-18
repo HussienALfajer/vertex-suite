@@ -68,11 +68,14 @@ function traded(session: RecordSession, tenant: TenantId, code: CurrencyCode): R
   if (functional === null) return refuse('fx.functional-currency-unset');
 
   const currency = currencyIn(session, tenant, code);
-  if (currency === null) return refuse('fx.currency-not-found', { currency: code });
+  // `code`, matching `currencies.ts`'s own refusals of the same three codes:
+  // one catalogue sentence answers for both callers, and a second value key
+  // for the same code is a sentence with nothing to fill its placeholder.
+  if (currency === null) return refuse('fx.currency-not-found', { code });
   if (currency.code === functional.code) {
-    return refuse('fx.currency-is-functional', { currency: code });
+    return refuse('fx.currency-is-functional', { code });
   }
-  if (!currency.enabled) return refuse('fx.currency-disabled', { currency: code });
+  if (!currency.enabled) return refuse('fx.currency-disabled', { code });
   return ok({ functional, currency });
 }
 

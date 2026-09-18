@@ -33,7 +33,13 @@ type Arriving = { readonly [Field in keyof RateQuote]: unknown };
 
 const FORMS: ReadonlySet<string> = new Set(QUOTE_FORMS);
 
-function isQuoteForm(value: unknown): value is QuoteForm {
+/**
+ * Exported for the one caller outside this module that also has to judge a
+ * form before it is known to be one: a screen reading a `Select`'s own
+ * returned key. Kept to this one function rather than reimplemented there,
+ * so a third form added to `QUOTE_FORMS` is recognised everywhere at once.
+ */
+export function isQuoteForm(value: unknown): value is QuoteForm {
   return typeof value === 'string' && FORMS.has(value);
 }
 

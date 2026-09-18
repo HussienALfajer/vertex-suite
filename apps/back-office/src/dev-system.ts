@@ -15,7 +15,13 @@ import {
   type PermissionDeclaration,
 } from '@vertex/platform';
 import { OWNER, SEEDED_ROLES, type PermissionId } from '@vertex/contracts';
-import { Currencies, CurrencyAdministration, fxModule } from '@vertex/fx';
+import {
+  Currencies,
+  CurrencyAdministration,
+  ExchangeRates,
+  RateAdministration,
+  fxModule,
+} from '@vertex/fx';
 import {
   Authorisation,
   SEC_PERMISSIONS,
@@ -37,6 +43,7 @@ import type {
   CurrenciesOfRecord,
   DeclaredRight,
   OrganisationOfRecord,
+  RatesOfRecord,
   SignInAttempt,
   SystemOfRecord,
   UsersOfRecord,
@@ -234,6 +241,8 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const numbering = registry.require(DocumentNumbering);
   const currenciesRead = registry.require(Currencies);
   const currenciesAdmin = registry.require(CurrencyAdministration);
+  const ratesRead = registry.require(ExchangeRates);
+  const ratesAdmin = registry.require(RateAdministration);
 
   /**
    * Who is asking, which is the transport's business and not a screen's.
@@ -367,6 +376,25 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     makeFunctional: async (code) => {
       await ensureCurrenciesSeeded();
       return currenciesAdmin.makeFunctional(by(), code);
+    },
+  };
+
+  const rates: RatesOfRecord = {
+    board: async (branch) => {
+      await ensureCurrenciesSeeded();
+      return ratesRead.board(by(), branch);
+    },
+    record: async (branch, currency, quote) => {
+      await ensureCurrenciesSeeded();
+      return ratesAdmin.record(by(), branch, currency, quote);
+    },
+    suggest: async (currency, quote) => {
+      await ensureCurrenciesSeeded();
+      return ratesAdmin.suggest(by(), currency, quote);
+    },
+    adopt: async (branch) => {
+      await ensureCurrenciesSeeded();
+      return ratesAdmin.adopt(by(), branch);
     },
   };
 
@@ -825,5 +853,6 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     organisation,
     users: usersPort,
     currencies,
+    rates,
   };
 }

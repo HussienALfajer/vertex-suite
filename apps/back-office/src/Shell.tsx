@@ -11,8 +11,9 @@ import { Companies } from './screens/Companies.js';
 import { Currencies } from './screens/Currencies.js';
 import { Locations } from './screens/Locations.js';
 import { Numbering } from './screens/Numbering.js';
+import { Rates } from './screens/Rates.js';
 import { Registers } from './screens/Registers.js';
-import { ProfileIcon, ScopeIcon } from './screens/structure.js';
+import { ProfileIcon, RateIcon, ScopeIcon } from './screens/structure.js';
 import { Roles } from './screens/Roles.js';
 import { Users } from './screens/Users.js';
 import { useSession } from './session.js';
@@ -94,6 +95,13 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       icon: <CurrencyIcon />,
       group: translator.format('nav.group.fx'),
     },
+    {
+      id: 'rates',
+      label: translator.format('nav.rates'),
+      href: hrefOf('rates'),
+      icon: <RateIcon />,
+      group: translator.format('nav.group.fx'),
+    },
   ];
 
   return (
@@ -168,6 +176,8 @@ function Screen({ name }: { readonly name: RouteName }): ReactNode {
       return <Roles />;
     case 'currencies':
       return <Currencies />;
+    case 'rates':
+      return <Rates />;
   }
 }
 
