@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import {
   Dialog as AriaDialog,
   DialogTrigger,
@@ -47,6 +47,27 @@ export function Dialog({
 }: DialogProps): ReactNode {
   const translator = useTranslator();
 
+  /**
+   * What this dialog showed the last time it was genuinely open, kept through
+   * the close that follows.
+   *
+   * `isOpen` and the content naming what the dialog is about typically come
+   * from the same piece of a caller's state — a row's own record, cleared to
+   * null the instant its dialog is dismissed — so the render that turns
+   * `isOpen` false is the same render that would otherwise blank the title
+   * and body for the `dur-slow` `ModalOverlay` keeps this mounted through. A
+   * screen that revises a currency once showed "تعديل عملة «»" mid-fade
+   * because of exactly this; frozen here, once, rather than by every caller
+   * remembering to hold its own subject open a beat longer than its dialog.
+   *
+   * Mutated during render rather than in an effect, the same way `useLoaded`
+   * holds its latest read: it only has to be current by the next paint, and
+   * an effect would let one stale frame through first.
+   */
+  const lastWhileOpen = useRef({ title, children, footer });
+  if (isOpen !== false) lastWhileOpen.current = { title, children, footer };
+  const shown = isOpen === false ? lastWhileOpen.current : { title, children, footer };
+
   const modal = (
     <ModalOverlay
       className={clsx(
@@ -91,7 +112,7 @@ export function Dialog({
             <>
               <header className="border-line flex items-start justify-between gap-[var(--vx-gap-md)] border-b px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]">
                 <Heading slot="title" className="text-title font-body-semibold text-fg">
-                  {title}
+                  {shown.title}
                 </Heading>
                 <IconButton aria-label={translator.format('action.close')} onPress={close}>
                   <svg
@@ -106,12 +127,12 @@ export function Dialog({
               </header>
 
               <div className="text-body text-fg min-h-0 flex-1 overflow-auto p-[var(--vx-pad-lg)]">
-                {children}
+                {shown.children}
               </div>
 
-              {footer === undefined ? null : (
+              {shown.footer === undefined ? null : (
                 <footer className="border-line flex items-center justify-end gap-[var(--vx-gap-sm)] border-t px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]">
-                  {footer}
+                  {shown.footer}
                 </footer>
               )}
             </>
@@ -167,6 +188,15 @@ export function ConfirmationDialog({
 }: ConfirmationDialogProps): ReactNode {
   const translator = useTranslator();
 
+  /** `Dialog`'s own `lastWhileOpen`, for the same reason: a `message` naming
+   * a row (`"ستبقى حركة «{name}»..."`) is interpolated from state the caller
+   * clears in the same render that closes this — `onConfirm` and
+   * `onOpenChange` excluded, since a callback is not content that can go
+   * stale on screen. */
+  const lastWhileOpen = useRef({ title, message, confirmLabel, tone });
+  if (isOpen !== false) lastWhileOpen.current = { title, message, confirmLabel, tone };
+  const shown = isOpen === false ? lastWhileOpen.current : { title, message, confirmLabel, tone };
+
   const modal = (
     <ModalOverlay
       className={clsx(
@@ -185,22 +215,22 @@ export function ConfirmationDialog({
             <>
               <div className="flex flex-col gap-[var(--vx-gap-sm)] p-[var(--vx-pad-lg)]">
                 <Heading slot="title" className="text-heading font-body-semibold text-fg">
-                  {title}
+                  {shown.title}
                 </Heading>
-                <p className="text-body text-fg-secondary">{message}</p>
+                <p className="text-body text-fg-secondary">{shown.message}</p>
               </div>
               <footer className="border-line flex items-center justify-end gap-[var(--vx-gap-sm)] border-t px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]">
                 <Button tone="secondary" onPress={close} autoFocus>
                   {translator.format('action.cancel')}
                 </Button>
                 <Button
-                  tone={tone}
+                  tone={shown.tone}
                   onPress={() => {
                     onConfirm();
                     close();
                   }}
                 >
-                  {confirmLabel}
+                  {shown.confirmLabel}
                 </Button>
               </footer>
             </>
