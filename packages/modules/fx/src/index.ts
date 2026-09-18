@@ -68,6 +68,7 @@ import { presentAtMid, presentAtStamp, settleAmount, valueDocument } from './rou
 import { directionOf, overridesOn, prepareStamp, stampIn, writeStamp } from './stamps.js';
 
 export * from './contract.js';
+export { isQuoteForm } from './quotes.js';
 
 /**
  * Every right this module defines, built from the same grammar the ids were, so

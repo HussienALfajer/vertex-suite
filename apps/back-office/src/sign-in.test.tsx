@@ -39,6 +39,7 @@ function systemThatAnswers(signIn: SystemOfRecord['signIn']): SystemOfRecord {
     organisation: real.organisation,
     users: real.users,
     currencies: real.currencies,
+    rates: real.rates,
   };
 }
 

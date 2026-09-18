@@ -5,6 +5,7 @@ import { ThemeSwitch, ToastRegion, VertexProvider, type TwoToneTheme } from '@ve
 import { createTranslator } from './catalogue.js';
 import { CurrenciesProvider } from './currencies.js';
 import { OrganisationProvider } from './organisation.js';
+import { RatesProvider } from './rates.js';
 import { navigate } from './routing.js';
 import { useSession, SessionProvider } from './session.js';
 import { SignIn } from './SignIn.js';
@@ -80,7 +81,9 @@ function Screen({
     <OrganisationProvider system={system}>
       <UsersProvider system={system}>
         <CurrenciesProvider system={system}>
-          <Shell themeSwitch={themeSwitch} />
+          <RatesProvider system={system}>
+            <Shell themeSwitch={themeSwitch} />
+          </RatesProvider>
         </CurrenciesProvider>
       </UsersProvider>
     </OrganisationProvider>

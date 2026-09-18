@@ -50,7 +50,14 @@ export function CurrencyRate({
 
   return (
     <span
-      className={clsx('inline-flex items-baseline gap-[0.4em] tabular-nums', className)}
+      // Wraps rather than forcing one unbreakable line: the date carries the
+      // zone as literal text (`<DateTime precision="date">`), which has no
+      // upper bound — `Asia/Damascus` and
+      // `America/Argentina/Buenos_Aires` are both real IANA names, and a
+      // column sized for the first would spill the second into whatever sits
+      // beside it. Wrapping is the one behaviour every column width is safe
+      // under; a narrow one costs a second line rather than overlapping text.
+      className={clsx('inline-flex flex-wrap items-baseline gap-[0.4em] tabular-nums', className)}
       // §12, as `Money` has it: a rate displayed at less precision than it is
       // carried — which rates always are — is marked, and its full value is kept.
       {...(isRounded ? { title: `${rate} ${currency} / 1 ${functionalCurrency}` } : {})}

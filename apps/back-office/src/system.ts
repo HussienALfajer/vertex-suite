@@ -4,6 +4,11 @@ import type {
   CurrencyRevision,
   Listing as CurrencyListing,
   NewCurrency,
+  RateBoard,
+  RateQuote,
+  RateRefusal,
+  RateRevision,
+  SuggestedRate,
   TenantCurrency,
 } from '@vertex/fx/contract';
 import type {
@@ -226,6 +231,33 @@ export interface CurrenciesOfRecord {
   makeFunctional(code: CurrencyCode): Rated<TenantCurrency>;
 }
 
+type RateOutcome<T> = Promise<Result<T, RateRefusal>>;
+
+/**
+ * `FX-04` as the daily rate board uses it.
+ *
+ * It is `ExchangeRates` and `RateAdministration` with the same thing taken out
+ * as `CurrenciesOfRecord`: the `CommandContext`. Answered by the real `FX`
+ * hosted in this browser, exactly as `currencies` is.
+ *
+ * `revisions` is not here: this screen corrects a mistyped rate by recording
+ * the next one, which is what `FX-04`'s own words say a correction is, so a
+ * day's revision history has no reader yet and stays off the port until one
+ * needs it. `confirmLastKnown` is not here either — it is asked from the
+ * register a supervisor is standing at, and no register exists in this
+ * codebase yet (`modules.md` §2: `U07` brings one).
+ */
+export interface RatesOfRecord {
+  /** A branch's rates for today, one line per currency other than the functional one. */
+  board(branch: BranchId): RateOutcome<RateBoard>;
+  /** Today's first rate for a currency at a branch, or a correction of it. */
+  record(branch: BranchId, currency: CurrencyCode, quote: RateQuote): RateOutcome<RateRevision>;
+  /** Publishes a rate for the tenant's branches to adopt. Owner-only; asked tenant-wide. */
+  suggest(currency: CurrencyCode, quote: RateQuote): RateOutcome<SuggestedRate>;
+  /** Makes today's suggestions this branch's own rates, every currency in one action. */
+  adopt(branch: BranchId): RateOutcome<readonly RateRevision[]>;
+}
+
 /**
  * A right a module has declared, as the role editor needs it: the identifier
  * a grant names, and whether granting it is sensitive (`SEC-05`).
@@ -321,4 +353,5 @@ export interface SystemOfRecord {
   readonly organisation: OrganisationOfRecord;
   readonly users: UsersOfRecord;
   readonly currencies: CurrenciesOfRecord;
+  readonly rates: RatesOfRecord;
 }

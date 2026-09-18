@@ -39,6 +39,7 @@ function shopWhere(
     organisation: change(real),
     users: real.users,
     currencies: real.currencies,
+    rates: real.rates,
   };
 }
 
