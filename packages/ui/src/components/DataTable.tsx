@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import {
   Cell,
   Column,
@@ -21,6 +21,55 @@ import { SIZE_TOKENS, type Density } from '../tokens/scale.js';
 import { IconButton } from './Button.js';
 import { EmptyState } from './EmptyState.js';
 import { focusRing } from './styles.js';
+
+/**
+ * Which edges of a scrollable region currently hide content, in physical
+ * (not logical) directions.
+ *
+ * `box-shadow` has no logical-direction form — unlike padding or a border, an
+ * inset shadow's offset is always along the physical axis — so "start" and
+ * "end" are resolved here, once, against the element's own computed
+ * direction, rather than asking every caller to know that a table opened
+ * RTL wants its overflow cue on the physical right.
+ *
+ * Horizontal RTL scroll position is where this earns its keep: modern
+ * engines agree `scrollLeft` runs `0` (flush with the physical right, where
+ * RTL content starts) down to `-(scrollWidth - clientWidth)` (flush with the
+ * physical left), rather than mirroring the LTR `0…max` range, so the two
+ * directions need their own arithmetic and cannot share one inequality.
+ */
+function scrollEdges(element: HTMLElement): {
+  top: boolean;
+  bottom: boolean;
+  left: boolean;
+  right: boolean;
+} {
+  const epsilon = 1;
+  const { scrollTop, scrollHeight, clientHeight, scrollLeft, scrollWidth, clientWidth } = element;
+  const maxTop = scrollHeight - clientHeight;
+  const maxLeft = scrollWidth - clientWidth;
+  const isRtl = getComputedStyle(element).direction === 'rtl';
+
+  return {
+    top: scrollTop > epsilon,
+    bottom: scrollTop < maxTop - epsilon,
+    left: isRtl ? scrollLeft > -maxLeft + epsilon : scrollLeft > epsilon,
+    right: isRtl ? scrollLeft < -epsilon : scrollLeft < maxLeft - epsilon,
+  };
+}
+
+/**
+ * Applied straight to the DOM rather than through `useState`: a scroll event
+ * fires far more often than this component should re-render, and every frame
+ * already has the answer sitting in the same element's own scroll metrics.
+ */
+function applyScrollEdges(element: HTMLElement): void {
+  const edges = scrollEdges(element);
+  element.toggleAttribute('data-scroll-shadow-top', edges.top);
+  element.toggleAttribute('data-scroll-shadow-bottom', edges.bottom);
+  element.toggleAttribute('data-scroll-shadow-left', edges.left);
+  element.toggleAttribute('data-scroll-shadow-right', edges.right);
+}
 
 export interface DataTableColumn<T> {
   readonly id: string;
@@ -88,13 +137,56 @@ export function DataTable<T>({
   // proved: a `T` with no `id` cannot reach here without supplying one.
   const keyOf = rowKey ?? ((row: T) => (row as { id: Key }).id);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Re-measured on scroll, and whenever either the container or what it
+  // scrolls changes size — a row added below the fold, or a column widened
+  // past the viewport, changes the answer without the container itself
+  // resizing, which is why the table is observed as well. Subscribed once:
+  // every screen builds its `columns` inline, so keying this on them would
+  // tear the listeners down and put them back on every render.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element === null) return undefined;
+
+    const update = (): void => {
+      applyScrollEdges(element);
+    };
+    update();
+    element.addEventListener('scroll', update, { passive: true });
+
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(element);
+    // The table, or the virtualiser's sized stand-in for it.
+    const content = element.firstElementChild;
+    if (content !== null) observer?.observe(content);
+
+    return () => {
+      element.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, []);
+
   const table = (
     <Table
       {...props}
       aria-label={label}
       // The grid is the single tab stop, so it is a focusable control and must
       // show focus like any other (§7.3, §11.1).
-      className={clsx('w-full border-separate border-spacing-0', focusRing)}
+      //
+      // `min-w-full` alongside `w-full`, and the two are not the same
+      // promise: React Aria measures every `Column`'s own `width` and writes
+      // the sum straight onto this element as an inline `width: <n>px` (or
+      // `min-content`), which wins over the `w-full` class the moment a
+      // screen states every column's width explicitly rather than leaving
+      // some to flex — `Numbering.tsx` is the one screen that does, per its
+      // own reasoning for why. Short of the panel's own width, that inline
+      // style shrank the table to its content and left the remainder of the
+      // panel bare: no row line, no cell, a dead strip nothing in this
+      // component drew. `min-width` is a different property from `width` and
+      // is never touched by that inline style, so it holds the floor the
+      // class alone could not.
+      className={clsx('w-full min-w-full border-separate border-spacing-0', focusRing)}
     >
       <TableHeader>
         {columns.map((column) => (
@@ -115,6 +207,16 @@ export function DataTable<T>({
               'px-[var(--vx-pad-md)] py-[var(--vx-pad-sm)]',
               'text-footnote font-medium text-fg-secondary',
               column.align === 'end' ? 'text-end' : 'text-start',
+              // The header's own separation from the body, cast downward
+              // rather than inset, onto the content scrolling underneath
+              // it — the container's own top edge is this same header,
+              // opaque and sticky, so an inset shadow drawn there would
+              // never be seen (see `ResizableTableContainer`, below). Keyed
+              // off `data-scroll-shadow-top`, which the container carries
+              // exactly when the body has scrolled past its own start.
+              'shadow-[0_6px_10px_-5px_transparent]',
+              'group-data-[scroll-shadow-top]/scroll:shadow-[0_6px_10px_-5px_var(--vx-border-strong)]',
+              'transition-shadow duration-[var(--vx-dur-base)] ease-[var(--vx-ease-out)]',
               focusRing,
             )}
           >
@@ -157,7 +259,40 @@ export function DataTable<T>({
 
   return (
     <DensityScope value="compact" className={clsx('w-full', className)}>
-      <ResizableTableContainer className="max-h-full w-full overflow-auto">
+      <ResizableTableContainer
+        ref={scrollRef}
+        className={clsx(
+          'group/scroll max-h-full w-full overflow-auto',
+          // Three shadow layers, one per edge that can plausibly hide
+          // content behind this container's own background — held as their
+          // own custom properties so more than one can be lit at once,
+          // since a table overflowing in both directions needs two or three
+          // live at the same time and a single `shadow-*` utility replaces
+          // the whole `box-shadow` rather than adding to it. Each starts as
+          // a transparent, zero-size layer instead of being absent, because
+          // `box-shadow` only accepts `none` for the whole property, never
+          // for one layer of it.
+          //
+          // **The top edge is not one of the three.** This container's own
+          // top is where the header sits, `sticky` and opaque — an inset
+          // shadow drawn there would sit permanently behind it and never be
+          // seen. What plays that role instead is the header's own shadow
+          // (`Column`, above), cast the opposite way: outward, onto the
+          // content scrolling underneath it.
+          '[--vx-scroll-shadow-bottom:inset_0_0_0_0_transparent]',
+          '[--vx-scroll-shadow-left:inset_0_0_0_0_transparent]',
+          '[--vx-scroll-shadow-right:inset_0_0_0_0_transparent]',
+          'shadow-[var(--vx-scroll-shadow-bottom),var(--vx-scroll-shadow-left),var(--vx-scroll-shadow-right)]',
+          'transition-[box-shadow] duration-[var(--vx-dur-base)] ease-[var(--vx-ease-out)]',
+          // `border-line-strong`, not a one-off colour: an edge that still
+          // has content beyond it is exactly what that token already means
+          // everywhere else in the table (§7.2), just soft instead of a
+          // hard rule.
+          'data-[scroll-shadow-bottom]:[--vx-scroll-shadow-bottom:inset_0_-12px_10px_-7px_var(--vx-border-strong)]',
+          'data-[scroll-shadow-left]:[--vx-scroll-shadow-left:inset_12px_0_10px_-7px_var(--vx-border-strong)]',
+          'data-[scroll-shadow-right]:[--vx-scroll-shadow-right:inset_-12px_0_10px_-7px_var(--vx-border-strong)]',
+        )}
+      >
         {isVirtualised ? (
           <Virtualizer layout={TableLayout} layoutOptions={{ rowHeight, headingHeight: rowHeight }}>
             {table}

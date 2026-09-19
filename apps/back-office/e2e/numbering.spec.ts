@@ -127,12 +127,25 @@ test('opens a till, names the machine at it, and shows the number it will print'
   await page.getByRole('option', { name: 'صندوق المدخل' }).click();
   await dialog.getByLabel('السنة المالية', { exact: true }).fill('2026');
 
-  // Nobody has configured anything, so the field is filled with what is
-  // printing here today and the screen says that is the default.
-  await expect(dialog.getByLabel('الصيغة', { exact: true })).toHaveValue(
-    '{prefix}-{generation}-{year}-{sequence:6}',
-  );
+  // Nobody has configured anything, so the builder starts from what is
+  // printing here today, and the screen says that is the default.
   await expect(dialog.getByText('AL1-1-2026-000001')).toBeVisible();
+  await expect(dialog.getByLabel('عدد خانات الرقم التسلسلي', { exact: true })).toHaveValue('6');
+
+  // The cards read in the order the number prints — left to right, on an
+  // Arabic page — because the row is an `ltr` island (§9). Measured, since
+  // the order in the document is not the order on screen that §9 is about.
+  const handles = dialog.getByRole('button', { name: /اسحب لإعادة ترتيب/ });
+  const painted = await handles.evaluateAll((elements) =>
+    elements
+      .map((element) => ({
+        mark: (element.getAttribute('aria-label') ?? '').replace('اسحب لإعادة ترتيب: ', ''),
+        left: element.getBoundingClientRect().left,
+      }))
+      .sort((one, two) => one.left - two.left)
+      .map(({ mark }) => mark),
+  );
+  expect(painted).toEqual(['رمز الصندوق', 'جيل الجهاز', 'السنة المالية', 'الرقم التسلسلي']);
 
   await dialog.getByRole('button', { name: 'حفظ الصيغة' }).click();
   await expect(page.getByRole('rowheader', { name: 'pos.sale' })).toBeVisible();
@@ -182,7 +195,7 @@ test('opens a till, names the machine at it, and shows the number it will print'
   expect(unprotected).not.toBe('{prefix}-{generation}-{year}-{sequence:6}');
 });
 
-test('refuses a format that drops the guarantee, under the field that typed it', async ({
+test('moves a card from the keyboard, and refuses two marks run together under it', async ({
   page,
 }) => {
   await aShopTrading(page);
@@ -196,14 +209,21 @@ test('refuses a format that drops the guarantee, under the field that typed it',
   await dialog.getByRole('button', { name: /الصندوق/ }).click();
   await page.getByRole('option', { name: 'صندوق المدخل' }).click();
   await dialog.getByLabel('السنة المالية', { exact: true }).fill('2026');
+  await expect(dialog.getByText('AL1-0-2026-000001')).toBeVisible();
 
-  await dialog.getByLabel('الصيغة', { exact: true }).fill('INV-{year}-{sequence:5}');
+  // A till's mark and generation are never a choice — a format without them
+  // would let a replacement machine reissue a number — so they are only ever
+  // moved, and a move keeps the separators where they were.
+  await dialog.getByRole('button', { name: 'اسحب لإعادة ترتيب: الرقم التسلسلي' }).focus();
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await expect(dialog.getByText('000001-AL1-0-2026')).toBeVisible();
 
-  // A format without the mark and the generation would let a replacement
-  // machine reissue a number the machine it replaced had printed and not yet
-  // sent. It is refused here, where it can still be retyped, rather than on a
-  // document nobody can reprint.
-  await expect(dialog.getByText('صيغة سلسلة صندوق لا بدّ أن تحمل')).toBeVisible();
+  // Nothing between two marks, and the number is ambiguous. Refused under the
+  // builder, where it can still be parted.
+  await dialog.getByLabel('نص بعد الرقم التسلسلي', { exact: true }).fill('');
+  await expect(dialog.getByText('جزآن متلاصقان')).toBeVisible();
 });
 
 test('keeps showing a series’ own scope through the close that follows cancelling its revision', async ({
@@ -217,7 +237,7 @@ test('keeps showing a series’ own scope through the close that follows cancell
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('نوع المستند', { exact: true }).fill('pur.invoice');
   await dialog.getByLabel('السنة المالية', { exact: true }).fill('2026');
-  await dialog.getByLabel('الصيغة', { exact: true }).fill('{year}-{sequence:6}');
+  await expect(dialog.getByText('2026-000001')).toBeVisible();
   await dialog.getByRole('button', { name: 'حفظ الصيغة' }).click();
   await expect(page.getByRole('rowheader', { name: 'pur.invoice' })).toBeVisible();
 

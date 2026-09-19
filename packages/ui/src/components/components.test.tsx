@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,8 @@ import { Badge } from './Badge.js';
 import { Button, IconButton } from './Button.js';
 import { Checkbox, Switch } from './Toggle.js';
 import { DataTable } from './DataTable.js';
+import { UnsavedChangesDialog } from './Dialog.js';
+import { focusFirstInvalid } from './focusFirstInvalid.js';
 import { SideNav } from './Navigation.js';
 import { Page, PageHeader } from './Page.js';
 import { Panel } from './Panel.js';
@@ -22,7 +24,11 @@ afterEach(cleanup);
 
 const translator = new Translator({
   locale: 'ar',
-  catalogue: { 'a11y.skipToContent': 'تخطَّ إلى المحتوى', 'action.dismiss': 'إغلاق' },
+  catalogue: {
+    'a11y.skipToContent': 'تخطَّ إلى المحتوى',
+    'action.dismiss': 'إغلاق',
+    'action.cancel': 'إلغاء',
+  },
 });
 
 function wrap(children: ReactNode): void {
@@ -270,7 +276,149 @@ describe('<DataTable> rowKey', () => {
   });
 });
 
+describe('<DataTable> scroll edges', () => {
+  /** Scroll metrics a layout engine would have measured; happy-dom lays nothing out. */
+  function measure(element: HTMLElement, metrics: Record<string, number>): void {
+    for (const [name, value] of Object.entries(metrics)) {
+      Object.defineProperty(element, name, { configurable: true, value });
+    }
+  }
+
+  it('marks the edges that still hide rows, and only those', () => {
+    wrap(
+      <DataTable
+        label="rows"
+        rows={[{ id: 'one', name: 'one' }]}
+        emptyMessage="none"
+        columns={[{ id: 'name', header: 'Name', isRowHeader: true, render: (row) => row.name }]}
+      />,
+    );
+    const container = screen.getByRole('grid').parentElement;
+    if (container === null) throw new Error('The table has no scrolling container.');
+
+    measure(container, {
+      scrollTop: 40,
+      scrollHeight: 500,
+      clientHeight: 200,
+      scrollLeft: 0,
+      scrollWidth: 300,
+      clientWidth: 300,
+    });
+    fireEvent.scroll(container);
+    expect(container.hasAttribute('data-scroll-shadow-top')).toBe(true);
+    expect(container.hasAttribute('data-scroll-shadow-bottom')).toBe(true);
+    expect(container.hasAttribute('data-scroll-shadow-left')).toBe(false);
+    expect(container.hasAttribute('data-scroll-shadow-right')).toBe(false);
+
+    measure(container, { scrollTop: 300 });
+    fireEvent.scroll(container);
+    expect(container.hasAttribute('data-scroll-shadow-bottom')).toBe(false);
+  });
+});
+
+describe('<UnsavedChangesDialog>', () => {
+  function ask(isSaving = false): {
+    onCancel: ReturnType<typeof vi.fn>;
+    onDiscard: ReturnType<typeof vi.fn>;
+    onSave: ReturnType<typeof vi.fn>;
+  } {
+    const answers = { onCancel: vi.fn(), onDiscard: vi.fn(), onSave: vi.fn() };
+    wrap(
+      <UnsavedChangesDialog
+        title="تغييرات لم تُحفظ"
+        message="لن تُحفظ التغييرات."
+        discardLabel="تجاهل ومتابعة"
+        saveLabel="حفظ ومتابعة"
+        savingLabel="جارٍ الحفظ…"
+        isOpen
+        isSaving={isSaving}
+        {...answers}
+      />,
+    );
+    return answers;
+  }
+
+  it('offers three answers: stay, leave without saving, and save then leave', async () => {
+    const user = userEvent.setup();
+    const answers = ask();
+
+    expect(screen.getByRole('alertdialog', { name: 'تغييرات لم تُحفظ' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'إلغاء' })).toBeDefined();
+
+    await user.click(screen.getByRole('button', { name: 'تجاهل ومتابعة' }));
+    await user.click(screen.getByRole('button', { name: 'حفظ ومتابعة' }));
+    expect(answers.onDiscard).toHaveBeenCalledTimes(1);
+    expect(answers.onSave).toHaveBeenCalledTimes(1);
+    expect(answers.onCancel).not.toHaveBeenCalled();
+  });
+
+  it('takes Escape as the answer that stays', async () => {
+    const user = userEvent.setup();
+    const answers = ask();
+
+    await user.keyboard('{Escape}');
+
+    expect(answers.onCancel).toHaveBeenCalledTimes(1);
+    expect(answers.onDiscard).not.toHaveBeenCalled();
+  });
+
+  it('takes no second answer while the save it started is in flight', async () => {
+    const user = userEvent.setup();
+    const answers = ask(true);
+
+    for (const name of ['إلغاء', 'تجاهل ومتابعة', 'جارٍ الحفظ…']) {
+      expect(screen.getByRole('button', { name }).hasAttribute('disabled'), name).toBe(true);
+    }
+    await user.keyboard('{Escape}');
+    expect(answers.onCancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('focusFirstInvalid', () => {
+  it('moves focus to the first field a form has marked invalid, not the first field', async () => {
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <form>
+          <TextInput label="الاسم" value="موجود" onChange={() => undefined} />
+          <TextInput label="الرمز" value="" onChange={() => undefined} errorMessage="أدخل الرمز." />
+          <TextInput
+            label="العنوان"
+            value=""
+            onChange={() => undefined}
+            errorMessage="أدخل العنوان."
+          />
+        </form>
+      </VertexProvider>,
+    );
+
+    focusFirstInvalid(container.querySelector('form'));
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText('الرمز'));
+    });
+  });
+
+  it('asks nothing of a form that is not there', () => {
+    expect(() => {
+      focusFirstInvalid(null);
+    }).not.toThrow();
+  });
+});
+
 describe('<Badge>', () => {
+  it('fills the neutral tone with a token that differs from the row it sits on', () => {
+    // `fill-secondary` is `surface-2` in the light theme — the same white as a
+    // table row — and a neutral badge drawn with it was bare text.
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <Badge tone="neutral">مسحوب</Badge>
+      </VertexProvider>,
+    );
+    const className = container.firstElementChild?.className ?? '';
+    expect(className).toContain('bg-badge-neutral');
+    expect(className).not.toContain('bg-fill-secondary');
+  });
+
   it('pairs every tone with its own readable foreground', () => {
     const tones = ['accent', 'success', 'danger', 'warning', 'info'] as const;
     for (const tone of tones) {

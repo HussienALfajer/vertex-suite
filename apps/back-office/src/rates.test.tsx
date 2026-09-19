@@ -202,3 +202,64 @@ describe('The tenant’s suggested rate — FX-04', () => {
     expect(screen.queryByText(catalogue['rates.adopt.banner.title'])).toBeNull();
   });
 });
+
+describe('Every branch’s board at once — FX-04', () => {
+  /** A shop trading from two branches, standing on the rates board. */
+  async function aShopOfTwoBranches(): Promise<OpenShop> {
+    const shop = await enterTheShop();
+    await registerCompany(shop, 'مؤسسة الشام');
+    await goTo(shop, catalogue['nav.branches']);
+    await openBranch(shop, 'حلب');
+    await openBranch(shop, 'حمص');
+    await goTo(shop, catalogue['nav.rates']);
+    await screen.findAllByRole('rowheader', { name: 'SYP' });
+    return shop;
+  }
+
+  /** The row for a currency at one branch, in a board that holds several. */
+  function rowAt(code: string, branch: string): HTMLElement {
+    const row = screen
+      .getAllByRole('rowheader', { name: code })
+      .map((cell) => cell.closest<HTMLElement>('[role="row"]'))
+      .find((one) => one !== null && within(one).queryByText(branch) !== null);
+    if (row === undefined || row === null) throw new Error(`No ${code} row at ${branch}.`);
+    return row;
+  }
+
+  it('lays every branch’s board in one table, and records a rate at the row’s own branch', async () => {
+    const shop = await aShopOfTwoBranches();
+
+    await shop.person.click(
+      within(rowAt('SYP', 'حمص')).getByRole('button', { name: catalogue['rates.record.action'] }),
+    );
+    // Nothing else on screen says where this rate goes, so the dialog does.
+    expect(screen.getByText(say.format('rates.record.branch', { name: 'حمص' }))).toBeTruthy();
+    await shop.person.type(screen.getByLabelText(catalogue['rates.field.buy']), '13100');
+    await shop.person.type(screen.getByLabelText(catalogue['rates.field.sell']), '12900');
+    await shop.person.click(screen.getByRole('button', { name: catalogue['rates.record.submit'] }));
+    await screen.findByText(say.format('rates.recorded', { code: 'SYP' }));
+
+    // A rate is one branch's: Homs has today's, Aleppo still has none.
+    expect(rowAt('SYP', 'حمص').textContent).not.toContain(catalogue['rates.missing']);
+    expect(rowAt('SYP', 'حلب').textContent).toContain(catalogue['rates.missing']);
+  });
+
+  it('offers to adopt a suggestion only on a board that is one branch’s', async () => {
+    const shop = await aShopOfTwoBranches();
+    await shop.person.click(firstButton(catalogue['rates.suggest.action']));
+    await chooseOption(shop, catalogue['rates.suggest.field.currency'], 'SYP');
+    await shop.person.type(screen.getByLabelText(catalogue['rates.field.buy']), '13150');
+    await shop.person.type(screen.getByLabelText(catalogue['rates.field.sell']), '12950');
+    await shop.person.click(
+      screen.getByRole('button', { name: catalogue['rates.suggest.submit'] }),
+    );
+    await screen.findByText(say.format('rates.suggested', { code: 'SYP' }));
+
+    // Adopting records a branch's own rate. One action over both boards would
+    // decide it for a manager who has not seen the suggestion.
+    expect(screen.queryByText(catalogue['rates.adopt.banner.title'])).toBeNull();
+
+    await chooseOption(shop, catalogue['rates.branch'], 'حمص');
+    expect(await screen.findByText(catalogue['rates.adopt.banner.title'])).toBeTruthy();
+  });
+});

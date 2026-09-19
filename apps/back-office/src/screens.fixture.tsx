@@ -75,7 +75,11 @@ export interface NewPerson {
   readonly password: string;
 }
 
-/** Adds a user through the screen, the way a shop's own administrator would. */
+/**
+ * Adds a user through the screen, the way a shop's own administrator would —
+ * and answers the wizard's second question, which role, with "later": the
+ * person is left holding nothing, as every caller of this expects.
+ */
 export async function enrolUser(shop: OpenShop, person: NewPerson): Promise<void> {
   await shop.person.click(firstButton(catalogue['users.enrol']));
   await shop.person.type(screen.getByLabelText(catalogue['users.new.name']), person.name);
@@ -86,6 +90,9 @@ export async function enrolUser(shop: OpenShop, person: NewPerson): Promise<void
     person.password,
   );
   await shop.person.click(screen.getByRole('button', { name: catalogue['users.new.submit'] }));
+  await shop.person.click(
+    await screen.findByRole('button', { name: catalogue['users.new.role.skip'] }),
+  );
   await screen.findByRole('rowheader', { name: person.name });
 }
 
@@ -97,13 +104,20 @@ export async function enrolUser(shop: OpenShop, person: NewPerson): Promise<void
  * followed by the label — so two selects on one screen cannot be told apart by
  * matching either end of it. The label carries an id and the trigger points at
  * it, which is the association the browser itself uses.
+ *
+ * `within` narrows the search to one part of the page — a dialog, whose
+ * branch field shares its label with the chooser on the screen behind it.
  */
-export async function chooseOption(shop: OpenShop, label: string, option: string): Promise<void> {
-  const trigger = [...globalThis.document.querySelectorAll('button[aria-labelledby]')].find(
-    (candidate) =>
-      (candidate.getAttribute('aria-labelledby') ?? '')
-        .split(/\s+/)
-        .some((id) => globalThis.document.getElementById(id)?.textContent.trim() === label),
+export async function chooseOption(
+  shop: OpenShop,
+  label: string,
+  option: string,
+  within: ParentNode = globalThis.document,
+): Promise<void> {
+  const trigger = [...within.querySelectorAll('button[aria-labelledby]')].find((candidate) =>
+    (candidate.getAttribute('aria-labelledby') ?? '')
+      .split(/\s+/)
+      .some((id) => globalThis.document.getElementById(id)?.textContent.trim() === label),
   );
   if (trigger === undefined) throw new Error(`No select is labelled "${label}".`);
 

@@ -11,7 +11,10 @@ export interface BadgeProps {
 }
 
 const toneClasses: Readonly<Record<BadgeTone, string>> = {
-  neutral: 'bg-fill-secondary text-fg-secondary',
+  // Not `fill-secondary`: in the light theme that resolves to `surface-2`,
+  // the same white as the table row a badge sits in, and the pill vanishes
+  // (`semantic.ts`'s own `badge-neutral`, the switch track's fix reused).
+  neutral: 'bg-badge-neutral text-fg-secondary',
   accent: 'bg-tint-accent text-on-tint-accent',
   success: 'bg-tint-success text-on-tint-success',
   danger: 'bg-tint-danger text-on-tint-danger',

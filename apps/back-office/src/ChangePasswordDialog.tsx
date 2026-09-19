@@ -37,7 +37,8 @@ export function ChangePasswordDialog({
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(isOpen, () => {
     setCurrent('');
@@ -53,12 +54,12 @@ export function ChangePasswordDialog({
     const blank = { current: current === '', next: next === '' };
     setMissing(blank);
     if (blank.current || blank.next) {
-      setRefused(null);
+      reportInvalid();
       return;
     }
     if (next !== confirm) {
       setMismatch(true);
-      setRefused(null);
+      reportInvalid();
       return;
     }
     setMismatch(false);
@@ -98,6 +99,7 @@ export function ChangePasswordDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();

@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+
+import { focusFirstInvalid } from './focusFirstInvalid.js';
 
 /**
  * The state a dialog with a save button keeps regardless of what it saves: a
@@ -21,6 +23,16 @@ export interface Attempt {
    * is never the same twice; only the bookkeeping around it is.
    */
   readonly attempt: (action: () => Promise<string | null>) => Promise<void>;
+  /** Attach to the dialog's own `<form>` — what `reportInvalid` searches. */
+  readonly formRef: RefObject<HTMLFormElement | null>;
+  /**
+   * What a dialog calls instead of `attempt` when its own check — a required
+   * field left blank, a value that failed a local rule — refuses the attempt
+   * before there is a command to send: clears a stale server refusal the
+   * same way a real attempt would, and moves focus to the first field the
+   * caller has just marked invalid.
+   */
+  readonly reportInvalid: () => void;
 }
 
 /**
@@ -43,6 +55,7 @@ export interface Attempt {
 export function useAttempt(active: unknown, onReset: () => void): Attempt {
   const [isWorking, setIsWorking] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Which subject the dialog is on, and which of them has an attempt in flight.
   // Refs, because both are read by an attempt that started renders ago: a save
@@ -87,5 +100,10 @@ export function useAttempt(active: unknown, onReset: () => void): Attempt {
     if (generation.current === mine && message !== null) setRefused(message);
   }
 
-  return { isWorking, refused, setRefused, attempt };
+  function reportInvalid(): void {
+    setRefused(null);
+    focusFirstInvalid(formRef.current);
+  }
+
+  return { isWorking, refused, setRefused, attempt, formRef, reportInvalid };
 }

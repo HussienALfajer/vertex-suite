@@ -199,6 +199,37 @@ describe('<DateTime> — §12', () => {
     wrap(<DateTime value={at} timeZone="Asia/Damascus" />);
     expect(screen.queryByText('مؤقت')).toBeNull();
   });
+
+  it('writes an Arabic date without the direction marks that would reorder it — §9', () => {
+    // `ar` puts a right-to-left mark before each slash. Inside the `ltr` span
+    // the date sits in, those marks are strong characters that pull the year
+    // beside the day and push the slashes to the far end.
+    const marks = [0x200e, 0x200f, 0x061c].map((code) => String.fromCodePoint(code));
+    const { container } = render(
+      <VertexProvider translator={new Translator({ locale: 'ar', catalogue: {} })} root={null}>
+        <DateTime value={at} timeZone="Asia/Damascus" precision="date" />
+      </VertexProvider>,
+    );
+    const text = container.querySelector('[dir="ltr"]')?.textContent ?? '';
+    expect(text).not.toBe('');
+    for (const mark of marks) expect(text.includes(mark)).toBe(false);
+  });
+
+  it('states the zone beside a date unless the caller already names whose day it is', () => {
+    const { container, rerender } = render(
+      <VertexProvider translator={translator} root={null}>
+        <DateTime value={at} timeZone="Asia/Damascus" precision="date" />
+      </VertexProvider>,
+    );
+    expect(container.textContent).toContain('Asia/Damascus');
+
+    rerender(
+      <VertexProvider translator={translator} root={null}>
+        <DateTime value={at} timeZone="Asia/Damascus" precision="date" showZone={false} />
+      </VertexProvider>,
+    );
+    expect(container.textContent).not.toContain('Asia/Damascus');
+  });
 });
 
 describe('<CurrencyRate> — a rate and the day it was set', () => {
@@ -251,6 +282,26 @@ describe('<CurrencyRate> — a rate and the day it was set', () => {
       </VertexProvider>,
     );
     expect(container.textContent).toContain('14,500 SYP / 1 USD');
+  });
+
+  it('dates a rate in its branch’s day without spelling the zone on every row', () => {
+    // A rate is shown under the branch it belongs to — the board it is on, or
+    // the row that names it — so the zone is already said once (§12, v1.13).
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <CurrencyRate
+          rate="14500"
+          currency="SYP"
+          functionalCurrency="USD"
+          asOf={new Date('2026-09-14T22:30:00Z')}
+          timeZone="Asia/Damascus"
+          decimals={0}
+        />
+      </VertexProvider>,
+    );
+    // 22:30 UTC is already the 15th in Damascus.
+    expect(container.textContent).toContain('15');
+    expect(container.textContent).not.toContain('Asia/Damascus');
   });
 
   it('marks a rate that is not today’s', () => {

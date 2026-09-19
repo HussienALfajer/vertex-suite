@@ -6,6 +6,7 @@
   "description": "Administration, purchasing and reporting — the screens a tenant runs its own shop from.",
   "scripts": {
     "dev": "vite",
+    "demo": "vite --mode demo",
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",

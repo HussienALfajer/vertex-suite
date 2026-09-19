@@ -260,3 +260,90 @@ describe('The business profile, when the read has not answered — SYS-05', () =
     });
   });
 });
+
+describe('Leaving a profile with an edit nobody saved — SYS-05', () => {
+  async function anEditedProfile(): Promise<OpenShop> {
+    const shop = await aShopOnItsProfile('مؤسسة الشام');
+    await retype(shop, catalogue['profile.phone'], '021-2345678');
+    await goTo(shop, catalogue['nav.branches']);
+    return shop;
+  }
+
+  it('asks before a link carries an unsaved edit away, and stays when told to', async () => {
+    const shop = await anEditedProfile();
+
+    const question = await screen.findByRole('alertdialog', {
+      name: catalogue['navigation.unsaved.title'],
+    });
+    await shop.person.click(
+      within(question).getByRole('button', { name: catalogue['action.cancel'] }),
+    );
+
+    // Nowhere else, and nothing lost: the edit is exactly as it was typed.
+    expect(globalThis.location.pathname).toBe('/business-profile');
+    expect(screen.getByLabelText<HTMLInputElement>(catalogue['profile.phone']).value).toBe(
+      '021-2345678',
+    );
+  });
+
+  it('leaves without the edit when that is the answer', async () => {
+    const shop = await anEditedProfile();
+
+    const question = await screen.findByRole('alertdialog');
+    await shop.person.click(
+      within(question).getByRole('button', { name: catalogue['navigation.unsaved.discard'] }),
+    );
+
+    await waitFor(() => {
+      expect(globalThis.location.pathname).toBe('/branches');
+    });
+    const [company] = await shop.system.organisation.companies.list();
+    const stored = await shop.system.organisation.profile.read(company!.id);
+    expect(stored?.phone).toBe('');
+  });
+
+  it('saves and then leaves, when that is the answer', async () => {
+    const shop = await anEditedProfile();
+
+    const question = await screen.findByRole('alertdialog');
+    await shop.person.click(
+      within(question).getByRole('button', { name: catalogue['navigation.unsaved.save'] }),
+    );
+
+    await waitFor(() => {
+      expect(globalThis.location.pathname).toBe('/branches');
+    });
+    const [company] = await shop.system.organisation.companies.list();
+    const stored = await shop.system.organisation.profile.read(company!.id);
+    expect(stored?.phone).toBe('021-2345678');
+  });
+
+  it('stays, with the reason on screen, when the save it was asked for is refused', async () => {
+    const shop = await aShopOnItsProfile('مؤسسة الشام');
+    // An identifier with a value and no name is refused before it is sent.
+    await shop.person.click(screen.getByRole('button', { name: catalogue['profile.tax.add'] }));
+    await shop.person.type(screen.getByLabelText(catalogue['profile.tax.value']), '12345');
+    await goTo(shop, catalogue['nav.branches']);
+
+    const question = await screen.findByRole('alertdialog');
+    await shop.person.click(
+      within(question).getByRole('button', { name: catalogue['navigation.unsaved.save'] }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+    expect(globalThis.location.pathname).toBe('/business-profile');
+  });
+
+  it('lets a profile nobody edited be left without a word', async () => {
+    const shop = await aShopOnItsProfile('مؤسسة الشام');
+
+    await goTo(shop, catalogue['nav.branches']);
+
+    await waitFor(() => {
+      expect(globalThis.location.pathname).toBe('/branches');
+    });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});

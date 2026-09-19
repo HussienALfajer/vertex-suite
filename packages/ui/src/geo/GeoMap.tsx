@@ -74,6 +74,59 @@ const FOUND_ZOOM = 16;
 const MOST_MATCHES = 6;
 
 /**
+ * The zoom controls' own surface, on both maps.
+ *
+ * Opaque, because what lies under them is not this product's to know: street
+ * tiles that are light whatever the theme, or — with the line down, which
+ * `SYS-14` treats as ordinary — the shipped outlines, painted in the theme's
+ * own land and water. A control drawn straight onto either reads on one and
+ * vanishes on the other in some theme; on the same raised surface the search
+ * field already sits on, it reads the same everywhere, and follows the theme
+ * like every other control.
+ */
+export const mapControls = clsx(
+  'bg-surface-3 border-line rounded-card absolute z-20 flex flex-col border shadow-md',
+  'gap-[var(--vx-gap-xs)] p-[var(--vx-pad-xs)]',
+);
+
+/**
+ * What sits inside a single marker, so it reads as a place rather than an
+ * unlabelled dot of colour.
+ *
+ * `currentColor` and nothing else: the marker's own background already
+ * carries the active/withdrawn state and inverts with the theme (§4.4), and
+ * an icon that named a colour of its own would stop following it. One glyph
+ * per `PlaceKind` — a storefront for a branch, a crate for a store room —
+ * which is decoration over the shape's own distinction (§4.8) rather than a
+ * replacement for it: the shape still carries the fact for a reader who
+ * cannot resolve the glyph at marker size.
+ */
+function PlaceGlyph({ kind }: { readonly kind: PlaceKind }): ReactNode {
+  const shared = 'h-3.5 w-3.5 fill-none stroke-current';
+  switch (kind) {
+    case 'branch':
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className={shared} strokeWidth="1.5">
+          <path d="M3 8v7.5h14V8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M2.5 8 4 3.5h12l1.5 4.5M2.5 8h15" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M8 15.5V12a2 2 0 0 1 4 0v3.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case 'store':
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className={shared} strokeWidth="1.5">
+          <path
+            d="M3.5 6.5 10 3l6.5 3.5v7L10 17l-6.5-3.5v-7Z"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d="M3.5 6.5 10 10l6.5-3.5M10 10v7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+  }
+}
+
+/**
  * `Number` and not `parseFloat`: the lint bans the latter everywhere, because a
  * business figure must never originate from a float. A coordinate is geometry
  * rather than a figure, and this is the one place it becomes a number at all —
@@ -236,7 +289,11 @@ export function GeoMap({
                       : 'bg-surface-3 text-fg-muted border-line-strong border border-dashed',
                   )}
                 >
-                  {many ? translator.format('map.marker.count', { count: one.members.length }) : ''}
+                  {many ? (
+                    translator.format('map.marker.count', { count: one.members.length })
+                  ) : (
+                    <PlaceGlyph kind={first.kind} />
+                  )}
                 </AriaButton>
               }
             >
@@ -294,7 +351,7 @@ export function GeoMap({
         </div>
       )}
 
-      <div className="absolute end-[var(--vx-pad-md)] bottom-[var(--vx-pad-md)] z-20 flex flex-col gap-[var(--vx-gap-xs)]">
+      <div className={clsx(mapControls, 'end-[var(--vx-pad-md)] bottom-[var(--vx-pad-md)]')}>
         <IconButton
           aria-label={translator.format('map.zoomIn')}
           onPress={() => {

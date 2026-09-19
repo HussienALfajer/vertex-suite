@@ -11,6 +11,7 @@ import {
   Select,
   TextArea,
   TextInput,
+  UnsavedChangesDialog,
   useToast,
   useTranslator,
   type SelectOption,
@@ -18,7 +19,7 @@ import {
 import type { BusinessProfile as Profile, Company, ProfileRevision } from '@vertex/sys/contract';
 
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
-import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
+import { hrefOf, redirect, useNavigateTo, useRoute, useUnsavedChangesGuard } from '../routing.js';
 import { ReadState, StaleBanner } from './structure.js';
 
 /**
@@ -184,14 +185,15 @@ export function BusinessProfile(): ReactNode {
     return { identifiers, problems };
   }
 
-  async function save(): Promise<void> {
-    if (isSaving || chosen === null || !isRead || !isDirty) return;
+  /** Returns whether the save actually went through — what a caller waiting to leave needs to know. */
+  async function save(): Promise<boolean> {
+    if (isSaving || chosen === null || !isRead || !isDirty) return false;
 
     const { identifiers, problems } = collect();
     if (problems.length > 0) {
       setInvalid([...new Set(problems)]);
       setRefused(null);
-      return;
+      return false;
     }
 
     // What changed, and nothing else. `revise` is a patch because two people
@@ -224,10 +226,15 @@ export function BusinessProfile(): ReactNode {
       // The frame shows this name, so a revision has to reach it too.
       reloadStructure();
       toast.show(translator.format('profile.saved'), { tone: 'success' });
-    } else {
-      setRefused(message);
+      return true;
     }
+    setRefused(message);
+    return false;
   }
+
+  // `SYS-05`, generalised: the router asks this before it lets a `SideNav`
+  // click, a breadcrumb, or the tab itself carry a dirty draft away.
+  const leaving = useUnsavedChangesGuard(isDirty, save);
 
   if (companies.length === 0 && !isLoading) {
     return (
@@ -296,6 +303,19 @@ export function BusinessProfile(): ReactNode {
         isOpen={isConfirmingDiscard}
         onOpenChange={setIsConfirmingDiscard}
         onConfirm={discard}
+      />
+
+      <UnsavedChangesDialog
+        title={translator.format('navigation.unsaved.title')}
+        message={translator.format('navigation.unsaved.message')}
+        discardLabel={translator.format('navigation.unsaved.discard')}
+        saveLabel={translator.format('navigation.unsaved.save')}
+        savingLabel={translator.format('navigation.unsaved.saving')}
+        isOpen={leaving.isOpen}
+        isSaving={leaving.isSaving}
+        onCancel={leaving.cancel}
+        onDiscard={leaving.discard}
+        onSave={leaving.save}
       />
 
       <StaleBanner />

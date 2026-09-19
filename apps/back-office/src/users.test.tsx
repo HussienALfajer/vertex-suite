@@ -1,6 +1,8 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { refuse } from '@vertex/kernel';
+
 import { catalogue, createTranslator } from './catalogue.js';
 import { developmentSystem } from './dev-system.js';
 import {
@@ -40,6 +42,19 @@ async function aShopOnUsers(): Promise<OpenShop> {
   const shop = await enterTheShop();
   await goTo(shop, catalogue['nav.users']);
   return shop;
+}
+
+/** Answers the confirmation a withdrawal is asked through. */
+async function confirmWithdrawal(shop: OpenShop): Promise<void> {
+  const question = await screen.findByRole('alertdialog');
+  await shop.person.click(
+    within(question).getByRole('button', { name: catalogue['users.scope.withdraw'] }),
+  );
+}
+
+/** Ticks a role in the scope dialog's list of roles to assign. */
+async function tick(shop: OpenShop, role: string): Promise<void> {
+  await shop.person.click(screen.getByRole('checkbox', { name: role }));
 }
 
 /** The row a person's name is on, found through the cell §11 makes a row header. */
@@ -176,7 +191,7 @@ describe('A cashier added, staffed and working — SEC-01, SEC-04, SEC-09', () =
 
     expect(await screen.findByText(catalogue['users.scope.none'])).toBeTruthy();
 
-    await chooseOption(shop, catalogue['users.scope.role'], catalogue['role.manager']);
+    await tick(shop, catalogue['role.manager']);
     await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
 
     expect(
@@ -194,6 +209,7 @@ describe('A cashier added, staffed and working — SEC-01, SEC-04, SEC-09', () =
     await shop.person.click(
       screen.getByRole('button', { name: catalogue['users.scope.withdraw'] }),
     );
+    await confirmWithdrawal(shop);
     expect(await screen.findByText(catalogue['users.scope.none'])).toBeTruthy();
   });
 
@@ -212,7 +228,7 @@ describe('A cashier added, staffed and working — SEC-01, SEC-04, SEC-09', () =
     await shop.person.click(
       within(rowFor('أحمد')).getByRole('button', { name: catalogue['users.scope.action'] }),
     );
-    await chooseOption(shop, catalogue['users.scope.role'], catalogue['role.cashier']);
+    await tick(shop, catalogue['role.cashier']);
     await chooseOption(shop, catalogue['users.scope.reach'], catalogue['users.scope.someBranches']);
     await shop.person.click(screen.getByRole('checkbox', { name: 'حلب' }));
     await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
@@ -233,7 +249,7 @@ describe('A cashier added, staffed and working — SEC-01, SEC-04, SEC-09', () =
     await shop.person.click(
       within(rowFor('أحمد')).getByRole('button', { name: catalogue['users.scope.action'] }),
     );
-    await chooseOption(shop, catalogue['users.scope.role'], catalogue['role.cashier']);
+    await tick(shop, catalogue['role.cashier']);
     await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
     await screen.findByText(
       say.format('users.scope.assigned', { name: 'أحمد', role: catalogue['role.cashier'] }),
@@ -323,5 +339,210 @@ describe('A person’s roles, when the read has not answered — SEC-09', () => 
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText(catalogue['data.unreachable'])).toBeTruthy();
     expect(within(dialog).queryByText(catalogue['users.scope.none'])).toBeNull();
+  });
+});
+
+describe('Adding a person and giving them a role in one go — SEC-09, SEC-01', () => {
+  async function addAhmad(shop: OpenShop): Promise<void> {
+    await shop.person.click(firstButton(catalogue['users.enrol']));
+    await shop.person.type(screen.getByLabelText(catalogue['users.new.name']), 'أحمد');
+    await shop.person.type(screen.getByLabelText(catalogue['users.new.handle']), 'ahmad');
+    await shop.person.type(
+      screen.getByLabelText(catalogue['users.new.password']),
+      'till-morning-1',
+    );
+    await shop.person.type(
+      screen.getByLabelText(catalogue['users.new.password.confirm']),
+      'till-morning-1',
+    );
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.new.submit'] }));
+  }
+
+  it('asks for the new person’s role straight after adding them, and gives it', async () => {
+    const shop = await aShopOnUsers();
+    await addAhmad(shop);
+
+    // `enrol` has already happened; the second step names who it is about.
+    expect(
+      await screen.findByRole('dialog', {
+        name: say.format('users.new.role.title', { name: 'أحمد' }),
+      }),
+    ).toBeTruthy();
+    await tick(shop, catalogue['role.cashier']);
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
+
+    expect(
+      await screen.findByText(
+        say.format('users.scope.assigned', { name: 'أحمد', role: catalogue['role.cashier'] }),
+      ),
+    ).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await shop.person.click(
+      within(rowFor('أحمد')).getByRole('button', { name: catalogue['users.scope.action'] }),
+    );
+    expect(
+      await screen.findByRole('button', { name: catalogue['users.scope.withdraw'] }),
+    ).toBeTruthy();
+  });
+
+  it('leaves the person added and holding nothing when their role is put off', async () => {
+    const shop = await aShopOnUsers();
+    await addAhmad(shop);
+
+    await shop.person.click(
+      await screen.findByRole('button', { name: catalogue['users.new.role.skip'] }),
+    );
+
+    // Two commands, two outcomes: the enrolment stands, and nothing was assigned.
+    expect(await screen.findByRole('rowheader', { name: 'أحمد' })).toBeTruthy();
+    await shop.person.click(
+      within(rowFor('أحمد')).getByRole('button', { name: catalogue['users.scope.action'] }),
+    );
+    expect(await screen.findByText(catalogue['users.scope.none'])).toBeTruthy();
+  });
+
+  it('asks for at least one role rather than assigning none', async () => {
+    const shop = await aShopOnUsers();
+    await addAhmad(shop);
+    await screen.findByRole('button', { name: catalogue['users.new.role.skip'] });
+
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
+
+    expect(await screen.findByText(catalogue['users.scope.role.required'])).toBeTruthy();
+    // And the person is put where the answer goes, as every refused field does.
+    const [firstRole] = screen.getAllByRole('checkbox');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(firstRole);
+    });
+  });
+});
+
+describe('Several roles, one reach, and changing it in place — SEC-01, SEC-04', () => {
+  async function openScopeOfAhmad(shop: OpenShop): Promise<void> {
+    await enrolUser(shop, { handle: 'ahmad', name: 'أحمد', password: 'till-morning-1' });
+    await shop.person.click(
+      within(rowFor('أحمد')).getByRole('button', { name: catalogue['users.scope.action'] }),
+    );
+    await screen.findByText(catalogue['users.scope.none']);
+  }
+
+  it('assigns every role ticked under the one reach chosen for them', async () => {
+    const shop = await aShopOnUsers();
+    await openScopeOfAhmad(shop);
+
+    await tick(shop, catalogue['role.cashier']);
+    await tick(shop, catalogue['role.floor-supervisor']);
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
+
+    // Named in the order the shop's roles are listed, whatever order they
+    // were ticked in.
+    const both = new Intl.ListFormat('ar', { style: 'long', type: 'conjunction' }).format([
+      catalogue['role.floor-supervisor'],
+      catalogue['role.cashier'],
+    ]);
+    expect(
+      await screen.findByText(
+        say.format('users.scope.assignedMany', { name: 'أحمد', roles: both }),
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: catalogue['users.scope.withdraw'] })).toHaveLength(
+      2,
+    );
+  });
+
+  it('changes a held role’s reach in place, rather than holding it twice', async () => {
+    const shop = await enterTheShop();
+    await registerCompany(shop, 'مؤسسة الشام');
+    await goTo(shop, catalogue['nav.branches']);
+    await shop.person.click(firstButton(catalogue['branches.open']));
+    await shop.person.type(screen.getByLabelText(catalogue['branches.new.name']), 'حلب');
+    await shop.person.click(screen.getByRole('button', { name: catalogue['branches.new.submit'] }));
+    await screen.findByRole('rowheader', { name: 'حلب' });
+    await goTo(shop, catalogue['nav.users']);
+    await openScopeOfAhmad(shop);
+
+    await tick(shop, catalogue['role.cashier']);
+    await chooseOption(shop, catalogue['users.scope.reach'], catalogue['users.scope.someBranches']);
+    await shop.person.click(screen.getByRole('checkbox', { name: 'حلب' }));
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
+    await screen.findByRole('button', { name: catalogue['users.scope.editReach'] });
+
+    // The shortcut fills the form with this assignment as it stands…
+    await shop.person.click(
+      screen.getByRole('button', { name: catalogue['users.scope.editReach'] }),
+    );
+    await chooseOption(shop, catalogue['users.scope.reach'], catalogue['users.scope.tenantWide']);
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
+
+    // …and `assign` replaces a held role's reach rather than adding a second
+    // assignment beside it.
+    await waitFor(() => {
+      expect(screen.getAllByText(catalogue['users.scope.tenantWide']).length).toBeGreaterThan(1);
+    });
+    expect(screen.getAllByRole('button', { name: catalogue['users.scope.withdraw'] })).toHaveLength(
+      1,
+    );
+  });
+
+  it('asks before withdrawing a role, and keeps it when the answer is no', async () => {
+    const shop = await aShopOnUsers();
+    await openScopeOfAhmad(shop);
+    await tick(shop, catalogue['role.cashier']);
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
+    await shop.person.click(
+      await screen.findByRole('button', { name: catalogue['users.scope.withdraw'] }),
+    );
+
+    const question = await screen.findByRole('alertdialog');
+    await shop.person.click(
+      within(question).getByRole('button', { name: catalogue['action.cancel'] }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+    expect(screen.getByRole('button', { name: catalogue['users.scope.withdraw'] })).toBeTruthy();
+  });
+
+  it('keeps what went through when a later role is refused, and leaves only the rest ticked', async () => {
+    // A refusal part-way through: the first role is assigned — one commit of
+    // its own — and must be listed as held, not hidden behind the refusal of
+    // the second.
+    const base = developmentSystem({ people: PEOPLE });
+    let refusedRole: string | null = null;
+    const system: SystemOfRecord = {
+      ...base,
+      users: {
+        ...base.users,
+        assignments: {
+          ...base.users.assignments,
+          assign: (input) =>
+            input.role === refusedRole
+              ? Promise.resolve(refuse('sec.role-withdrawn', {}))
+              : base.users.assignments.assign(input),
+        },
+      },
+    };
+    const shop = await enterTheShop(system);
+    await goTo(shop, catalogue['nav.users']);
+    await openScopeOfAhmad(shop);
+    const roles = await base.users.roles.list();
+    refusedRole = roles.find((one) => one.seeded === 'floor-supervisor')?.id ?? null;
+
+    await tick(shop, catalogue['role.cashier']);
+    await tick(shop, catalogue['role.floor-supervisor']);
+    await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
+
+    expect(await screen.findByText(catalogue['refusal.sec.role-withdrawn'])).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole('button', { name: catalogue['users.scope.withdraw'] }),
+      ).toHaveLength(1);
+    });
+    expect(
+      screen.getByRole('checkbox', { name: catalogue['role.floor-supervisor'] }),
+    ).toHaveProperty('checked', true);
   });
 });

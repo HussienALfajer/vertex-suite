@@ -8,6 +8,7 @@ import {
   DataTable,
   Dialog,
   EmptyState,
+  FormatBuilder,
   PageHeader,
   Panel,
   SearchInput,
@@ -19,21 +20,22 @@ import {
   useToast,
   useTranslator,
   type DataTableColumn,
+  type FormatBuilderMark,
   type SelectOption,
 } from '@vertex/ui';
 import type { Result } from '@vertex/kernel';
-import {
-  NUMBERING_FIELDS,
-  type Branch,
-  type NumberingRefusal,
-  type NumberingSpecimen,
-  type Register,
-  type SeriesScope,
+import type {
+  Branch,
+  NumberingRefusal,
+  NumberingSpecimen,
+  Register,
+  SeriesScope,
 } from '@vertex/sys/contract';
 
 import { messageForRefusal } from '../catalogue.js';
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
-import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
+import { useNavigateTo } from '../routing.js';
+import { branchColumn, branchesIn, scopedMessage, ScopeFilters, useBranchScope } from './scope.js';
 import { FormatIcon, ReadState, StaleBanner, matchesQuery } from './structure.js';
 
 /**
@@ -52,11 +54,11 @@ import { FormatIcon, ReadState, StaleBanner, matchesQuery } from './structure.js
  * the answer out for itself would hold a second copy of the code that prints on
  * every receipt in the shop, and the copy would be the one that goes stale.
  *
- * The **branch** is in the address, because the list cannot be read without one
- * and because that makes what somebody is looking at a thing they can send to a
- * colleague. The **till** is an ordinary filter in this component's state: it
- * narrows a list that is already on screen rather than deciding what the screen
- * is about.
+ * One branch's series, or every branch's at once (`scope.tsx`). The **till**
+ * is an ordinary filter in this component's state rather than in the address:
+ * it narrows a list already on screen rather than deciding what the screen is
+ * about. Defining a series asks which branch in the dialog itself, so it is
+ * never blocked on the listing being filtered to the right one first.
  */
 
 /** Stands for "every till" in the filter. No identifier can collide with it. */
@@ -73,8 +75,11 @@ const NO_REGISTER = '-';
  * A key for a row, which is what the scope already is.
  *
  * `SYS` keys a series by these four parts and nothing else, so two rows share a
- * key exactly when they are the same series — and the branch is common to every
- * row on this screen, so three of them are enough.
+ * key exactly when they are the same series. The branch is included even
+ * though a single-branch view never needs it to disambiguate, because "كل فروع
+ * المتجر" lays rows from every branch in the same table, and a document type,
+ * till and fiscal year that repeat in two branches must not collide into one
+ * row key.
  *
  * **Each part is encoded, and the reason is the DOM rather than ambiguity.** A
  * row key reaches the page inside the `id` of the elements React Aria builds
@@ -84,7 +89,7 @@ const NO_REGISTER = '-';
  * `SYS` does to its own key and for the same second reason.
  */
 function keyOf(scope: SeriesScope): string {
-  return [scope.documentType, scope.register ?? '', scope.fiscalYear]
+  return [scope.branch, scope.documentType, scope.register ?? '', scope.fiscalYear]
     .map(encodeURIComponent)
     .join('|');
 }
@@ -99,50 +104,46 @@ interface SeriesRow {
 export function Numbering(): ReactNode {
   const translator = useTranslator();
   const goTo = useNavigateTo();
-  const route = useRoute();
-  const { branches, isLoading, unreachable, ofRecord } = useOrganisation();
+  const { branches: everyBranch, isLoading, unreachable, ofRecord } = useOrganisation();
+  const scope = useBranchScope('numbering');
+  const { branches, openBranches, chosen, isAllBranches } = scope;
 
   const [query, setQuery] = useState('');
   const [tillFilter, setTillFilter] = useState<string>(EVERY_REGISTER);
   const [isDefining, setIsDefining] = useState(false);
   const [revising, setRevising] = useState<NumberingSpecimen | null>(null);
 
-  const openBranches = useMemo(() => branches.filter((one) => one.active), [branches]);
-  const chosen = useMemo(
-    () => branches.find((one) => one.id === route.subject) ?? null,
-    [branches, route.subject],
-  );
-
-  useEffect(() => {
-    if (chosen !== null || branches.length === 0) return;
-    const first = openBranches[0] ?? branches[0];
-    if (first !== undefined) redirect(hrefOf('numbering', first.id));
-  }, [chosen, branches, openBranches]);
-
   // A till belongs to one branch, so a filter naming one means nothing in the
   // branch next door: it would match no series at all, and the control holding
   // it would show no value — an empty list with nothing on screen explaining
-  // it. Cleared here rather than in the branch chooser, because the branch also
-  // changes from the address bar, which no control sees.
+  // it. Cleared whenever the branches shown change — from the chooser, the
+  // address bar, which no control sees, or the company filter.
   useEffect(() => {
     setTillFilter(EVERY_REGISTER);
-  }, [chosen?.id]);
+  }, [scope.subject]);
 
+  // Every series names its own branch in its scope, which is what lets the
+  // aggregate's rows be told apart without a wrapper to carry it.
   const readSeries = useCallback(
-    (branch: Branch['id']) => ofRecord.numbering.configured(branch),
+    (subject: string): Promise<readonly NumberingSpecimen[]> =>
+      Promise.all(branchesIn(subject).map((branch) => ofRecord.numbering.configured(branch))).then(
+        (lists) => lists.flat(),
+      ),
     [ofRecord],
   );
-  const series = useLoaded(chosen?.id ?? null, readSeries);
+  const series = useLoaded(scope.subject, readSeries);
 
-  // The tills of this branch, read here as well as on their own screen. A scope
-  // holds a register's identifier and nothing else — `SYS` has no business
-  // knowing what a screen wants to call it — so the names have to come from
-  // somewhere, and this is the screen that needs them.
+  // The tills of the branches shown, read here as well as on their own
+  // screen. A scope holds a till's identifier and nothing else — `SYS` has no
+  // business knowing what a screen calls it — so the names come from here.
   const readRegisters = useCallback(
-    (branch: Branch['id']) => ofRecord.registers.list(branch, { including: 'all' }),
+    (subject: string): Promise<readonly Register[]> =>
+      Promise.all(
+        branchesIn(subject).map((branch) => ofRecord.registers.list(branch, { including: 'all' })),
+      ).then((lists) => lists.flat()),
     [ofRecord],
   );
-  const registers = useLoaded(chosen?.id ?? null, readRegisters);
+  const registers = useLoaded(scope.subject, readRegisters);
   const tills = useMemo(() => registers.value ?? [], [registers.value]);
 
   // The two reads start together and settle apart, and until the second one
@@ -191,7 +192,7 @@ export function Numbering(): ReactNode {
   );
 
   /**
-   * The years this branch already numbers under.
+   * The years the branches shown already number under.
    *
    * Offered as the starting value for a new series, and taken from the shop's
    * own data rather than from a clock — nothing in this product reads the
@@ -226,6 +227,12 @@ export function Numbering(): ReactNode {
       // as words, and it is never translated.
       render: (row) => <Code>{row.series.scope.documentType}</Code>,
     },
+    ...branchColumn<SeriesRow>(
+      scope,
+      translator.format('numbering.column.branch'),
+      (row) => row.series.scope.branch,
+      150,
+    ),
     {
       id: 'register',
       header: translator.format('numbering.column.register'),
@@ -277,7 +284,9 @@ export function Numbering(): ReactNode {
     },
   ];
 
-  if (branches.length === 0 && unreachable) {
+  // Asked of the whole tenant rather than of the company filtered to, which may
+  // have no branches without the shop having none.
+  if (everyBranch.length === 0 && unreachable) {
     return (
       <>
         <PageHeader
@@ -289,7 +298,7 @@ export function Numbering(): ReactNode {
     );
   }
 
-  if (branches.length === 0 && !isLoading) {
+  if (everyBranch.length === 0 && !isLoading) {
     return (
       <>
         <PageHeader
@@ -315,20 +324,25 @@ export function Numbering(): ReactNode {
     );
   }
 
-  const branchOptions: readonly SelectOption[] = branches.map((one) => ({
-    id: one.id,
-    label: one.name,
-  }));
-
   const tillOptions: readonly SelectOption[] = [
     { id: EVERY_REGISTER, label: translator.format('numbering.filter.allRegisters') },
     { id: NO_REGISTER, label: translator.format('numbering.register.none') },
-    ...tills.map((one) => ({
-      id: one.id,
-      label: one.active
+    ...tills.map((one) => {
+      const name = one.active
         ? one.name
-        : translator.format('numbering.register.withdrawn', { name: one.name }),
-    })),
+        : translator.format('numbering.register.withdrawn', { name: one.name });
+      // Across branches, two tills may well share a name — every shop has a
+      // "till by the door" — so the aggregate says whose each one is.
+      return {
+        id: one.id,
+        label: isAllBranches
+          ? translator.format('numbering.register.inBranch', {
+              register: name,
+              branch: scope.nameOf(one.branch),
+            })
+          : name,
+      };
+    }),
   ];
 
   return (
@@ -339,7 +353,7 @@ export function Numbering(): ReactNode {
         actions={
           <Button
             tone="primary"
-            isDisabled={chosen === null}
+            isDisabled={openBranches.length === 0}
             onPress={() => {
               setIsDefining(true);
             }}
@@ -366,16 +380,7 @@ export function Numbering(): ReactNode {
           onChange={setQuery}
           className="w-[18rem] max-w-full"
         />
-        <Select
-          label={translator.format('numbering.branch')}
-          placeholder={translator.format('numbering.branch.placeholder')}
-          options={branchOptions}
-          value={chosen?.id ?? null}
-          onChange={(key) => {
-            redirect(hrefOf('numbering', String(key)));
-          }}
-          className="w-[16rem] max-w-full"
-        />
+        <ScopeFilters scope={scope} screen="numbering" />
         <Select
           label={translator.format('numbering.filter.register')}
           options={tillOptions}
@@ -391,12 +396,12 @@ export function Numbering(): ReactNode {
       <ReadState loaded={registers} />
       {series.unreachable ? null : (series.value ?? []).length === 0 && !series.isLoading ? (
         <EmptyState
-          message={translator.format('numbering.empty')}
+          message={scopedMessage(translator, scope, 'numbering.empty')}
           description={translator.format('numbering.empty.explanation')}
           action={
             <Button
               tone="primary"
-              isDisabled={chosen === null}
+              isDisabled={openBranches.length === 0}
               onPress={() => {
                 setIsDefining(true);
               }}
@@ -416,43 +421,49 @@ export function Numbering(): ReactNode {
         </Panel>
       )}
 
-      {chosen === null ? null : (
-        <>
-          <SeriesDialog
-            branch={chosen}
-            registers={tills}
-            subject={null}
-            years={years}
-            isOpen={isDefining}
-            onOpenChange={setIsDefining}
-            onSaved={series.reload}
-          />
-          <SeriesDialog
-            branch={chosen}
-            registers={tills}
-            subject={revising}
-            years={years}
-            isOpen={revising !== null}
-            onOpenChange={(isOpen) => {
-              if (!isOpen) setRevising(null);
-            }}
-            onSaved={() => {
-              setRevising(null);
-              series.reload();
-            }}
-          />
-        </>
-      )}
+      <SeriesDialog
+        branches={branches}
+        openBranches={openBranches}
+        preferred={chosen?.id ?? null}
+        registers={tills}
+        subject={null}
+        years={years}
+        isOpen={isDefining}
+        onOpenChange={setIsDefining}
+        onSaved={series.reload}
+      />
+      <SeriesDialog
+        branches={branches}
+        openBranches={openBranches}
+        preferred={chosen?.id ?? null}
+        registers={tills}
+        subject={revising}
+        years={years}
+        isOpen={revising !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setRevising(null);
+        }}
+        onSaved={() => {
+          setRevising(null);
+          series.reload();
+        }}
+      />
     </>
   );
 }
 
 interface SeriesDialogProps {
-  readonly branch: Branch;
+  /** Every branch the screen is filtered to — active or not, for naming a series being revised. */
+  readonly branches: readonly Branch[];
+  /** The branches a series may be **defined** in — active ones, `Branches.tsx`'s own rule. */
+  readonly openBranches: readonly Branch[];
+  /** The branch the listing is filtered to, which is the one somebody most likely means. Null for the aggregate. */
+  readonly preferred: Branch['id'] | null;
+  /** Every register of every branch in `branches`, filtered to whichever branch is picked. */
   readonly registers: readonly Register[];
   /** The series being revised, or null when one is being defined. */
   readonly subject: NumberingSpecimen | null;
-  /** The years this branch already numbers under: what a second series most likely wants. */
+  /** The years already numbered under, across `branches`: what a second series most likely wants. */
   readonly years: readonly string[];
   readonly isOpen: boolean;
   readonly onOpenChange: (isOpen: boolean) => void;
@@ -473,9 +484,21 @@ interface SeriesDialogProps {
  * of the dialog: `{prefix}-{generation}-{year}-{sequence:6}` is unreadable, and
  * what it prints is not — and the second is what ends up on a document nobody
  * can reprint.
+ *
+ * **The branch is chosen here rather than assumed from the listing**, the same
+ * shape `NewLocationDialog` (`Locations.tsx`) and `NewRegisterDialog`
+ * (`Registers.tsx`) pick one in: a series belongs to one branch permanently, so
+ * the dialog needs an answer regardless of whether the screen behind it is
+ * filtered to that branch, to a different one, or to "كل فروع المتجر" — and
+ * defaulting it from the filter when the filter names a branch this list
+ * actually offers is what keeps the ordinary case a single click. Fixed rather
+ * than offered when revising, for the same reason the other three parts of the
+ * scope are: it is part of the series' identity, not a field somebody edits.
  */
 function SeriesDialog({
-  branch,
+  branches,
+  openBranches,
+  preferred,
   registers,
   subject,
   years,
@@ -488,6 +511,12 @@ function SeriesDialog({
   const { run, ofRecord } = useOrganisation();
   const messageFor = useDeliveryMessage();
 
+  const only = openBranches.length === 1 ? (openBranches[0] ?? null) : null;
+  // The record rather than its identifier, so that what is handed to the
+  // command is a branch this shop actually has open — `NewLocationDialog`'s own
+  // reason for resolving a branch the same way. Only meaningful while defining:
+  // revising reads its branch straight off the subject's own scope instead.
+  const [branch, setBranch] = useState<Branch | null>(null);
   const [documentType, setDocumentType] = useState('');
   const [till, setTill] = useState<string>(NO_REGISTER);
   const [fiscalYear, setFiscalYear] = useState('');
@@ -505,31 +534,59 @@ function SeriesDialog({
    * what the product does when nobody has.
    */
   const [suggested, setSuggested] = useState<{ format: string; isDefault: boolean } | null>(null);
-  const [missing, setMissing] = useState({ documentType: false, fiscalYear: false, format: false });
+  const [missing, setMissing] = useState({
+    branch: false,
+    documentType: false,
+    fiscalYear: false,
+    format: false,
+  });
 
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(subject ?? isOpen, () => {
+    // A shop with one open branch never answers this question; a listing
+    // filtered to one branch has already answered it.
+    setBranch(
+      subject !== null ? null : (only ?? openBranches.find((one) => one.id === preferred) ?? null),
+    );
     setDocumentType(subject?.scope.documentType ?? '');
     setTill(subject?.scope.register ?? NO_REGISTER);
-    // The last year this branch numbers under, which is the one a second series
+    // The last year already numbered under, which is the one a second series
     // almost always belongs to. Empty in a shop that has configured nothing.
     setFiscalYear(subject?.scope.fiscalYear ?? years.at(-1) ?? '');
     setFormat(subject?.format ?? '');
     setSuggested(null);
-    setMissing({ documentType: false, fiscalYear: false, format: false });
+    setMissing({ branch: false, documentType: false, fiscalYear: false, format: false });
     // Asked again on every opening. The next number moves whenever a document
     // is issued, and reopening the same series asks the same question — which
     // a read keyed on the question does not ask twice.
     preview.reload();
   });
 
+  // Revising reads its branch off the subject's own scope, straight from
+  // `branches` rather than `openBranches` — a series defined while its branch
+  // was open keeps its scope after the branch is withdrawn, and this dialog
+  // still has to say whose it is.
+  const revisingBranch = useMemo(
+    () =>
+      subject === null ? null : (branches.find((one) => one.id === subject.scope.branch) ?? null),
+    [subject, branches],
+  );
+  const branchId = subject === null ? (branch?.id ?? null) : subject.scope.branch;
+
   // The record rather than the key out of the listbox, so what is put in the
-  // scope is a till this branch actually has.
-  const picked = useMemo(() => registers.find((one) => one.id === till) ?? null, [registers, till]);
+  // scope is a till the picked branch actually has — filtered by it rather
+  // than trusted, because `registers` may hold every filtered branch's tills
+  // at once (the aggregate's own list), and a till of the branch next door is
+  // not this series' to take.
+  const picked = useMemo(
+    () => registers.find((one) => one.id === till && one.branch === branchId) ?? null,
+    [registers, till, branchId],
+  );
 
   /**
    * What is being asked about, or null while the question is incomplete.
@@ -540,14 +597,14 @@ function SeriesDialog({
    */
   const scope = useMemo((): SeriesScope | null => {
     if (subject !== null) return subject.scope;
-    if (documentType.trim() === '' || fiscalYear.trim() === '') return null;
+    if (branch === null || documentType.trim() === '' || fiscalYear.trim() === '') return null;
     return {
       documentType: documentType.trim(),
       branch: branch.id,
       register: picked?.id ?? null,
       fiscalYear: fiscalYear.trim(),
     };
-  }, [subject, documentType, fiscalYear, branch.id, picked]);
+  }, [subject, branch, documentType, fiscalYear, picked]);
 
   const proposed = format.trim();
 
@@ -607,13 +664,14 @@ function SeriesDialog({
     if (isWorking) return;
 
     const blank = {
+      branch: subject === null && branch === null,
       documentType: subject === null && documentType.trim() === '',
       fiscalYear: subject === null && fiscalYear.trim() === '',
       format: proposed === '',
     };
     setMissing(blank);
-    if (scope === null || blank.documentType || blank.fiscalYear || blank.format) {
-      setRefused(null);
+    if (scope === null || blank.branch || blank.documentType || blank.fiscalYear || blank.format) {
+      reportInvalid();
       return;
     }
 
@@ -638,12 +696,51 @@ function SeriesDialog({
 
   const tillOptions: readonly SelectOption[] = [
     { id: NO_REGISTER, label: translator.format('numbering.register.none') },
-    ...registers.map((one) => ({
-      id: one.id,
-      label: one.active
-        ? one.name
-        : translator.format('numbering.register.withdrawn', { name: one.name }),
-    })),
+    ...registers
+      .filter((one) => one.branch === branchId)
+      .map((one) => ({
+        id: one.id,
+        label: one.active
+          ? one.name
+          : translator.format('numbering.register.withdrawn', { name: one.name }),
+      })),
+  ];
+
+  const branchOptions: readonly SelectOption[] = openBranches.map((one) => ({
+    id: one.id,
+    label: one.name,
+  }));
+
+  // The marks this series' format must carry. A till's two marks come
+  // together or not at all — `SYS-02` requires them the moment a till is
+  // picked and refuses them without one — so they are never a person's to add
+  // or leave out, only to place. In `SYS`'s own default order, so the cards a
+  // new series starts from are already the arrangement it would suggest.
+  //
+  // Read off `picked` rather than off the revised series' scope: `useAttempt`
+  // resets `till` and `format` together, a render after `subject` changes, and
+  // taking the marks from `subject` would hand `FormatBuilder` the new series'
+  // marks one render before its format — which it would normalise, and
+  // report, as if somebody had edited it.
+  const hasRegister = picked !== null;
+  const marks: readonly FormatBuilderMark[] = [
+    ...(hasRegister
+      ? [
+          { id: 'prefix', label: translator.format('numbering.mark.prefix') },
+          {
+            id: 'generation',
+            label: translator.format('numbering.mark.generation'),
+            paddable: true,
+          },
+        ]
+      : []),
+    { id: 'year', label: translator.format('numbering.mark.year') },
+    {
+      id: 'sequence',
+      label: translator.format('numbering.mark.sequence'),
+      paddable: true,
+      defaultWidth: 6,
+    },
   ];
 
   return (
@@ -651,7 +748,10 @@ function SeriesDialog({
       title={translator.format(subject === null ? 'numbering.new.title' : 'numbering.revise.title')}
       isOpen={isOpen}
       onOpenChange={onOpenChange}
-      className="max-w-[40rem]"
+      // Wider than the `40rem` the other dialogs use: a till's series carries
+      // four cards, and a format wrapped onto two lines reads as a format
+      // interrupted. With room to spare for a tenant's longer labels.
+      className="max-w-[52rem]"
       footer={
         <>
           <Button
@@ -675,6 +775,7 @@ function SeriesDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();
@@ -685,6 +786,27 @@ function SeriesDialog({
 
         {subject === null ? (
           <>
+            <Select
+              label={translator.format('numbering.branch')}
+              placeholder={translator.format('numbering.branch.placeholder')}
+              options={branchOptions}
+              value={branch?.id ?? null}
+              onChange={(key) => {
+                setBranch(openBranches.find((one) => one.id === key) ?? null);
+                setMissing((was) => ({ ...was, branch: false }));
+                // A till belongs to one branch, and a format suggested for the
+                // previous one may no longer even parse for this one — the same
+                // reset the till field's own `onChange` already does when it
+                // changes the shape of the series out from under a suggestion.
+                setTill(NO_REGISTER);
+                setFormat('');
+                setSuggested(null);
+              }}
+              isRequired
+              {...(missing.branch
+                ? { errorMessage: translator.format('numbering.new.branch.required') }
+                : {})}
+            />
             <TextInput
               label={translator.format('numbering.documentType')}
               description={translator.format('numbering.documentType.description')}
@@ -749,6 +871,10 @@ function SeriesDialog({
                 into it. */}
             <dl className="bg-surface-2 border-line flex flex-col gap-[var(--vx-gap-xs)] rounded border p-[var(--vx-pad-md)]">
               <ScopeLine
+                label={translator.format('numbering.branch')}
+                value={revisingBranch?.name ?? translator.format('data.unknown')}
+              />
+              <ScopeLine
                 label={translator.format('numbering.documentType')}
                 value={subject.scope.documentType}
                 isCode
@@ -771,17 +897,15 @@ function SeriesDialog({
           </>
         )}
 
-        <TextInput
+        <FormatBuilder
           label={translator.format('numbering.format')}
           description={translator.format('numbering.format.description')}
+          marks={marks}
           value={format}
           onChange={(next) => {
             setFormat(next);
             setMissing((was) => ({ ...was, format: false }));
           }}
-          isRequired
-          isMachineText
-          {...(subject === null ? {} : { autoFocus: true })}
           {...(missing.format
             ? { errorMessage: translator.format('numbering.format.required') }
             : {})}
@@ -790,15 +914,26 @@ function SeriesDialog({
         {/* Said about the **field** rather than about the specimen, because it
             is a fact about where the text came from: this is what the product
             prints when nobody has decided otherwise, and it stops being true
-            the moment somebody edits it. */}
-        {isUntouchedDefault ? (
-          <p className="text-footnote text-fg-muted">
-            {translator.format('numbering.specimen.default')}
-          </p>
-        ) : null}
+            the moment somebody edits it. Hidden rather than removed when it
+            does, so the first edit does not also shrink the dialog under the
+            person making it. */}
+        <p
+          className={
+            isUntouchedDefault
+              ? 'text-footnote text-fg-muted'
+              : 'text-footnote text-fg-muted invisible'
+          }
+        >
+          {translator.format('numbering.specimen.default')}
+        </p>
 
-        <Marks />
-        <Specimen isAsked={asked !== null} isUnreachable={preview.unreachable} shown={shown} />
+        {/* A floor under the specimen's four shapes — a line of waiting, a
+            refusal, a box of several lines. A dialog is centred by its own
+            height, and without it the whole dialog jumps on every edit that
+            crosses between a format that prints and one that does not. */}
+        <div className="min-h-36">
+          <Specimen isAsked={asked !== null} isUnreachable={preview.unreachable} shown={shown} />
+        </div>
 
         <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
       </form>
@@ -820,35 +955,6 @@ function ScopeLine({
     <div className="flex items-baseline justify-between gap-[var(--vx-gap-md)]">
       <dt className="text-footnote text-fg-muted">{label}</dt>
       <dd className="text-footnote text-fg">{isCode ? <Code>{value}</Code> : value}</dd>
-    </div>
-  );
-}
-
-/**
- * What a format may be made of.
- *
- * The marks come from `SYS`, which owns the grammar; what each one means is
- * prose and comes from this application's catalogue. A list written out here
- * would keep working while the grammar moved under it, and the first anybody
- * would know is an administrator typing a mark that is refused.
- */
-function Marks(): ReactNode {
-  const translator = useTranslator();
-  return (
-    <div className="flex flex-col gap-[var(--vx-gap-xs)]">
-      <span className="text-footnote font-body-medium text-fg-secondary">
-        {translator.format('numbering.marks')}
-      </span>
-      <ul className="flex flex-col gap-[var(--vx-gap-xs)]">
-        {NUMBERING_FIELDS.map((field) => (
-          <li key={field} className="text-footnote text-fg-muted flex gap-[var(--vx-gap-sm)]">
-            {/* The braces are the grammar's own punctuation, written in the one
-                place that composes a mark for display. */}
-            <Code className="text-fg-secondary shrink-0">{`{${field}}`}</Code>
-            <span>{translator.format(`numbering.field.${field}`)}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

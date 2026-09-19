@@ -50,13 +50,12 @@ export function CurrencyRate({
 
   return (
     <span
-      // Wraps rather than forcing one unbreakable line: the date carries the
-      // zone as literal text (`<DateTime precision="date">`), which has no
-      // upper bound — `Asia/Damascus` and
-      // `America/Argentina/Buenos_Aires` are both real IANA names, and a
-      // column sized for the first would spill the second into whatever sits
-      // beside it. Wrapping is the one behaviour every column width is safe
-      // under; a narrow one costs a second line rather than overlapping text.
+      // Wraps rather than forcing one unbreakable line: a rate carried to
+      // several places, both currency codes, a date and the "not today" mark
+      // have no upper bound between them, and a column sized for the common
+      // case would spill the uncommon one into whatever sits beside it.
+      // Wrapping is the one behaviour every column width is safe under; a
+      // narrow one costs a second line rather than overlapping text.
       className={clsx('inline-flex flex-wrap items-baseline gap-[0.4em] tabular-nums', className)}
       // §12, as `Money` has it: a rate displayed at less precision than it is
       // carried — which rates always are — is marked, and its full value is kept.
@@ -71,7 +70,19 @@ export function CurrencyRate({
         ) : null}{' '}
         {currency} / {one} {functionalCurrency}
       </span>
-      <DateTime value={asOf} timeZone={timeZone} precision="date" className="text-fg-muted" />
+      {/*
+        The day is still the branch's own — `timeZone` decides which calendar
+        day `asOf` falls on — but the zone's name is not spelled beside it: a
+        rate is always shown under the branch it belongs to, and "Asia/Damascus"
+        on every row of a board says nothing a column of figures needs told.
+      */}
+      <DateTime
+        value={asOf}
+        timeZone={timeZone}
+        precision="date"
+        showZone={false}
+        className="text-fg-muted"
+      />
       {isCurrent ? null : (
         <span className="rounded bg-tint-warning text-on-tint-warning px-[0.5em] text-caption">
           {translator.format('rate.notToday')}

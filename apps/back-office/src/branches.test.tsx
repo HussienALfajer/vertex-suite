@@ -182,3 +182,19 @@ describe('Branches — SYS-09', () => {
     expect(await screen.findByText(catalogue['status.inUse'])).toBeTruthy();
   });
 });
+
+describe('A form refused before it is sent — SYS-09', () => {
+  it('moves to the first field it has to ask for, rather than leaving it to be found', async () => {
+    const shop = await enterTheShop();
+    await registerCompany(shop, 'مؤسسة الشام');
+    await goTo(shop, catalogue['nav.branches']);
+
+    await shop.person.click(firstButton(catalogue['branches.open']));
+    await shop.person.click(screen.getByRole('button', { name: catalogue['branches.new.submit'] }));
+
+    // Where a browser's own validation would have put the person: on the field.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText(catalogue['branches.new.name']));
+    });
+  });
+});

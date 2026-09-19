@@ -11,7 +11,7 @@ import { focusRing } from '../components/styles.js';
 import { useTranslator } from '../providers/context.js';
 import type { FoundPlace, PlaceSearch } from './geocode.js';
 import { BaseLayer, OUTLINE_MAX_ZOOM, zoomCeilingOf, type Basemap } from './BaseLayer.js';
-import { asLatLng } from './GeoMap.js';
+import { asLatLng, mapControls } from './GeoMap.js';
 import { homeCentre, homeExtent } from './atlas.js';
 import { parsePlace } from './parse.js';
 import { fitToPoints, project, type LatLng, type MapView } from './projection.js';
@@ -403,7 +403,7 @@ export function PointPicker({
           )}
         </div>
 
-        <div className="absolute end-[var(--vx-pad-sm)] bottom-[var(--vx-pad-sm)] z-20 flex flex-col gap-[var(--vx-gap-xs)]">
+        <div className={clsx(mapControls, 'end-[var(--vx-pad-sm)] bottom-[var(--vx-pad-sm)]')}>
           <IconButton
             aria-label={translator.format('map.zoomIn')}
             onPress={() => {

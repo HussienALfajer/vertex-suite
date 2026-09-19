@@ -27,8 +27,12 @@ import type { OrganisationOfRecord, SystemOfRecord } from './system.js';
  *
  * Locations are **not** here, and the asymmetry is the contract's rather than a
  * preference: `Organisation.locations` is asked per branch, because a tenant
- * with forty branches has hundreds of locations and no screen shows them all at
- * once. The screen that picks a branch is the screen that reads its locations.
+ * with forty branches has hundreds of locations and the store node never
+ * answers a tenant-wide read of them. The screen that picks a branch is the
+ * screen that reads its locations — and the one screen that offers "كل فروع
+ * المتجر" over all of them builds that view itself, one read per branch off
+ * the list held here, rather than asking this contract for a read it does
+ * not have.
  */
 
 /**

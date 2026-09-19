@@ -411,7 +411,8 @@ function CurrencyDialog({
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(subject ?? isOpen, () => {
     setCode(subject?.code ?? '');
@@ -432,7 +433,7 @@ function CurrencyDialog({
     };
     setMissing(blank);
     if (blank.code || blank.symbol || blank.increment) {
-      setRefused(null);
+      reportInvalid();
       return;
     }
 
@@ -475,6 +476,7 @@ function CurrencyDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();

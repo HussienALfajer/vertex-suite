@@ -15,8 +15,35 @@ export interface DateTimeProps {
    * the wrong day is a figure nobody can reconcile.
    */
   readonly provisional?: boolean;
+  /**
+   * Whether a date-only value spells its zone out beside it. On unless a
+   * caller says otherwise, which is what §12 asks of the component: the caller
+   * that turns it off is one whose own context already names the branch whose
+   * day this is, such as a row on that branch's rate board. It changes nothing
+   * for the other two precisions, where the zone is part of the text `Intl`
+   * writes rather than a label beside it.
+   */
+  readonly showZone?: boolean;
   readonly className?: string;
 }
+
+/**
+ * The marks `Intl` puts between the parts of an Arabic date.
+ *
+ * `ar` writes `19‏/09‏/2026` with a right-to-left mark in front of each slash,
+ * which is right inside an Arabic sentence and wrong inside the isolated
+ * left-to-right span below: there the marks are strong right-to-left
+ * characters in a left-to-right run, and the bidirectional algorithm reorders
+ * whatever they touch — the year lands beside the day and the slashes fall to
+ * the far end, so a date reads `19 2026/09/`. The span already fixes the
+ * direction, which is all the marks were for, so they go. Built from code
+ * points rather than written as literals, because an invisible character in
+ * source is one nobody can see was put there.
+ */
+const DIRECTION_MARKS = new RegExp(
+  `[${[0x200e, 0x200f, 0x061c].map((code) => String.fromCodePoint(code)).join('')}]`,
+  'gu',
+);
 
 /**
  * A moment, in the branch's timezone, with the zone stated.
@@ -30,6 +57,7 @@ export function DateTime({
   timeZone,
   precision = 'minute',
   provisional = false,
+  showZone = true,
   className,
 }: DateTimeProps): ReactNode {
   const { formattingLocale } = useVertex();
@@ -50,7 +78,9 @@ export function DateTime({
         }),
   };
 
-  const text = new Intl.DateTimeFormat(formattingLocale, options).format(value);
+  const text = new Intl.DateTimeFormat(formattingLocale, options)
+    .format(value)
+    .replace(DIRECTION_MARKS, '');
 
   return (
     <span
@@ -63,7 +93,9 @@ export function DateTime({
           {translator.format('date.provisional')}
         </span>
       ) : null}
-      {precision === 'date' ? <span className="text-fg-muted text-caption">{timeZone}</span> : null}
+      {precision === 'date' && showZone ? (
+        <span className="text-fg-muted text-caption">{timeZone}</span>
+      ) : null}
     </span>
   );
 }

@@ -12,6 +12,23 @@ import { useTranslator } from '../providers/context.js';
 import { Button, IconButton } from './Button.js';
 import type { Tone } from './styles.js';
 
+/**
+ * The scrim every modal here dims the page with, and how it arrives.
+ *
+ * §8: a dialog enters over `dur-slow` and leaves faster than it came.
+ * `starting:` is the state it is drawn from on its first frame, and React Aria
+ * keeps an exiting overlay mounted until its transition ends. `entering:` and
+ * `exiting:` were written here once, and are not Tailwind variants at all —
+ * they compiled to nothing, and nothing moved. The durations are tokens, which
+ * reduced motion sets to zero.
+ */
+const overlay = clsx(
+  'fixed inset-0 z-50 flex items-center justify-center p-[var(--vx-pad-lg)]',
+  'bg-dialog-scrim',
+  'transition-opacity duration-[var(--vx-dur-slow)] ease-out starting:opacity-0',
+  'data-[exiting]:opacity-0 data-[exiting]:ease-in',
+);
+
 export interface DialogProps {
   readonly title: string;
   readonly children: ReactNode;
@@ -70,18 +87,7 @@ export function Dialog({
 
   const modal = (
     <ModalOverlay
-      className={clsx(
-        'fixed inset-0 z-50 flex items-center justify-center p-[var(--vx-pad-lg)]',
-        'bg-dialog-scrim',
-        // §8: a dialog enters over `dur-slow` and leaves faster than it came.
-        // `starting:` is the state it is drawn from on its first frame, and
-        // React Aria keeps an exiting overlay mounted until its transition ends.
-        // `entering:` and `exiting:` were written here before, and are not
-        // Tailwind variants at all — they compiled to nothing, and nothing moved.
-        // The durations are tokens, which reduced motion sets to zero.
-        'transition-opacity duration-[var(--vx-dur-slow)] ease-out starting:opacity-0',
-        'data-[exiting]:opacity-0 data-[exiting]:ease-in',
-      )}
+      className={overlay}
       {...(isOpen === undefined ? {} : { isOpen })}
       {...(onOpenChange === undefined ? {} : { onOpenChange })}
       isDismissable
@@ -152,6 +158,91 @@ export function Dialog({
   );
 }
 
+export interface UnsavedChangesDialogProps {
+  readonly title: string;
+  readonly message: string;
+  readonly discardLabel: string;
+  readonly saveLabel: string;
+  readonly savingLabel: string;
+  readonly isOpen: boolean;
+  /** Disables every action while the caller's own save is in flight. */
+  readonly isSaving?: boolean;
+  /** Stay on the page; nothing about the edit changes. */
+  readonly onCancel: () => void;
+  /** Leave, taking the loss of the edit with it. */
+  readonly onDiscard: () => void;
+  /** Save, then leave — the caller decides whether the save succeeded. */
+  readonly onSave: () => void;
+}
+
+/**
+ * The one dialog every screen with a draft reaches for on the way out of it,
+ * rather than each writing its own: `useUnsavedChangesGuard` opens this the
+ * moment a navigation is asked for while a screen is dirty, so this is what
+ * a person answers before they leave, wherever they were leaving to.
+ *
+ * **Three answers, not two.** `ConfirmationDialog` fits an action with one
+ * way to proceed and one to abandon it; leaving a dirty form has two ways to
+ * proceed — with the edit kept or with it thrown away — plus the way that
+ * changes nothing. Collapsing that to a `ConfirmationDialog` would have to
+ * drop one of the three, and the one a screen's own "discard" button already
+ * covers is not the one to lose here.
+ *
+ * Not dismissable by an outside click, for `ConfirmationDialog`'s own reason:
+ * losing an edit by a stray click is not a confirmation. `Esc` and the explicit
+ * Cancel button both mean the same first answer, "stay," so both are disabled
+ * together with the other two while a save this dialog started is in flight —
+ * a person cannot ask to stay in the middle of a leave that is already saving.
+ */
+export function UnsavedChangesDialog({
+  title,
+  message,
+  discardLabel,
+  saveLabel,
+  savingLabel,
+  isOpen,
+  isSaving = false,
+  onCancel,
+  onDiscard,
+  onSave,
+}: UnsavedChangesDialogProps): ReactNode {
+  const translator = useTranslator();
+
+  return (
+    <ModalOverlay
+      className={overlay}
+      isOpen={isOpen}
+      isKeyboardDismissDisabled={isSaving}
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <Modal className="bg-surface-3 rounded-card shadow-dialog border-line w-full max-w-[28rem] border">
+        {/* policy-exempt: §7.3 — see `Dialog`, above. */}
+        <AriaDialog role="alertdialog" className="flex flex-col outline-none">
+          <div className="flex flex-col gap-[var(--vx-gap-sm)] p-[var(--vx-pad-lg)]">
+            <Heading slot="title" className="text-heading font-body-semibold text-fg">
+              {title}
+            </Heading>
+            <p className="text-body text-fg-secondary">{message}</p>
+          </div>
+          <footer className="border-line flex items-center justify-end gap-[var(--vx-gap-sm)] border-t px-[var(--vx-pad-lg)] py-[var(--vx-pad-md)]">
+            <Button tone="secondary" onPress={onCancel} isDisabled={isSaving} autoFocus>
+              {translator.format('action.cancel')}
+            </Button>
+            <Button tone="danger" onPress={onDiscard} isDisabled={isSaving}>
+              {discardLabel}
+            </Button>
+            <Button tone="primary" onPress={onSave} isDisabled={isSaving}>
+              {isSaving ? savingLabel : saveLabel}
+            </Button>
+          </footer>
+        </AriaDialog>
+      </Modal>
+    </ModalOverlay>
+  );
+}
+
 export interface ConfirmationDialogProps {
   readonly title: string;
   readonly message: string;
@@ -199,12 +290,7 @@ export function ConfirmationDialog({
 
   const modal = (
     <ModalOverlay
-      className={clsx(
-        'fixed inset-0 z-50 flex items-center justify-center p-[var(--vx-pad-lg)]',
-        'bg-dialog-scrim',
-        'transition-opacity duration-[var(--vx-dur-slow)] ease-out starting:opacity-0',
-        'data-[exiting]:opacity-0 data-[exiting]:ease-in',
-      )}
+      className={overlay}
       {...(isOpen === undefined ? {} : { isOpen })}
       {...(onOpenChange === undefined ? {} : { onOpenChange })}
     >

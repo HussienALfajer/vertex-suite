@@ -188,4 +188,20 @@ describe('useAttempt', () => {
     });
     expect(result.current.refused).toBeNull();
   });
+
+  it('reports a local refusal by clearing the stale one, whether or not a form is attached', () => {
+    // A blank required field is the dialog's own finding, and a refusal the
+    // server gave an earlier attempt must not stay on screen beside it.
+    const { result } = renderHook(() => useAttempt(true, vi.fn()));
+
+    act(() => {
+      result.current.setRefused('الشركة غير نشطة');
+    });
+    act(() => {
+      result.current.reportInvalid();
+    });
+
+    expect(result.current.refused).toBeNull();
+    expect(result.current.formRef.current).toBeNull();
+  });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 
 import {
   Badge,
@@ -35,20 +35,84 @@ import { useOrganisation, type Loaded } from '../organisation.js';
  */
 
 /**
+ * Stands for "every company" in a company filter. No identifier can collide
+ * with it. Declared once, because the branches screen and every scoped screen
+ * (`scope.tsx`) narrow by company and must agree on the value that means
+ * "don't".
+ */
+export const EVERY_COMPANY = '*';
+
+export interface StatusBadgeProps {
+  readonly isActive: boolean;
+  /**
+   * Why a row that is itself in use cannot actually be used — its branch is
+   * withdrawn, or its company is. `SYS` does not cascade a withdrawal
+   * (`packages/modules/sys/src/structure.ts`), so this cannot be read off
+   * `isActive`: withdrawing a branch leaves every till in it marked in use.
+   * Undefined where nothing above the row can strand it — a company, a
+   * currency, a user, a role.
+   *
+   * Said in full, as the badge's own words, so a column of them is read
+   * without hovering each one; `STATUS_COLUMN_WIDTH` is what gives it room.
+   */
+  readonly disabledReason?: string | undefined;
+}
+
+/**
  * Whether a row is in use, said in words as well as in colour.
  *
  * `SYS-09` deactivates and never deletes, so "withdrawn" is a state a row
  * spends years in and not an error — which is why it is the quiet neutral
  * rather than the danger tone. Danger here would have an administrator
  * searching for a problem that is not there.
+ *
+ * A third state sits between the two: **active, and stranded.** The warning
+ * tone is deliberate and different from both neighbours — neutral would bury
+ * a row that cannot actually trade beside every ordinary withdrawn one, and
+ * success would tell an administrator a till is ready when nothing can be
+ * sold from it until its own branch comes back.
  */
-export function StatusBadge({ isActive }: { readonly isActive: boolean }): ReactNode {
+export function StatusBadge({ isActive, disabledReason }: StatusBadgeProps): ReactNode {
   const translator = useTranslator();
+  if (isActive && disabledReason !== undefined) {
+    return <Badge tone="warning">{disabledReason}</Badge>;
+  }
   return isActive ? (
     <Badge tone="success">{translator.format('status.inUse')}</Badge>
   ) : (
     <Badge tone="neutral">{translator.format('status.withdrawn')}</Badge>
   );
+}
+
+/**
+ * How wide a status column is, so `StatusBadge`'s longest sentence — "متوقف —
+ * الشركة مسحوبة من الخدمة" — fits at the badge's caption size without the
+ * table's fixed layout starving it. `actionsColumnWidth`'s reasoning, for the
+ * one other column whose content cannot be shortened; a screen too narrow
+ * for every column scrolls rather than clips one.
+ */
+export const STATUS_COLUMN_WIDTH = 230;
+
+/**
+ * `StatusBadge`'s `disabledReason` for a row, given what is above it — its
+ * ancestors nearest first, each with the sentence that says it is withdrawn.
+ *
+ * The nearest withdrawn one speaks: a till whose own branch is withdrawn says
+ * so, rather than naming the branch's company because that check came first.
+ * The caller looks the ancestors up, because what "above" means differs by
+ * screen — a company over a branch, a branch and then its company over a
+ * till — and this has no business knowing either shape.
+ */
+export function parentWithdrawalNotice(
+  ...ancestors: readonly (readonly [
+    parent: { readonly active: boolean } | undefined,
+    message: string,
+  ])[]
+): string | undefined {
+  for (const [parent, message] of ancestors) {
+    if (parent !== undefined && !parent.active) return message;
+  }
+  return undefined;
 }
 
 export interface ListingBarProps {
@@ -214,6 +278,118 @@ export function ReachFields({
   );
 }
 
+export interface RoleReachFieldsProps {
+  /** Already filtered to the active ones — a withdrawn role is nothing to assign. */
+  readonly roles: readonly Role[];
+  readonly selectedRoleIds: ReadonlySet<string>;
+  readonly onSelectedRoleIdsChange: (ids: ReadonlySet<string>) => void;
+  /**
+   * Roles this user already holds some assignment of — marked rather than
+   * hidden or disabled. Re-selecting one is not a mistake: `RoleAdministration`
+   * states it plainly — "assigning a role the user already holds replaces its
+   * confinement" — so it is the way this screen offers to widen or narrow an
+   * existing assignment's reach without withdrawing it first. Hiding the option
+   * would remove that; this only tells whoever is choosing what they are about
+   * to do.
+   */
+  readonly heldRoleIds: ReadonlySet<string>;
+  readonly rolesMissing: boolean;
+  readonly branches: readonly Branch[];
+  readonly reach: 'tenant' | 'branches';
+  readonly onReachChange: (reach: 'tenant' | 'branches') => void;
+  readonly chosenBranches: ReadonlySet<string>;
+  readonly onChosenBranchesChange: (chosen: ReadonlySet<string>) => void;
+  readonly branchesMissing: boolean;
+}
+
+/**
+ * Roles and where they reach, asked together — `SEC-01` and `SEC-04` in the
+ * same breath, for whichever screen has already fixed the **user** and is
+ * choosing what to give them. `Users.tsx`'s scope dialog and the enrolment
+ * wizard's second step both ask exactly this; `Roles.tsx`'s holders section
+ * asks the mirror question (a role fixed, a user chosen) and keeps its own
+ * `Select`, since a user picker is not this one with its options swapped.
+ *
+ * **Several roles, one reach.** A checkbox list rather than `Select`, the same
+ * device `ReachFields` already uses for "a chosen few" branches, so choosing
+ * three roles at once for the same stretch of the shop group is one screen
+ * rather than three round trips through this dialog. A role that needs a
+ * *different* reach from the others is still its own, separate assignment —
+ * this asks for one reach applied to everything checked here, not a second
+ * axis of choice.
+ */
+export function RoleReachFields({
+  roles,
+  selectedRoleIds,
+  onSelectedRoleIdsChange,
+  heldRoleIds,
+  rolesMissing,
+  branches,
+  reach,
+  onReachChange,
+  chosenBranches,
+  onChosenBranchesChange,
+  branchesMissing,
+}: RoleReachFieldsProps): ReactNode {
+  const translator = useTranslator();
+  const labelId = useId();
+  const errorId = useId();
+
+  return (
+    <>
+      {/* Marked invalid the way every field is, so a refused submit moves
+          focus here (`reportInvalid`) and the error is read with the group. */}
+      <div
+        className="flex flex-col gap-[var(--vx-gap-xs)]"
+        {...(rolesMissing ? { 'data-invalid': true } : {})}
+      >
+        <p id={labelId} className="text-footnote font-medium text-fg-secondary">
+          {translator.format('users.scope.role')}
+        </p>
+        <div
+          role="group"
+          aria-labelledby={labelId}
+          aria-describedby={rolesMissing ? errorId : undefined}
+          className="flex flex-col gap-[var(--vx-gap-xs)]"
+        >
+          {roles.map((role) => (
+            <Checkbox
+              key={role.id}
+              isSelected={selectedRoleIds.has(role.id)}
+              onChange={(isSelected) => {
+                const next = new Set(selectedRoleIds);
+                if (isSelected) next.add(role.id);
+                else next.delete(role.id);
+                onSelectedRoleIdsChange(next);
+              }}
+            >
+              <span className="inline-flex items-center gap-[var(--vx-gap-sm)]">
+                {roleLabel(translator, role)}
+                {heldRoleIds.has(role.id) ? (
+                  <Badge tone="neutral">{translator.format('users.scope.role.alreadyHeld')}</Badge>
+                ) : null}
+              </span>
+            </Checkbox>
+          ))}
+        </div>
+        {rolesMissing ? (
+          <p id={errorId} className="text-footnote text-fg-danger">
+            {translator.format('users.scope.role.required')}
+          </p>
+        ) : null}
+      </div>
+      <ReachFields
+        branches={branches}
+        reach={reach}
+        onReachChange={onReachChange}
+        chosenBranches={chosenBranches}
+        onChosenBranchesChange={onChosenBranchesChange}
+        branchesMissing={branchesMissing}
+      />
+    </>
+  );
+}
+
 export interface NameDialogProps {
   readonly title: string;
   readonly label: string;
@@ -250,7 +426,8 @@ export function NameDialog({
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(isOpen, () => {
     setName(initialName);
@@ -264,7 +441,7 @@ export function NameDialog({
     // write the message itself in its own language under an Arabic label (§12).
     if (name.trim() === '') {
       setIsMissing(true);
-      setRefused(null);
+      reportInvalid();
       return;
     }
 
@@ -303,6 +480,7 @@ export function NameDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           // §11.1 has Enter submit the form somebody is standing in, rather than
           // navigating the document away from it.

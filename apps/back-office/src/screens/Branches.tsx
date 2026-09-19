@@ -25,15 +25,18 @@ import type { Branch, Company, GeoPoint } from '@vertex/sys/contract';
 
 import { useDeliveryMessage, useOrganisation } from '../organisation.js';
 import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
-import { PlaceDialog, PlaceFields, PlacesMap } from './place.js';
+import { PlaceDialog, PlaceFields, PlaceSummary, PlacesMap } from './place.js';
 import {
+  EVERY_COMPANY,
   ListingBar,
   NameDialog,
   OpenListIcon,
+  parentWithdrawalNotice,
   PlaceIcon,
   RenameIcon,
   RestoreIcon,
   StaleBanner,
+  STATUS_COLUMN_WIDTH,
   StatusBadge,
   WithdrawIcon,
   matchesQuery,
@@ -57,9 +60,6 @@ import {
  * rather than presenting a dialog whose first field has no options.
  */
 
-/** Stands for "every company" in the filter. No identifier can collide with it. */
-const EVERY_COMPANY = '*';
-
 export function Branches(): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
@@ -77,8 +77,13 @@ export function Branches(): ReactNode {
   const [placing, setPlacing] = useState<Branch | null>(null);
 
   const openCompanies = useMemo(() => companies.filter((one) => one.active), [companies]);
-  const nameOfCompany = useMemo(
-    () => new Map(companies.map((one) => [one.id, one.name] as const)),
+  // Keyed by id and holding the whole record rather than just its name: the
+  // status column and the map popover both also need to know whether the
+  // company itself is still in service, to say when a branch that reads as
+  // active is one nobody can actually trade from (`structure.ts`'s own
+  // "deactivation does not cascade").
+  const companyById = useMemo(
+    () => new Map(companies.map((one) => [one.id, one] as const)),
     [companies],
   );
 
@@ -162,13 +167,22 @@ export function Branches(): ReactNode {
       id: 'company',
       header: translator.format('branches.column.company'),
       render: (branch) => (
-        <span className="text-fg-secondary">{nameOfCompany.get(branch.company) ?? ''}</span>
+        <span className="text-fg-secondary">{companyById.get(branch.company)?.name ?? ''}</span>
       ),
     },
     {
       id: 'status',
       header: translator.format('branches.column.status'),
-      render: (branch) => <StatusBadge isActive={branch.active} />,
+      width: STATUS_COLUMN_WIDTH,
+      render: (branch) => (
+        <StatusBadge
+          isActive={branch.active}
+          disabledReason={parentWithdrawalNotice([
+            companyById.get(branch.company),
+            translator.format('branches.status.companyWithdrawn'),
+          ])}
+        />
+      ),
     },
     {
       id: 'actions',
@@ -355,24 +369,33 @@ export function Branches(): ReactNode {
             const branch = branches.find((one) => one.id === place.id);
             if (branch === undefined) return null;
             return (
-              <div className="flex flex-col items-start gap-[var(--vx-gap-xs)]">
-                <span className="font-body-semibold text-fg">{branch.name}</span>
-                <span className="text-footnote text-fg-secondary">
-                  {nameOfCompany.get(branch.company) ?? ''}
-                </span>
-                {branch.address === '' ? null : (
-                  <span className="text-footnote text-fg-secondary">{branch.address}</span>
-                )}
-                <StatusBadge isActive={branch.active} />
-                <Button
-                  tone="ghost"
-                  onPress={() => {
-                    goTo('locations', branch.id);
-                  }}
-                >
-                  {translator.format('branches.locations')}
-                </Button>
-              </div>
+              <PlaceSummary
+                title={branch.name}
+                isActive={branch.active}
+                disabledReason={parentWithdrawalNotice([
+                  companyById.get(branch.company),
+                  translator.format('branches.status.companyWithdrawn'),
+                ])}
+                fields={[
+                  {
+                    label: translator.format('branches.column.company'),
+                    value: companyById.get(branch.company)?.name ?? '',
+                  },
+                  ...(branch.address === ''
+                    ? []
+                    : [{ label: translator.format('place.address'), value: branch.address }]),
+                ]}
+                action={
+                  <Button
+                    tone="ghost"
+                    onPress={() => {
+                      goTo('locations', branch.id);
+                    }}
+                  >
+                    {translator.format('branches.locations')}
+                  </Button>
+                }
+              />
             );
           }}
         />
@@ -503,7 +526,8 @@ function NewBranchDialog({
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(isOpen, () => {
     // A shop with one company never answers this question; a shop that filtered
@@ -521,7 +545,7 @@ function NewBranchDialog({
     const blank = { company: company === null, name: name.trim() === '' };
     setMissing(blank);
     if (company === null || blank.name) {
-      setRefused(null);
+      reportInvalid();
       return;
     }
 
@@ -582,6 +606,7 @@ function NewBranchDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();
