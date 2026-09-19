@@ -194,6 +194,51 @@ test('a withdrawn branch is still there to be put back', async ({ page }) => {
   await expect(page.getByText('قيد الاستخدام')).toBeVisible();
 });
 
+/** What an alert dialog showed at one moment, and whether it was already on its way out. */
+interface Glimpse {
+  readonly text: string;
+  readonly isExiting: boolean;
+}
+
+/**
+ * Records every state the alert dialog passes through from now until it
+ * leaves the document, and returns them once it has.
+ *
+ * Read by an observer in the page rather than by asking after the click: the
+ * close takes `dur-slow`, and a question sent after the click lands had to
+ * arrive inside that window — which on a slow runner it did not, and the read
+ * waited for a dialog that was already gone.
+ */
+async function watchTheDialogLeave(page: Page): Promise<() => Promise<readonly Glimpse[]>> {
+  await page.evaluate(() => {
+    const seen: { text: string; isExiting: boolean }[] = [];
+    (globalThis as unknown as Record<string, unknown>)['vertexGlimpses'] = seen;
+    const observer = new MutationObserver(() => {
+      const dialog = document.querySelector('[role="alertdialog"]');
+      if (dialog === null) {
+        observer.disconnect();
+        return;
+      }
+      seen.push({
+        text: dialog.textContent,
+        isExiting: dialog.closest('[data-exiting]') !== null,
+      });
+    });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+  });
+  return async () => {
+    await expect(page.getByRole('alertdialog')).toBeHidden();
+    return page.evaluate(
+      () => (globalThis as unknown as Record<string, unknown>)['vertexGlimpses'] as Glimpse[],
+    );
+  };
+}
+
 test('names the company throughout its own withdraw confirmation, including the close that follows either answer', async ({
   page,
 }) => {
@@ -213,12 +258,20 @@ test('names the company throughout its own withdraw confirmation, including the 
   // to clear the moment the dialog closed — blanking the sentence for exactly
   // that fade. It must still name the company right up to the close, on
   // either answer.
-  await page.getByRole('button', { name: 'إلغاء' }).click();
-  expect(await dialog.textContent()).toContain('fajer 2');
-  await expect(dialog).toBeHidden();
+  for (const answer of ['إلغاء', 'سحب من الخدمة']) {
+    if (answer !== 'إلغاء') {
+      await page.getByRole('button', { name: 'سحب الشركة من الخدمة' }).click();
+      await expect(dialog).toContainText('fajer 2');
+    }
+    const leaving = await watchTheDialogLeave(page);
+    await page.getByRole('button', { name: answer, exact: true }).click();
 
-  await page.getByRole('button', { name: 'سحب الشركة من الخدمة' }).click();
-  await page.getByRole('button', { name: 'سحب من الخدمة', exact: true }).click();
-  expect(await dialog.textContent()).toContain('fajer 2');
-  await expect(dialog).toBeHidden();
+    const glimpses = await leaving();
+    // The fade itself was seen, and in every moment of it the company is named.
+    expect(
+      glimpses.some((one) => one.isExiting),
+      answer,
+    ).toBe(true);
+    for (const glimpse of glimpses) expect(glimpse.text, answer).toContain('fajer 2');
+  }
 });
