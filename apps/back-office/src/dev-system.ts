@@ -8,6 +8,7 @@ import {
   createTransactor,
   defineModule,
   provideContract,
+  SerialisationConflictError,
   systemContext,
   type Authoriser,
   type CommandContext,
@@ -38,7 +39,9 @@ import {
   sysModule,
   type Register,
 } from '@vertex/sys';
+import type { Branch } from '@vertex/sys/contract';
 
+import { DEMO_LOCATIONS, DEMO_ORGANISATION, DEMO_RATES } from './demo/catalogue.js';
 import type {
   CurrenciesOfRecord,
   DeclaredRight,
@@ -92,6 +95,17 @@ export interface StandInPerson {
 export interface StandInOptions {
   readonly people: readonly StandInPerson[];
   readonly clock?: Clock;
+  /**
+   * Open the shop already set up — `DEMO_ORGANISATION` and `DEMO_RATES`,
+   * below — rather than empty.
+   *
+   * Off unless asked for, and only `main.tsx` asks, under `pnpm demo`. Every
+   * test and every journey is about a shop somebody sets up from nothing
+   * (`SYS-09`'s acceptance criterion is exactly that journey), so an empty
+   * shop is the default and a furnished one is the exception a person
+   * exploring the screens opts into.
+   */
+  readonly demo?: boolean;
 }
 
 /**
@@ -275,16 +289,135 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const asMachine = (device: string): NonNullable<Register['heldBy']> =>
     device as NonNullable<Register['heldBy']>;
 
+  /**
+   * A seed's step, run again when it lost a race. `SerialisationConflictError`
+   * is not a refusal and not a defect — the command would succeed if run
+   * again (`@vertex/platform`). The demo's seed and the currencies' seed start
+   * from the same first render and commit through the same store, so either
+   * can be the one that finds the store changed under it. A handful of
+   * attempts is plenty for a race against one other seed.
+   */
+  async function retrying<T>(attempt: () => Promise<T>): Promise<T> {
+    for (let attempts = 5; ; attempts--) {
+      try {
+        return await attempt();
+      } catch (cause) {
+        if (attempts <= 1 || !(cause instanceof SerialisationConflictError)) throw cause;
+      }
+    }
+  }
+
+  const demo = options.demo === true;
+
+  /**
+   * `DEMO_ORGANISATION`, opened through the same commands a screen calls — at
+   * the system's own place rather than a signed-in person's, as the
+   * currencies' seed below is, because nobody is signed in yet and nobody's
+   * rights are in question. Nothing at all unless `demo`.
+   *
+   * One promise for every caller, so two screens mounting at once wait on the
+   * same seed rather than racing it into every company twice. Not reset when
+   * it fails, unlike the currencies' seed: that one is idempotent and this one
+   * is not — a second attempt would find the first company already registered
+   * and be refused for it. A step that lost a race is retried where it stands,
+   * by `retrying`; anything else is a defect in the demo, and says so.
+   */
+  let demoShop: Promise<void> | null = null;
+  // Which of the branches opened below start with today's rates — filled as
+  // they open, since their identifiers exist nowhere else, and read only by
+  // `ensureRatesReady`, which waits for this seed to finish first.
+  const pricedBranches: Branch['id'][] = [];
+  function ensureDemoShop(): Promise<void> {
+    if (!demo) return Promise.resolve();
+    demoShop ??= (async () => {
+      for (const company of DEMO_ORGANISATION) {
+        const registered = orThrow(
+          await retrying(() =>
+            admin.companies.register(systemContext(tenant), { name: company.name }),
+          ),
+          (refusal) => new Error(`Seeding a company was refused: ${refusal.code}`),
+        );
+        for (const branch of company.branches) {
+          const opened = orThrow(
+            await retrying(() =>
+              admin.branches.open(systemContext(tenant), {
+                company: registered.id,
+                name: branch.name,
+                address: branch.address,
+              }),
+            ),
+            (refusal) => new Error(`Seeding a branch was refused: ${refusal.code}`),
+          );
+          if (branch.hasRates === true) pricedBranches.push(opened.id);
+          for (const location of DEMO_LOCATIONS) {
+            orThrow(
+              await retrying(() =>
+                admin.locations.open(systemContext(tenant), {
+                  branch: opened.id,
+                  name: location.name,
+                  kind: location.kind,
+                  ...(location.address === undefined ? {} : { address: location.address }),
+                }),
+              ),
+              (refusal) => new Error(`Seeding a location was refused: ${refusal.code}`),
+            );
+          }
+
+          if (branch.register !== undefined) {
+            const till = branch.register;
+            const openedRegister = orThrow(
+              await retrying(() =>
+                admin.registers.open(systemContext(tenant), {
+                  branch: opened.id,
+                  name: till.name,
+                  prefix: till.prefix,
+                }),
+              ),
+              (refusal) => new Error(`Seeding a register was refused: ${refusal.code}`),
+            );
+            // The identifier a real terminal generates for itself on its
+            // first run; the demo has no terminal to read one from.
+            orThrow(
+              await retrying(() =>
+                admin.registers.assignDevice(
+                  systemContext(tenant),
+                  openedRegister.id,
+                  newId<'device'>(),
+                ),
+              ),
+              (refusal) => new Error(`Seeding a device was refused: ${refusal.code}`),
+            );
+          }
+        }
+      }
+    })();
+    return demoShop;
+  }
+
+  /**
+   * A read of the organisation, asked once the demo's shop — if there is one
+   * — is in place.
+   *
+   * Who is asking is settled first, and synchronously: a read on behalf of
+   * nobody is a defect, and it throws where it is asked (`README.md`: a
+   * defect is an exception) rather than turning into a rejected promise
+   * because a seed happened to be awaited ahead of it.
+   */
+  function afterDemo<T>(ask: (context: CommandContext) => Promise<T>): Promise<T> {
+    const context = by();
+    return demo ? ensureDemoShop().then(() => ask(context)) : ask(context);
+  }
+
   const organisation: OrganisationOfRecord = {
     companies: {
-      list: (listing) => read.companies(by(), listing),
+      list: (listing) => afterDemo((context) => read.companies(context, listing)),
       register: (input) => admin.companies.register(by(), input),
       rename: (id, name) => admin.companies.rename(by(), id, name),
       deactivate: (id) => admin.companies.deactivate(by(), id),
       reactivate: (id) => admin.companies.reactivate(by(), id),
     },
     branches: {
-      list: (listing) => read.branches(by(), listing),
+      list: (listing) => afterDemo((context) => read.branches(context, listing)),
       open: (input) => admin.branches.open(by(), input),
       rename: (id, name) => admin.branches.rename(by(), id, name),
       readdress: (id, address) => admin.branches.readdress(by(), id, address),
@@ -293,7 +426,7 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
       reactivate: (id) => admin.branches.reactivate(by(), id),
     },
     locations: {
-      list: (branch, listing) => read.locations(by(), branch, listing),
+      list: (branch, listing) => afterDemo((context) => read.locations(context, branch, listing)),
       open: (input) => admin.locations.open(by(), input),
       rename: (id, name) => admin.locations.rename(by(), id, name),
       readdress: (id, address) => admin.locations.readdress(by(), id, address),
@@ -302,7 +435,7 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
       reactivate: (id) => admin.locations.reactivate(by(), id),
     },
     registers: {
-      list: (branch, listing) => read.registers(by(), branch, listing),
+      list: (branch, listing) => afterDemo((context) => read.registers(context, branch, listing)),
       open: (input) => admin.registers.open(by(), input),
       rename: (id, name) => admin.registers.rename(by(), id, name),
       assignDevice: (id, device) => admin.registers.assignDevice(by(), id, asMachine(device)),
@@ -337,7 +470,9 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     seeded ??= (async () => {
       try {
         orThrow(
-          await currenciesAdmin.seed(systemContext(tenant)),
+          // `retrying`: the demo's seed may be committing through the same
+          // store at the same moment.
+          await retrying(() => currenciesAdmin.seed(systemContext(tenant))),
           (refusal) => new Error(`Seeding currencies was refused: ${refusal.code}`),
         );
       } catch (cause) {
@@ -379,21 +514,49 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     },
   };
 
+  /**
+   * What every rate command waits for: the currencies, and in a demo the
+   * demo's own rates — `DEMO_RATES` at every branch that starts with them,
+   * recorded through the real `record` at the system's own place.
+   *
+   * Every method of `rates` waits for the whole of it rather than for the
+   * currencies alone, because a rate somebody typed before the demo's were
+   * recorded would be overwritten by them as the day's next revision — a
+   * correction nobody asked for. Not reset on failure, for the reason
+   * `ensureDemoShop` gives.
+   */
+  let demoRates: Promise<void> | null = null;
+  function ensureRatesReady(): Promise<void> {
+    if (!demo) return ensureCurrenciesSeeded();
+    demoRates ??= (async () => {
+      await Promise.all([ensureDemoShop(), ensureCurrenciesSeeded()]);
+      for (const branch of pricedBranches) {
+        for (const { currency, quote } of DEMO_RATES) {
+          orThrow(
+            await retrying(() => ratesAdmin.record(systemContext(tenant), branch, currency, quote)),
+            (refusal) => new Error(`Seeding a rate was refused: ${refusal.code}`),
+          );
+        }
+      }
+    })();
+    return demoRates;
+  }
+
   const rates: RatesOfRecord = {
     board: async (branch) => {
-      await ensureCurrenciesSeeded();
+      await ensureRatesReady();
       return ratesRead.board(by(), branch);
     },
     record: async (branch, currency, quote) => {
-      await ensureCurrenciesSeeded();
+      await ensureRatesReady();
       return ratesAdmin.record(by(), branch, currency, quote);
     },
     suggest: async (currency, quote) => {
-      await ensureCurrenciesSeeded();
+      await ensureRatesReady();
       return ratesAdmin.suggest(by(), currency, quote);
     },
     adopt: async (branch) => {
-      await ensureCurrenciesSeeded();
+      await ensureRatesReady();
       return ratesAdmin.adopt(by(), branch);
     },
   };

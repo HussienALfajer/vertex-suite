@@ -51,6 +51,7 @@
   --vx-switch-track-on: var(--vx-fill-primary);
   --vx-switch-knob: var(--vx-surface-2);
   --vx-switch-knob-on: var(--vx-on-primary);
+  --vx-badge-neutral: var(--vx-border-strong);
   --vx-map-land: var(--vx-border);
   --vx-map-land-home: var(--vx-border-strong);
   --vx-map-line: var(--vx-text-muted);
@@ -201,6 +202,7 @@
   --vx-switch-track-on: var(--vx-fill-primary);
   --vx-switch-knob: var(--vx-text-secondary);
   --vx-switch-knob-on: var(--vx-on-primary);
+  --vx-badge-neutral: var(--vx-border-strong);
   --vx-map-land: var(--vx-border);
   --vx-map-land-home: var(--vx-border-strong);
   --vx-map-line: var(--vx-text-muted);
@@ -256,6 +258,7 @@
   --vx-switch-track-on: var(--vx-fill-primary);
   --vx-switch-knob: var(--vx-text-secondary);
   --vx-switch-knob-on: var(--vx-on-primary);
+  --vx-badge-neutral: var(--vx-border-strong);
   --vx-map-land: var(--vx-border);
   --vx-map-land-home: var(--vx-border-strong);
   --vx-map-line: var(--vx-text-muted);

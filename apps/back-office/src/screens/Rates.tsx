@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { toDate } from '@vertex/kernel';
 import { isQuoteForm } from '@vertex/fx';
@@ -36,17 +36,23 @@ import {
 } from '@vertex/ui';
 import type { Branch } from '@vertex/sys/contract';
 
-import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
+import { useDeliveryMessage, useLoaded, useOrganisation, type Delivery } from '../organisation.js';
 import { useRates } from '../rates.js';
-import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
+import { useNavigateTo } from '../routing.js';
+import { branchColumn, branchesIn, ScopeFilters, useBranchScope } from './scope.js';
 import { ReadState, RenameIcon, StaleBanner } from './structure.js';
 
 /**
  * `FX-04`: a branch's own daily rate board.
  *
- * Scoped to one branch, chosen in the address bar, for the reason
- * `Locations.tsx` and `Registers.tsx` already are: a branch's rates are its
- * own, and nobody works across forty of them at once.
+ * One branch's board, or every branch's at once (`scope.tsx`), with each
+ * row's action recording at *its own* branch — a rate is always one branch's.
+ *
+ * **Adopting is offered only where the board is one branch's.** `FX-04` has
+ * each branch adopt the owner's suggestion from its own board, and a button
+ * that quietly recorded rates at forty branches at once would make that
+ * decision for every manager. A board of every branch in a shop that has only
+ * one is that branch's board, and offers it.
  *
  * `board()` can refuse — the tenant's currencies may not be set up yet, or the
  * branch named in the address bar may no longer exist — which no other
@@ -69,55 +75,98 @@ import { ReadState, RenameIcon, StaleBanner } from './structure.js';
  * register, and this codebase does not host one yet (`modules.md` §2 —
  * `apps/back-office` and `apps/sandbox` only; `U07` brings `apps/register`).
  */
+/** One branch's answer: its board, or the reason there is none. */
+interface BranchBoard {
+  readonly branch: Branch['id'];
+  readonly delivery: Delivery<RateBoard>;
+}
+
+/**
+ * One line on screen, and the branch it is at.
+ *
+ * `RateBoardLine` names a currency and never a branch — a board is one branch's
+ * — so once several boards share a table, the branch has to travel with the
+ * line, or a row could not say which branch's rate a press of its action means.
+ */
+interface BoardRow {
+  readonly branch: Branch;
+  readonly line: RateBoardLine;
+}
+
 export function Rates(): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
   const goTo = useNavigateTo();
-  const route = useRoute();
-  const { branches, isLoading, unreachable } = useOrganisation();
+  const { branches: everyBranch, isLoading, unreachable } = useOrganisation();
   const { run } = useRates();
   const messageFor = useDeliveryMessage();
+  const scope = useBranchScope('rates');
+  const { branches, chosen, isAllBranches } = scope;
 
-  const [editing, setEditing] = useState<RateBoardLine | null>(null);
+  const [editing, setEditing] = useState<BoardRow | null>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
 
-  const openBranches = useMemo(() => branches.filter((one) => one.active), [branches]);
-  const chosen = useMemo(
-    () => branches.find((one) => one.id === route.subject) ?? null,
-    [branches, route.subject],
+  // Read through `useRates()`'s own `run`, so a refusal stays a sentence rather
+  // than the generic "unreachable" banner, and held per branch rather than
+  // flattened, so one branch that refuses cannot hide the others' boards.
+  const read = useCallback(
+    (subject: string): Promise<readonly BranchBoard[]> =>
+      Promise.all(
+        branchesIn(subject).map(async (branch) => ({
+          branch,
+          delivery: await run((of) => of.board(branch)),
+        })),
+      ),
+    [run],
   );
+  const board = useLoaded(scope.subject, read);
 
-  // Arriving with no branch named, or with one that is not this tenant's,
-  // lands on the first branch that is open — the same arrangement
-  // `Locations.tsx` and `Registers.tsx` use, for the same reason: this board
-  // cannot be read without a branch.
-  useEffect(() => {
-    if (chosen !== null || branches.length === 0) return;
-    const first = openBranches[0] ?? branches[0];
-    if (first !== undefined) redirect(hrefOf('rates', first.id));
-  }, [chosen, branches, openBranches]);
-
-  const readBoard = useCallback((branch: Branch['id']) => run((of) => of.board(branch)), [run]);
-  const board = useLoaded(chosen?.id ?? null, readBoard);
-  const delivery = board.value;
-  const rateBoard: RateBoard | null = delivery?.kind === 'done' ? delivery.value : null;
+  const boards = useMemo(() => board.value ?? [], [board.value]);
+  // The branch record is looked up here rather than carried by the read, so a
+  // branch renamed or re-zoned since the board was read shows as it is now.
+  const rows = useMemo(
+    (): readonly BoardRow[] =>
+      boards.flatMap(({ branch: id, delivery }) => {
+        const branch = everyBranch.find((one) => one.id === id);
+        return branch === undefined || delivery.kind !== 'done'
+          ? []
+          : delivery.value.lines.map((line) => ({ branch, line }));
+      }),
+    [boards, everyBranch],
+  );
+  // The functional currency and the list of currencies belong to the tenant,
+  // not to a branch, so whichever board answered first speaks for the rest —
+  // it is what the two dialogs below are written against.
+  const rateBoard = useMemo<RateBoard | null>(() => {
+    for (const { delivery } of boards) {
+      if (delivery.kind === 'done') return delivery.value;
+    }
+    return null;
+  }, [boards]);
   // Covers a genuine refusal (the tenant's currencies are not set up yet, or
   // the branch named in the address bar is gone) and a transport failure
   // alike — `useDeliveryMessage` already draws that line, and this board has
-  // one banner for both rather than two.
-  const boardMessage = delivery === null ? null : messageFor(delivery);
+  // one banner for both rather than two. The first branch that refused speaks
+  // for the rest: a refusal about the tenant is the same at every branch.
+  const boardMessage =
+    boards.map(({ delivery }) => messageFor(delivery)).find((one) => one !== null) ?? null;
+
+  // The one branch a board on screen is, if it is one branch's — see the note
+  // at the top on why adopting is offered nowhere else.
+  const adopting = chosen ?? (branches.length === 1 ? (branches[0] ?? null) : null);
 
   // A suggestion this branch's own revision was already recorded from is not
   // offered again — otherwise the banner would still ask for one action
   // already taken, on every visit until the owner publishes a newer one.
   const hasSuggestions =
-    rateBoard?.lines.some(
-      (line) => line.suggestion !== null && line.revision?.adoptedFrom !== line.suggestion.id,
-    ) ?? false;
+    adopting !== null &&
+    rows.some(
+      ({ line }) => line.suggestion !== null && line.revision?.adoptedFrom !== line.suggestion.id,
+    );
 
-  async function recordOrCorrect(line: RateBoardLine, quote: RateQuote): Promise<string | null> {
-    if (chosen === null) return null;
-    const delivery = await run((of) => of.record(chosen.id, line.currency.code, quote));
+  async function recordOrCorrect(row: BoardRow, quote: RateQuote): Promise<string | null> {
+    const { branch, line } = row;
+    const delivery = await run((of) => of.record(branch.id, line.currency.code, quote));
     const message = messageFor(delivery);
     if (message === null) {
       board.reload();
@@ -132,8 +181,9 @@ export function Rates(): ReactNode {
   }
 
   async function adopt(): Promise<void> {
-    if (chosen === null) return;
-    const delivery = await run((of) => of.adopt(chosen.id));
+    if (adopting === null) return;
+    const branch = adopting.id;
+    const delivery = await run((of) => of.adopt(branch));
     const message = messageFor(delivery);
     if (message === null) {
       board.reload();
@@ -153,7 +203,9 @@ export function Rates(): ReactNode {
     return message;
   }
 
-  if (branches.length === 0 && unreachable) {
+  // Asked of the whole tenant rather than of the company filtered to, which may
+  // have no branches without the shop having none.
+  if (everyBranch.length === 0 && unreachable) {
     return (
       <>
         <PageHeader
@@ -165,7 +217,7 @@ export function Rates(): ReactNode {
     );
   }
 
-  if (branches.length === 0 && !isLoading) {
+  if (everyBranch.length === 0 && !isLoading) {
     return (
       <>
         <PageHeader
@@ -191,32 +243,34 @@ export function Rates(): ReactNode {
     );
   }
 
-  const branchOptions: readonly SelectOption[] = branches.map((one) => ({
-    id: one.id,
-    label: one.name,
-  }));
-
   // Reads `line.revision.functional` rather than `rateBoard.functional.code`
   // in the two cells below — the revision already carries it (`FX-04`: what
   // "one unit of the functional currency" meant when it was recorded), so
-  // these closures need nothing from outside `line` and the array needs no
-  // `rateBoard === null` branch of its own: `rows` is already `[]` then.
-  const columns: readonly DataTableColumn<RateBoardLine>[] = [
+  // these closures need nothing from outside the row and the array needs no
+  // `rateBoard === null` branch of its own: `rows` is already `[]` then. The
+  // time zone is the row's own branch's: a board is read in its branch's day
+  // (`FX-04`), and two branches of one tenant need not share a zone.
+  const columns: readonly DataTableColumn<BoardRow>[] = [
     {
       id: 'currency',
       header: translator.format('rates.column.currency'),
       isRowHeader: true,
-      render: (line) => <Code>{line.currency.code}</Code>,
+      render: ({ line }) => <Code>{line.currency.code}</Code>,
     },
+    ...branchColumn<BoardRow>(
+      scope,
+      translator.format('rates.column.branch'),
+      (row) => row.branch.id,
+    ),
     {
       id: 'buy',
       header: translator.format('rates.column.buy'),
-      // `CurrencyRate` packs a rate, both currency codes, a date and a time
-      // zone onto one line, and it wraps rather than overflows if that is
+      // `CurrencyRate` packs a rate, both currency codes and a date onto one
+      // line, and it wraps rather than overflows if that is
       // wider than this — the number is a comfortable single-line fit for
       // the common case, not a bound trusted to hold for every one.
       width: 260,
-      render: (line) =>
+      render: ({ branch, line }) =>
         line.revision === null ? (
           <Badge tone="warning">{translator.format('rates.missing')}</Badge>
         ) : (
@@ -225,7 +279,7 @@ export function Rates(): ReactNode {
             currency={line.currency.code}
             functionalCurrency={line.revision.functional}
             asOf={toDate(line.revision.recordedAt)}
-            timeZone={chosen?.timeZone ?? 'UTC'}
+            timeZone={branch.timeZone}
             decimals={line.currency.decimals}
           />
         ),
@@ -234,7 +288,7 @@ export function Rates(): ReactNode {
       id: 'sell',
       header: translator.format('rates.column.sell'),
       width: 260,
-      render: (line) =>
+      render: ({ branch, line }) =>
         line.revision === null ? (
           <Badge tone="warning">{translator.format('rates.missing')}</Badge>
         ) : (
@@ -243,7 +297,7 @@ export function Rates(): ReactNode {
             currency={line.currency.code}
             functionalCurrency={line.revision.functional}
             asOf={toDate(line.revision.recordedAt)}
-            timeZone={chosen?.timeZone ?? 'UTC'}
+            timeZone={branch.timeZone}
             decimals={line.currency.decimals}
           />
         ),
@@ -251,21 +305,21 @@ export function Rates(): ReactNode {
     {
       id: 'suggested',
       header: translator.format('rates.column.suggested'),
-      render: (line) => <SuggestedFigure line={line} />,
+      render: ({ line }) => <SuggestedFigure line={line} />,
     },
     {
       id: 'actions',
       header: translator.format('rates.column.actions'),
       align: 'end',
       width: actionsColumnWidth(1),
-      render: (line) => (
+      render: (row) => (
         <TableRowActions>
           <TableRowAction
             aria-label={translator.format(
-              line.revision === null ? 'rates.record.action' : 'rates.correct.action',
+              row.line.revision === null ? 'rates.record.action' : 'rates.correct.action',
             )}
             onPress={() => {
-              setEditing(line);
+              setEditing(row);
             }}
           >
             <RenameIcon />
@@ -321,16 +375,9 @@ export function Rates(): ReactNode {
         </Banner>
       )}
 
-      <Select
-        label={translator.format('rates.branch')}
-        placeholder={translator.format('rates.branch.placeholder')}
-        options={branchOptions}
-        value={chosen?.id ?? null}
-        onChange={(key) => {
-          redirect(hrefOf('rates', String(key)));
-        }}
-        className="w-[16rem] max-w-full"
-      />
+      <div className="flex flex-wrap items-end gap-[var(--vx-gap-md)]">
+        <ScopeFilters scope={scope} screen="rates" />
+      </div>
 
       <ReadState loaded={board} />
 
@@ -338,8 +385,8 @@ export function Rates(): ReactNode {
         <DataTable
           label={translator.format('rates.table')}
           columns={columns}
-          rows={rateBoard?.lines ?? []}
-          rowKey={(line) => line.currency.code}
+          rows={rows}
+          rowKey={({ branch, line }) => `${branch.id}:${line.currency.code}`}
           emptyMessage={translator.format(board.isLoading ? 'data.loading' : 'listing.noMatch')}
         />
       </Panel>
@@ -347,7 +394,11 @@ export function Rates(): ReactNode {
       {rateBoard === null ? null : (
         <>
           <RateDialog
-            line={editing}
+            line={editing?.line ?? null}
+            // Named only when the table itself does not: with one branch
+            // chosen the `Select` above already says where this rate goes,
+            // and in the aggregate nothing on the row being edited does.
+            branchName={isAllBranches ? (editing?.branch.name ?? null) : null}
             functional={rateBoard.functional}
             onOpenChange={(isOpen) => {
               if (!isOpen) setEditing(null);
@@ -412,6 +463,8 @@ function quoteFormOptions(
 interface RateDialogProps {
   /** The row being recorded or corrected. Null exactly while the dialog is closed. */
   readonly line: RateBoardLine | null;
+  /** The branch the rate is for, when nothing else on screen says so; null otherwise. */
+  readonly branchName: string | null;
   readonly functional: TenantCurrency;
   readonly onOpenChange: (isOpen: boolean) => void;
   readonly onSubmit: (quote: RateQuote) => Promise<string | null>;
@@ -425,7 +478,13 @@ interface RateDialogProps {
  * in, because `FX-04` says a correction is "a new revision the same day", not
  * a blank form somebody has to re-type from a board.
  */
-function RateDialog({ line, functional, onOpenChange, onSubmit }: RateDialogProps): ReactNode {
+function RateDialog({
+  line,
+  branchName,
+  functional,
+  onOpenChange,
+  onSubmit,
+}: RateDialogProps): ReactNode {
   const translator = useTranslator();
   // Never a state of its own: two props that could disagree, held apart from
   // the field they'd disagree about, is exactly the bug `line` being null
@@ -442,7 +501,8 @@ function RateDialog({ line, functional, onOpenChange, onSubmit }: RateDialogProp
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(line, () => {
     setForm(line?.revision?.quoted.form ?? 'units-per-functional');
@@ -457,7 +517,7 @@ function RateDialog({ line, functional, onOpenChange, onSubmit }: RateDialogProp
     const blank = { buy: buy.trim() === '', sell: sell.trim() === '' };
     setMissing(blank);
     if (blank.buy || blank.sell) {
-      setRefused(null);
+      reportInvalid();
       return;
     }
 
@@ -494,6 +554,7 @@ function RateDialog({ line, functional, onOpenChange, onSubmit }: RateDialogProp
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();
@@ -501,6 +562,11 @@ function RateDialog({ line, functional, onOpenChange, onSubmit }: RateDialogProp
         className="flex flex-col gap-[var(--vx-gap-md)]"
       >
         {refused === null ? null : <Banner tone="danger">{refused}</Banner>}
+        {branchName === null ? null : (
+          <p className="text-body text-fg-secondary">
+            {translator.format('rates.record.branch', { name: branchName })}
+          </p>
+        )}
         <Select
           label={translator.format('rates.field.form')}
           options={quoteFormOptions(translator, currency, functional.code)}
@@ -580,7 +646,8 @@ function SuggestDialog({
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(isOpen, () => {
     setCurrency(lines[0]?.currency.code ?? '');
@@ -600,7 +667,7 @@ function SuggestDialog({
     };
     setMissing(blank);
     if (blank.currency || blank.buy || blank.sell) {
-      setRefused(null);
+      reportInvalid();
       return;
     }
 
@@ -633,6 +700,7 @@ function SuggestDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 /**
  * Where the back office is, and how it gets somewhere else.
@@ -104,10 +104,48 @@ function addressNow(): string {
   return `${globalThis.location.pathname}${globalThis.location.search}`;
 }
 
-export function navigate(href: string): void {
+/**
+ * Whether the screen on show may be left, asked before `navigate` moves the
+ * address — a promise, because the answer is a person's.
+ *
+ * One at a time, because this application shows one screen at a time. It
+ * holds up `navigate()`, the address changing to a **different screen**, and
+ * not `redirect()`, which a screen calls on itself — to land on a record, to
+ * follow a filter it just changed. Asking "leave?" about a screen correcting
+ * its own view of itself would be asking the wrong question.
+ */
+type NavigationGuard = () => Promise<boolean>;
+
+let guard: NavigationGuard | null = null;
+
+/**
+ * Registers a screen's guard, and returns what takes it away again — only if
+ * it is still the one registered, so a screen leaving can never clear the
+ * guard of the screen that replaced it.
+ */
+function registerNavigationGuard(next: NavigationGuard): () => void {
+  guard = next;
+  return () => {
+    if (guard === next) guard = null;
+  };
+}
+
+async function navigateAfterGuard(href: string): Promise<void> {
   if (href === addressNow()) return;
+  if (guard !== null && !(await guard())) return;
   globalThis.history.pushState(null, '', href);
   globalThis.dispatchEvent(new Event(CHANGED));
+}
+
+/**
+ * Synchronous on purpose, though what it wraps is not: `VertexProvider`
+ * hands this to React Aria as the router's `navigate`, typed
+ * `(href: string) => void`, and every `SideNav` link calls it that way. The
+ * guard still runs and the address still waits for it; the wait just does not
+ * leak into a contract every caller already treats as fire-and-forget.
+ */
+export function navigate(href: string): void {
+  void navigateAfterGuard(href);
 }
 
 /** Replaces the address without adding a step to the history stack. */
@@ -139,4 +177,112 @@ export function useNavigateTo(): (name: RouteName, subject?: string | null) => v
   return useCallback((name: RouteName, subject?: string | null) => {
     navigate(hrefOf(name, subject));
   }, []);
+}
+
+export interface UnsavedChangesGuard {
+  /** Whether the confirmation is on screen. What a caller renders its dialog from. */
+  readonly isOpen: boolean;
+  /** Whether the caller's own save is in flight — the moment nothing here may be pressed twice. */
+  readonly isSaving: boolean;
+  /** Stay. The navigation that asked is left exactly where it was, going nowhere. */
+  readonly cancel: () => void;
+  /** Leave, and let whatever is unsaved be lost. */
+  readonly discard: () => void;
+  /** Save, then leave — unless the save was refused, in which case neither happens. */
+  readonly save: () => void;
+}
+
+/**
+ * A screen holding an edit nobody saved is not left without being asked —
+ * `SYS-05`'s confirmation before a discard, carried to the navigation that
+ * would discard it.
+ *
+ * **A screen's whole part in this is one boolean and one function**: whether
+ * it is dirty, and how to save what it holds. Registering with `navigate()`,
+ * holding the question open, running the save and only then letting the
+ * waiting navigation continue is the same for every screen, so it is here.
+ *
+ * `onSave` reports whether the save went through, rather than this hook
+ * inferring it from `isDirty` turning false: by the time the save resolves the
+ * screen may not have re-rendered yet, and a refusal is the screen's to
+ * explain — this only needs to know whether it may now do what was waiting.
+ *
+ * **What it covers, and what it cannot.** Every in-app link, and closing or
+ * reloading the tab, which a browser answers with its own prompt. Not the
+ * browser's own Back and Forward: history cannot be vetoed, only rewritten
+ * after the fact, and a guard that pushed entries back to undo a Back would
+ * leave the history stack saying something that never happened.
+ */
+export function useUnsavedChangesGuard(
+  isDirty: boolean,
+  onSave: () => Promise<boolean>,
+): UnsavedChangesGuard {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const pending = useRef<((mayLeave: boolean) => void) | null>(null);
+
+  // Read inside the guard rather than captured by it: the guard below is
+  // registered once per `isDirty` flip, not once per render, so a closure
+  // over `onSave` from that render would call back into a screen's state as
+  // it stood when typing last changed `isDirty` — its last dirty draft, not
+  // its current one.
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
+  useEffect(() => {
+    if (!isDirty) return undefined;
+
+    const unregister = registerNavigationGuard(
+      () =>
+        new Promise<boolean>((resolvePendingNavigation) => {
+          // A second link pressed while the question is still open replaces
+          // the first navigation rather than queueing behind it: the earlier
+          // one is answered "stay", and only the latest is asked about.
+          pending.current?.(false);
+          pending.current = resolvePendingNavigation;
+          setIsOpen(true);
+        }),
+    );
+
+    // `beforeunload` cannot be asked a question — a browser shows its own
+    // wording and waits for nothing this application returns — so it gets the
+    // one answer that is always safe. `preventDefault` is the standard way to
+    // ask for the browser's prompt; `returnValue` is its deprecated spelling.
+    const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    globalThis.addEventListener('beforeunload', onBeforeUnload);
+
+    return () => {
+      unregister();
+      globalThis.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [isDirty]);
+
+  function settle(mayLeave: boolean): void {
+    setIsOpen(false);
+    pending.current?.(mayLeave);
+    pending.current = null;
+  }
+
+  return {
+    isOpen,
+    isSaving,
+    cancel: () => {
+      settle(false);
+    },
+    discard: () => {
+      settle(true);
+    },
+    save: () => {
+      setIsSaving(true);
+      void onSaveRef
+        .current()
+        .catch(() => false)
+        .then((succeeded) => {
+          setIsSaving(false);
+          settle(succeeded);
+        });
+    },
+  };
 }

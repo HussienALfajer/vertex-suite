@@ -347,6 +347,19 @@ export const catalogue = {
   'action.save': 'حفظ',
 
   /**
+   * `useUnsavedChangesGuard`'s own dialog (`routing.ts`) — asked once, by the
+   * router, of whichever screen is dirty when a navigation away from it is
+   * attempted. One wording for every screen it will ever cover, the same way
+   * `action.*` is: the choice is "leave a dirty form", not "leave this one".
+   */
+  'navigation.unsaved.title': 'تغييرات لم تُحفظ',
+  'navigation.unsaved.message':
+    'لن تُحفظ التغييرات التي أجريتها في هذه الصفحة إذا غادرتها الآن. يمكنك حفظها، أو تجاهلها والمتابعة، أو البقاء لإكمال التعديل.',
+  'navigation.unsaved.discard': 'تجاهل ومتابعة',
+  'navigation.unsaved.save': 'حفظ ومتابعة',
+  'navigation.unsaved.saving': 'جارٍ الحفظ…',
+
+  /**
    * `SYS-14` — the address, the map, and the picker.
    *
    * The map's own controls are named rather than left as symbols, because an
@@ -414,6 +427,14 @@ export const catalogue = {
   'password.show': 'إظهار كلمة المرور',
   'password.hide': 'إخفاء كلمة المرور',
 
+  /** Named by `FormatBuilder` itself for the parts of it no screen labels one by one. */
+  'formatBuilder.leading': 'نص قبل أول علامة',
+  'formatBuilder.mark.drag': 'اسحب لإعادة ترتيب: {mark}',
+  'formatBuilder.mark.width': 'عدد خانات {mark}',
+  'formatBuilder.mark.suffix': 'نص بعد {mark}',
+  /** Announced when a mark is moved from the keyboard, where nobody may be looking at it. */
+  'formatBuilder.mark.moved': '{mark} في الموضع {position, number} من {count, number}',
+
   'status.inUse': 'قيد الاستخدام',
   'status.withdrawn': 'مسحوب من الخدمة',
 
@@ -480,6 +501,7 @@ export const catalogue = {
   'branches.column.name': 'الفرع',
   'branches.column.company': 'الشركة',
   'branches.column.status': 'الحالة',
+  'branches.status.companyWithdrawn': 'متوقف — الشركة مسحوبة من الخدمة',
   'branches.column.actions': 'إجراءات',
   'branches.filter.company': 'تصفية حسب الشركة',
   'branches.filter.allCompanies': 'كل الشركات',
@@ -515,20 +537,33 @@ export const catalogue = {
   'locations.table': 'المواقع',
   'locations.search': 'ابحث في المواقع',
   'locations.open': 'فتح موقع',
+  'locations.filter.company': 'تصفية حسب الشركة',
+  'locations.filter.allCompanies': 'كل الشركات',
   'locations.branch': 'الفرع',
   'locations.branch.placeholder': 'اختر الفرع',
+  'locations.branch.all': 'كل فروع المتجر',
+  'locations.branch.allInCompany': 'كل فروع «{company}»',
   'locations.column.name': 'الموقع',
+  'locations.column.branch': 'الفرع',
   'locations.column.kind': 'النوع',
   'locations.column.status': 'الحالة',
+  'locations.status.branchWithdrawn': 'متوقف — الفرع مسحوب من الخدمة',
   'locations.column.actions': 'إجراءات',
   'locations.map': 'مواقع «{branch}» على الخريطة',
+  'locations.map.allBranches': 'مواقع كل الفروع على الخريطة',
+  'locations.map.allBranchesInCompany': 'مواقع فروع «{company}» على الخريطة',
   'locations.map.branch': 'الفرع',
   'locations.map.empty':
     'لا شيء هنا بعد: المواقع داخل الفرع تكون عند نقطته، ولا تُفرَد بنقطة إلا إن كانت في مكان آخر — كمستودع خارج المدينة.',
   'locations.empty': 'لا مواقع في هذا الفرع بعد',
+  'locations.empty.allBranches': 'لا مواقع في أي فرع بعد',
+  'locations.empty.allBranchesInCompany': 'لا مواقع في أي فرع من فروع «{company}» بعد',
   'locations.empty.explanation':
     'افتح صالة بيع ومستودعًا على الأقل، حتى تستقرّ البضاعة في مكان معلوم.',
   'locations.new.title': 'فتح موقع',
+  'locations.new.branch': 'الفرع',
+  'locations.new.branch.placeholder': 'اختر الفرع',
+  'locations.new.branch.required': 'اختر الفرع الذي يتبعه الموقع.',
   'locations.new.name': 'اسم الموقع',
   'locations.new.kind': 'النوع',
   'locations.new.kind.description':
@@ -576,14 +611,20 @@ export const catalogue = {
     'مواقع البيع داخل الفرع، والأجهزة القائمة عليها. لكل صندوق رمز يرافق كل رقم مستند يصدر عنه، ولجهازه جيل يمنع الجهاز البديل من إعادة إصدار رقم طبعه سابقه ولم يصل بعد.',
   'registers.table': 'الصناديق',
   'registers.search': 'ابحث في الصناديق',
+  'registers.filter.company': 'تصفية حسب الشركة',
+  'registers.filter.allCompanies': 'كل الشركات',
   'registers.branch': 'الفرع',
   'registers.branch.placeholder': 'اختر الفرع',
+  'registers.branch.all': 'كل فروع المتجر',
+  'registers.branch.allInCompany': 'كل فروع «{company}»',
   'registers.open': 'فتح صندوق',
   'registers.column.name': 'الصندوق',
+  'registers.column.branch': 'الفرع',
   'registers.column.prefix': 'الرمز',
   'registers.column.device': 'الجهاز',
   'registers.column.generation': 'الجيل',
   'registers.column.status': 'الحالة',
+  'registers.status.branchWithdrawn': 'متوقف — الفرع مسحوب من الخدمة',
   'registers.column.actions': 'إجراءات',
   /** The number goes through the locale, so §5.5's per-tenant digits reach it. */
   'registers.generation.value': '{generation, number}',
@@ -594,12 +635,17 @@ export const catalogue = {
   'registers.idle.explanation':
     '{count, plural, one {صندوق واحد قيد الاستخدام لا جهاز عليه} two {صندوقان قيد الاستخدام لا جهاز عليهما} few {# صناديق قيد الاستخدام بلا أجهزة} many {# صندوقًا قيد الاستخدام بلا أجهزة} other {# صندوق قيد الاستخدام بلا أجهزة}}. رقم المستند يحمل جيل الجهاز، ولا جيل قبل أن يُسجَّل جهاز — فلن يصدر بيع من هذه الصناديق حتى تُسجَّل أجهزتها.',
   'registers.empty': 'لا صناديق في هذا الفرع بعد',
+  'registers.empty.allBranches': 'لا صناديق في أي فرع بعد',
+  'registers.empty.allBranchesInCompany': 'لا صناديق في أي فرع من فروع «{company}» بعد',
   'registers.empty.explanation':
     'الصندوق هو موقع البيع الذي تصدر عنه الإيصالات، ورمزه يرافق كل رقم يصدر منه.',
   'registers.noBranches': 'لا يوجد فرع بعد',
   'registers.noBranches.explanation': 'الصندوق يُفتح داخل فرع، فابدأ بفتح الفرع.',
   'registers.noBranches.action': 'الذهاب إلى الفروع',
   'registers.new.title': 'فتح صندوق',
+  'registers.new.branch': 'الفرع',
+  'registers.new.branch.placeholder': 'اختر الفرع',
+  'registers.new.branch.required': 'اختر الفرع الذي يتبعه الصندوق.',
   'registers.new.name': 'اسم الصندوق',
   'registers.new.prefix': 'رمز الصندوق',
   'registers.new.prefix.description':
@@ -655,11 +701,16 @@ export const catalogue = {
     'صيغة رقم المستند: سلسلة مستقلة لكل نوع مستند، ولكل فرع، ولكل صندوق، ولكل سنة مالية. ما صدر من أرقام يبقى كما طُبع، والصيغة الجديدة تسري من الرقم التالي وحده.',
   'numbering.table': 'سلاسل الترقيم',
   'numbering.search': 'ابحث في أنواع المستندات',
+  'numbering.filter.company': 'تصفية حسب الشركة',
+  'numbering.filter.allCompanies': 'كل الشركات',
   'numbering.branch': 'الفرع',
   'numbering.branch.placeholder': 'اختر الفرع',
+  'numbering.branch.all': 'كل فروع المتجر',
+  'numbering.branch.allInCompany': 'كل فروع «{company}»',
   'numbering.filter.register': 'تصفية حسب الصندوق',
   'numbering.filter.allRegisters': 'كل الصناديق',
   'numbering.column.documentType': 'نوع المستند',
+  'numbering.column.branch': 'الفرع',
   'numbering.column.register': 'الصندوق',
   'numbering.column.fiscalYear': 'السنة المالية',
   'numbering.column.format': 'الصيغة',
@@ -668,14 +719,19 @@ export const catalogue = {
   'numbering.register.none': 'بدون صندوق',
   'numbering.register.withdrawn': '{name} (مسحوب من الخدمة)',
   'numbering.register.unknown': 'صندوق لم يعد معروفًا',
+  /** A till in the "all branches" till filter, where two branches' tills may share a name. */
+  'numbering.register.inBranch': '{register} — {branch}',
   'numbering.define': 'تعريف سلسلة',
   'numbering.empty': 'لا سلسلة معرّفة في هذا الفرع',
+  'numbering.empty.allBranches': 'لا سلسلة معرّفة في أي فرع بعد',
+  'numbering.empty.allBranchesInCompany': 'لا سلسلة معرّفة في أي فرع من فروع «{company}» بعد',
   'numbering.empty.explanation':
     'وهذا ليس نقصًا: كل مستند يُرقَّم بالصيغة الافتراضية من أول بيعة، بلا إعداد وبلا اتصال. عرّف سلسلة حين تريد صيغة تخصّك.',
   'numbering.noBranches': 'لا يوجد فرع بعد',
   'numbering.noBranches.explanation': 'السلسلة تُعرَّف داخل فرع، فابدأ بفتح الفرع.',
   'numbering.noBranches.action': 'الذهاب إلى الفروع',
   'numbering.new.title': 'تعريف سلسلة ترقيم',
+  'numbering.new.branch.required': 'اختر الفرع الذي تتبعه السلسلة.',
   'numbering.revise.title': 'تعديل صيغة السلسلة',
   'numbering.revise.action': 'تعديل الصيغة',
   'numbering.revise.note':
@@ -692,14 +748,13 @@ export const catalogue = {
     'تسمية تُقسَّم بها السلسلة، كما يسمّيها نظامك المحاسبي: 2026، أو 2026-27، أو 1447.',
   'numbering.fiscalYear.required': 'أدخل السنة المالية.',
   'numbering.format': 'الصيغة',
-  'numbering.format.description': 'نصّ ثابت تتخلّله علامات بين قوسين معقوفين، تُملأ عند كل إصدار.',
+  'numbering.format.description':
+    'اسحب البطاقات لترتيبها، واكتب فاصلًا بينها إن أردت (شرطة، رمز #…) — الرقم أسفله يعكس كل تغيير فورًا.',
   'numbering.format.required': 'أدخل الصيغة.',
-  'numbering.marks': 'العلامات المتاحة',
-  'numbering.field.sequence':
-    'العدّاد: يزيد واحدًا مع كل مستند. يقبل عرضًا ثابتًا بعد نقطتين، فيُصفَّر إليه.',
-  'numbering.field.prefix': 'رمز الصندوق كما فُتح به.',
-  'numbering.field.generation': 'جيل جهاز الصندوق: يرتفع مع كل جهاز بديل. يقبل عرضًا ثابتًا كذلك.',
-  'numbering.field.year': 'السنة المالية كما كُتبت في هذه السلسلة.',
+  'numbering.mark.sequence': 'الرقم التسلسلي',
+  'numbering.mark.prefix': 'رمز الصندوق',
+  'numbering.mark.generation': 'جيل الجهاز',
+  'numbering.mark.year': 'السنة المالية',
   'numbering.specimen': 'الرقم التالي بهذه الصيغة',
   'numbering.specimen.sequence': 'التسلسل التالي: {sequence, number}',
   'numbering.specimen.default': 'لا صيغة معرّفة هنا؛ هذه هي الافتراضية السارية الآن.',
@@ -754,6 +809,19 @@ export const catalogue = {
   'users.new.submit': 'إضافة',
   'users.enrolled': 'أُضيف «{name}».',
 
+  /**
+   * The wizard's second step: `enrol` has already succeeded by the time this
+   * shows, and what is asked here is `SEC-01`/`SEC-04`'s assignment for the
+   * person it just produced — `users.scope.role`, `.role.placeholder`,
+   * `.role.required`, `.reach`, `.branches.required` and `.assign` are shared
+   * with `ScopeDialog`, which asks the identical question from a row reached
+   * later instead of from this dialog's own second half.
+   */
+  'users.new.role.title': 'تعيين دور لـ«{name}»',
+  'users.new.role.description':
+    'أُضيف «{name}» بنجاح. عيّن له دورًا الآن ليستطيع العمل، أو لاحقًا من صف المستخدم في القائمة.',
+  'users.new.role.skip': 'لاحقًا',
+
   'users.rename.title': 'تغيير اسم المستخدم',
   'users.renamed': 'صار يُعرف باسم «{name}».',
 
@@ -798,14 +866,28 @@ export const catalogue = {
   'users.scope.tenantWide': 'كل فروع المتجر',
   'users.scope.someBranches': 'فروع محددة',
   'users.scope.withdraw': 'سحب هذا الدور',
+  /**
+   * Pre-fills the "assign" section below with this row's own role/user and
+   * confinement — the same `assign` command the section already submits,
+   * which replaces a held role's confinement rather than duplicating it
+   * (`RoleAdministration`). Not a second command: a shortcut to the first one,
+   * aimed at the row it was pressed from instead of a blank form.
+   */
+  'users.scope.editReach': 'تعديل النطاق',
+  'users.scope.withdraw.confirm.title': 'سحب الدور',
+  'users.scope.withdraw.confirm.message':
+    'لن يستطيع «{name}» العمل بدور «{role}» بعد الآن. يمكنك تعيين الدور له مجددًا في أي وقت.',
   'users.scope.assign.title': 'تعيين دور',
   'users.scope.role': 'الدور',
-  'users.scope.role.placeholder': 'اختر الدور',
-  'users.scope.role.required': 'اختر الدور.',
+  'users.scope.role.required': 'اختر دورًا واحدًا على الأقل.',
+  /** The badge beside a role this user already holds some assignment of, in the "assign" checklist. */
+  'users.scope.role.alreadyHeld': 'مُعيَّن حاليًا',
   'users.scope.reach': 'النطاق',
   'users.scope.branches.required': 'اختر فرعًا واحدًا على الأقل.',
   'users.scope.assign': 'تعيين',
   'users.scope.assigned': 'صار دور «{role}» لـ«{name}».',
+  /** More than one role assigned in the same submission — `Intl.ListFormat`, the way `branchNames` joins its own list. */
+  'users.scope.assignedMany': 'صارت هذه الأدوار لـ«{name}»: {roles}.',
   'users.scope.withdrawn': 'سُحب دور «{role}» من «{name}».',
 
   /**
@@ -941,10 +1023,15 @@ export const catalogue = {
    */
   'rates.title': 'لوحة الأسعار اليومية',
   'rates.description':
-    'سعرا الشراء والبيع لكل عملة في هذا الفرع، لهذا اليوم — والسعر الذي ينشره المالك لتتبنّاه كل عملة له سعر مقترح.',
+    'سعرا الشراء والبيع لكل عملة في الفرع، لهذا اليوم — والسعر الذي ينشره المالك لتتبنّاه كل عملة له سعر مقترح.',
   'rates.table': 'الأسعار',
+  'rates.filter.company': 'تصفية حسب الشركة',
+  'rates.filter.allCompanies': 'كل الشركات',
   'rates.branch': 'الفرع',
   'rates.branch.placeholder': 'اختر الفرع',
+  'rates.branch.all': 'كل فروع المتجر',
+  'rates.branch.allInCompany': 'كل فروع «{company}»',
+  'rates.column.branch': 'الفرع',
   'rates.noBranches': 'لا يوجد فرع بعد',
   'rates.noBranches.explanation': 'السعر اليومي يُسجَّل داخل فرع، فابدأ بفتح الفرع.',
   'rates.noBranches.action': 'الذهاب إلى الفروع',
@@ -960,6 +1047,7 @@ export const catalogue = {
 
   'rates.record.action': 'تسجيل سعر اليوم',
   'rates.record.title': 'تسجيل سعر اليوم — {code}',
+  'rates.record.branch': 'الفرع: {name}',
   'rates.record.submit': 'تسجيل',
   'rates.recorded': 'سُجِّل سعر «{code}» لليوم.',
   'rates.correct.action': 'تصحيح سعر اليوم',

@@ -244,3 +244,35 @@ describe('The organisation is read only on behalf of somebody signed in', () => 
     expect(await system.organisation.companies.list()).toEqual([]);
   });
 });
+
+// Not named for a feature: the demo is a way of looking at the screens, and
+// proves nothing a shop does.
+describe('The demo shop', () => {
+  it('opens already set up when asked for, and empty otherwise', async () => {
+    const demo = developmentSystem({ people: PEOPLE, demo: true });
+    await enterTheShop(demo);
+
+    const companies = await demo.organisation.companies.list();
+    const branches = await demo.organisation.branches.list();
+    expect(companies.length).toBeGreaterThan(1);
+    expect(branches.length).toBeGreaterThan(companies.length);
+    // Enough to show every state: a branch with a paired till and today's
+    // rates, and a branch with neither.
+    const tills = await Promise.all(
+      branches.map((branch) => demo.organisation.registers.list(branch.id)),
+    );
+    expect(tills.some((one) => one.length === 0)).toBe(true);
+    expect(tills.flat().every((till) => till.heldBy !== null)).toBe(true);
+    // Recorded through the real `FX`, which would refuse a rate typed on the
+    // wrong side of its spread — so a demo that reads at all reads true.
+    // The branch that opened a till is the one that starts with today's rates.
+    const priced = branches[tills.findIndex((one) => one.length > 0)];
+    const board = await demo.rates.board(priced!.id);
+    expect(board.ok && board.value.lines.every((line) => line.revision !== null)).toBe(true);
+
+    cleanup();
+    const plain = developmentSystem({ people: PEOPLE });
+    await enterTheShop(plain);
+    expect(await plain.organisation.companies.list()).toEqual([]);
+  });
+});

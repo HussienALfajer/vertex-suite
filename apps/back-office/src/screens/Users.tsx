@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   actionsColumnWidth,
@@ -9,9 +9,9 @@ import {
   ConfirmationDialog,
   DataTable,
   Dialog,
+  focusFirstInvalid,
   PageHeader,
   Panel,
-  Select,
   TableRowAction,
   TableRowActions,
   TextInput,
@@ -20,22 +20,21 @@ import {
   useTranslator,
   useVertex,
   type DataTableColumn,
-  type SelectOption,
 } from '@vertex/ui';
 import type { Result } from '@vertex/kernel';
 import type { Branch } from '@vertex/sys/contract';
-import type { Assignment, Role, SecRefusal, User } from '@vertex/sec/contract';
+import type { Assignment, Confinement, Role, SecRefusal, User } from '@vertex/sec/contract';
 
-import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
+import { useDeliveryMessage, useLoaded, useOrganisation, type Delivery } from '../organisation.js';
 import type { UsersOfRecord } from '../system.js';
 import {
   ReadState,
   branchNames,
   ListingBar,
   NameDialog,
-  ReachFields,
   RenameIcon,
   RestoreIcon,
+  RoleReachFields,
   roleLabel,
   ScopeIcon,
   SecurityIcon,
@@ -43,7 +42,69 @@ import {
   WithdrawIcon,
   matchesQuery,
 } from './structure.js';
-import { useUsers } from '../users.js';
+import { useUsers, type UsersState } from '../users.js';
+
+/** A person `enrol` just produced holds nothing yet — there is no set to build fresh each render. */
+const NO_ROLES: ReadonlySet<string> = new Set();
+
+/** What `assignEach` did: the roles that went through, and why the next one did not. */
+interface AssignedEach {
+  readonly assigned: readonly Role['id'][];
+  /** Null when every role went through. */
+  readonly refusal: string | null;
+}
+
+/**
+ * `SEC-01`/`SEC-04`'s assignment, for several roles under one reach.
+ *
+ * One `assign` per role, in turn, stopping at the first refusal. Each is a
+ * commit of its own, so what went through stays through, and the caller is
+ * told both halves: what to report as done, and what is left to ask for
+ * again — a retry repeats nothing that already succeeded.
+ */
+async function assignEach(
+  run: UsersState['run'],
+  messageFor: (delivery: Delivery<unknown>) => string | null,
+  user: User['id'],
+  roles: readonly Role['id'][],
+  confinement: Confinement,
+): Promise<AssignedEach> {
+  const assigned: Role['id'][] = [];
+  for (const role of roles) {
+    const refusal = messageFor(
+      await run((of) => of.assignments.assign({ user, role, confinement })),
+    );
+    if (refusal !== null) return { assigned, refusal };
+    assigned.push(role);
+  }
+  return { assigned, refusal: null };
+}
+
+/** The reach a person chose, as `SEC` takes it. */
+function confinementOf(reach: 'tenant' | 'branches', branches: ReadonlySet<string>): Confinement {
+  return reach === 'tenant'
+    ? { kind: 'tenant' }
+    : { kind: 'branches', branches: [...branches] as Branch['id'][], locations: [] };
+}
+
+/** "صار دور «…» لـ«…»" for one role, and the roles listed for several. */
+function assignedMessage(
+  translator: ReturnType<typeof useTranslator>,
+  formattingLocale: string,
+  name: string,
+  roles: readonly Role[],
+): string {
+  const labels = roles.map((role) => roleLabel(translator, role));
+  const [only] = labels;
+  return labels.length === 1 && only !== undefined
+    ? translator.format('users.scope.assigned', { name, role: only })
+    : translator.format('users.scope.assignedMany', {
+        name,
+        roles: new Intl.ListFormat(formattingLocale, { style: 'long', type: 'conjunction' }).format(
+          labels,
+        ),
+      });
+}
 
 /**
  * `SEC-09`: the people who work in this shop, and the sign-ins behind them.
@@ -340,16 +401,28 @@ interface EnrolDialogProps {
   readonly onEnrolled: () => void;
 }
 
+/** Which half of the wizard is on screen: the identity, or the role for the person `enrol` just produced. */
+type EnrolStep = { readonly kind: 'identity' } | { readonly kind: 'role'; readonly user: User };
+
 /**
- * Adding a person: their handle, their name, and a password to start with.
+ * Adding a person, then giving them somewhere to stand: `SEC-09`'s enrolment
+ * followed by `SEC-01`/`SEC-04`'s assignment, as one wizard rather than a
+ * dialog somebody has to reopen from the row.
  *
- * **Role and scope are not asked here.** `enrol` and `assign` are two different
- * commands in the domain this screen is built against, and a dialog that did
- * both would refuse for either reason at once — a taken handle and an empty
- * confinement are not the same mistake, and a person fixing one should not have
- * to re-answer the other. A new person is assigned a role from the row the
- * moment they exist, the same two-step shape `Registers` already uses for a
- * till and the machine standing at it.
+ * **Still two commands, not one.** `enrol` and `assign` remain separate calls
+ * with separate failure domains — a taken handle and an empty confinement are
+ * not the same mistake — so a person fixing one is never made to re-answer
+ * the other. What changes is only that the second step opens automatically
+ * with the person `enrol` just returned already standing in for it, instead
+ * of asking whoever is at the keyboard to go find the row again. Declining it
+ * — `Later`, or closing the wizard outright — leaves exactly the state this
+ * screen already renders correctly: a person with no role yet, reachable from
+ * their own row's scope action at any time.
+ *
+ * There is no way back to the first step. Enrolment has already happened by
+ * the time the second is showing, and undoing it is a withdrawal — the same
+ * command the row's own action performs — not a field this dialog could
+ * silently revise out from under a person it already created.
  *
  * The password is not length-checked here. `SEC` alone knows the minimum, and
  * this dialog only ever learns it from a refusal — the same restraint
@@ -358,8 +431,13 @@ interface EnrolDialogProps {
 function EnrolDialog({ isOpen, onOpenChange, onEnrolled }: EnrolDialogProps): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
-  const { run } = useUsers();
+  const { formattingLocale } = useVertex();
+  const { roles, run } = useUsers();
+  const { branches } = useOrganisation();
   const messageFor = useDeliveryMessage();
+
+  const [step, setStep] = useState<EnrolStep>({ kind: 'identity' });
+  const activeRoles = useMemo(() => roles.filter((one) => one.active), [roles]);
 
   const [handle, setHandle] = useState('');
   const [name, setName] = useState('');
@@ -367,12 +445,8 @@ function EnrolDialog({ isOpen, onOpenChange, onEnrolled }: EnrolDialogProps): Re
   const [confirm, setConfirm] = useState('');
   const [missing, setMissing] = useState({ handle: false, name: false, password: false });
   const [mismatch, setMismatch] = useState(false);
-  const {
-    isWorking,
-    refused,
-    setRefused,
-    attempt: attemptWith,
-  } = useAttempt(isOpen, () => {
+  const identity = useAttempt(isOpen, () => {
+    setStep({ kind: 'identity' });
     setHandle('');
     setName('');
     setPassword('');
@@ -381,8 +455,19 @@ function EnrolDialog({ isOpen, onOpenChange, onEnrolled }: EnrolDialogProps): Re
     setMismatch(false);
   });
 
-  async function attempt(): Promise<void> {
-    if (isWorking) return;
+  const [selectedRoleIds, setSelectedRoleIds] = useState<ReadonlySet<string>>(new Set());
+  const [reach, setReach] = useState<'tenant' | 'branches'>('tenant');
+  const [chosenBranches, setChosenBranches] = useState<ReadonlySet<string>>(new Set());
+  const [roleMissing, setRoleMissing] = useState({ roles: false, branches: false });
+  const assignment = useAttempt(step.kind === 'role' ? step.user.id : null, () => {
+    setSelectedRoleIds(new Set());
+    setReach('tenant');
+    setChosenBranches(new Set());
+    setRoleMissing({ roles: false, branches: false });
+  });
+
+  async function submitIdentity(): Promise<void> {
+    if (identity.isWorking) return;
 
     const blank = {
       handle: handle.trim() === '',
@@ -391,12 +476,12 @@ function EnrolDialog({ isOpen, onOpenChange, onEnrolled }: EnrolDialogProps): Re
     };
     setMissing(blank);
     if (blank.handle || blank.name || blank.password) {
-      setRefused(null);
+      identity.reportInvalid();
       return;
     }
     if (password !== confirm) {
       setMismatch(true);
-      setRefused(null);
+      identity.reportInvalid();
       return;
     }
     setMismatch(false);
@@ -404,103 +489,220 @@ function EnrolDialog({ isOpen, onOpenChange, onEnrolled }: EnrolDialogProps): Re
     const chosenHandle = handle.trim();
     const chosenName = name.trim();
     const chosenPassword = password;
-    await attemptWith(async () => {
+    await identity.attempt(async () => {
       const delivery = await run((of) =>
         of.enrol({ handle: chosenHandle, name: chosenName, password: chosenPassword }),
       );
-      const message = messageFor(delivery);
-      if (message === null) {
+      if (delivery.kind === 'done') {
         onEnrolled();
         toast.show(translator.format('users.enrolled', { name: chosenName }), { tone: 'success' });
-        onOpenChange(false);
+        setStep({ kind: 'role', user: delivery.value });
+        return null;
       }
-      return message;
+      return messageFor(delivery);
+    });
+  }
+
+  async function submitRoles(): Promise<void> {
+    if (assignment.isWorking || step.kind !== 'role') return;
+    const target = step.user;
+
+    const blank = {
+      roles: selectedRoleIds.size === 0,
+      branches: reach === 'branches' && chosenBranches.size === 0,
+    };
+    setRoleMissing(blank);
+    if (blank.roles || blank.branches) {
+      assignment.reportInvalid();
+      return;
+    }
+
+    const chosenRoles = [...selectedRoleIds] as Role['id'][];
+    const confinement = confinementOf(reach, chosenBranches);
+
+    await assignment.attempt(async () => {
+      const { assigned, refusal } = await assignEach(
+        run,
+        messageFor,
+        target.id,
+        chosenRoles,
+        confinement,
+      );
+      if (assigned.length > 0) {
+        toast.show(
+          assignedMessage(
+            translator,
+            formattingLocale,
+            target.name,
+            roles.filter((one) => assigned.includes(one.id)),
+          ),
+          { tone: 'success' },
+        );
+      }
+      if (refusal !== null) {
+        setSelectedRoleIds(new Set(chosenRoles.filter((id) => !assigned.includes(id))));
+        return refusal;
+      }
+      onOpenChange(false);
+      return null;
     });
   }
 
   return (
     <Dialog
-      title={translator.format('users.new.title')}
+      title={
+        step.kind === 'identity'
+          ? translator.format('users.new.title')
+          : translator.format('users.new.role.title', { name: step.user.name })
+      }
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       footer={
-        <>
-          <Button
-            tone="secondary"
-            onPress={() => {
-              onOpenChange(false);
-            }}
-          >
-            {translator.format('action.cancel')}
-          </Button>
-          <Button tone="primary" isDisabled={isWorking} onPress={() => void attempt()}>
-            {translator.format('users.new.submit')}
-          </Button>
-        </>
+        step.kind === 'identity' ? (
+          <>
+            <Button
+              tone="secondary"
+              onPress={() => {
+                onOpenChange(false);
+              }}
+            >
+              {translator.format('action.cancel')}
+            </Button>
+            <Button
+              tone="primary"
+              isDisabled={identity.isWorking}
+              onPress={() => void submitIdentity()}
+            >
+              {translator.format('users.new.submit')}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              tone="secondary"
+              onPress={() => {
+                onOpenChange(false);
+              }}
+            >
+              {translator.format('users.new.role.skip')}
+            </Button>
+            <Button
+              tone="primary"
+              isDisabled={assignment.isWorking}
+              onPress={() => void submitRoles()}
+            >
+              {translator.format('users.scope.assign')}
+            </Button>
+          </>
+        )
       }
     >
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void attempt();
-        }}
-        className="flex flex-col gap-[var(--vx-gap-md)]"
-      >
-        {refused === null ? null : <Banner tone="danger">{refused}</Banner>}
-        <TextInput
-          label={translator.format('users.new.name')}
-          value={name}
-          onChange={(next) => {
-            setName(next);
-            setMissing((was) => ({ ...was, name: false }));
+      {step.kind === 'identity' ? (
+        <form
+          ref={identity.formRef}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitIdentity();
           }}
-          autoFocus
-          isRequired
-          {...(missing.name ? { errorMessage: translator.format('users.new.name.required') } : {})}
-        />
-        <TextInput
-          label={translator.format('users.new.handle')}
-          description={translator.format('users.new.handle.description')}
-          value={handle}
-          onChange={(next) => {
-            setHandle(next);
-            setMissing((was) => ({ ...was, handle: false }));
+          className="flex flex-col gap-[var(--vx-gap-md)]"
+        >
+          {identity.refused === null ? null : <Banner tone="danger">{identity.refused}</Banner>}
+          <TextInput
+            label={translator.format('users.new.name')}
+            value={name}
+            onChange={(next) => {
+              setName(next);
+              setMissing((was) => ({ ...was, name: false }));
+            }}
+            autoFocus
+            isRequired
+            {...(missing.name
+              ? { errorMessage: translator.format('users.new.name.required') }
+              : {})}
+          />
+          <TextInput
+            label={translator.format('users.new.handle')}
+            description={translator.format('users.new.handle.description')}
+            value={handle}
+            onChange={(next) => {
+              setHandle(next);
+              setMissing((was) => ({ ...was, handle: false }));
+            }}
+            isRequired
+            isMachineText
+            {...(missing.handle
+              ? { errorMessage: translator.format('users.new.handle.required') }
+              : {})}
+          />
+          <TextInput
+            label={translator.format('users.new.password')}
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(next) => {
+              setPassword(next);
+              setMissing((was) => ({ ...was, password: false }));
+              setMismatch(false);
+            }}
+            isRequired
+            {...(missing.password
+              ? { errorMessage: translator.format('users.new.password.required') }
+              : {})}
+          />
+          <TextInput
+            label={translator.format('users.new.password.confirm')}
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(next) => {
+              setConfirm(next);
+              setMismatch(false);
+            }}
+            isRequired
+            {...(mismatch
+              ? { errorMessage: translator.format('users.new.password.mismatch') }
+              : {})}
+          />
+          <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
+        </form>
+      ) : (
+        <form
+          ref={assignment.formRef}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitRoles();
           }}
-          isRequired
-          isMachineText
-          {...(missing.handle
-            ? { errorMessage: translator.format('users.new.handle.required') }
-            : {})}
-        />
-        <TextInput
-          label={translator.format('users.new.password')}
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(next) => {
-            setPassword(next);
-            setMissing((was) => ({ ...was, password: false }));
-            setMismatch(false);
-          }}
-          isRequired
-          {...(missing.password
-            ? { errorMessage: translator.format('users.new.password.required') }
-            : {})}
-        />
-        <TextInput
-          label={translator.format('users.new.password.confirm')}
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(next) => {
-            setConfirm(next);
-            setMismatch(false);
-          }}
-          isRequired
-          {...(mismatch ? { errorMessage: translator.format('users.new.password.mismatch') } : {})}
-        />
-        <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
-      </form>
+          className="flex flex-col gap-[var(--vx-gap-md)]"
+        >
+          {assignment.refused === null ? null : <Banner tone="danger">{assignment.refused}</Banner>}
+          <p className="text-body text-fg-secondary">
+            {translator.format('users.new.role.description', { name: step.user.name })}
+          </p>
+          <RoleReachFields
+            roles={activeRoles}
+            selectedRoleIds={selectedRoleIds}
+            onSelectedRoleIdsChange={(next) => {
+              setSelectedRoleIds(next);
+              setRoleMissing((was) => ({ ...was, roles: false }));
+            }}
+            heldRoleIds={NO_ROLES}
+            rolesMissing={roleMissing.roles}
+            branches={branches}
+            reach={reach}
+            onReachChange={(next) => {
+              setReach(next);
+              setRoleMissing((was) => ({ ...was, branches: false }));
+            }}
+            chosenBranches={chosenBranches}
+            onChosenBranchesChange={(next) => {
+              setChosenBranches(next);
+              setRoleMissing((was) => ({ ...was, branches: false }));
+            }}
+            branchesMissing={roleMissing.branches}
+          />
+          <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
+        </form>
+      )}
     </Dialog>
   );
 }
@@ -534,6 +736,7 @@ function SecurityDialog({ user, onOpenChange }: SecurityDialogProps): ReactNode 
   const [resetRefused, setResetRefused] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutRefused, setSignOutRefused] = useState<string | null>(null);
+  const resetFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (user === null) return;
@@ -550,6 +753,7 @@ function SecurityDialog({ user, onOpenChange }: SecurityDialogProps): ReactNode 
     if (password === '') {
       setIsMissing(true);
       setResetRefused(null);
+      focusFirstInvalid(resetFormRef.current);
       return;
     }
 
@@ -604,6 +808,7 @@ function SecurityDialog({ user, onOpenChange }: SecurityDialogProps): ReactNode 
           <Banner tone="info">{translator.format('refusal.sec.identity-shared')}</Banner>
         ) : (
           <form
+            ref={resetFormRef}
             onSubmit={(event) => {
               event.preventDefault();
               void resetPassword();
@@ -679,68 +884,80 @@ function ScopeDialog({ user, onOpenChange }: ScopeDialogProps): ReactNode {
   const assignments = useLoaded(user?.id ?? null, readAssignments);
 
   const activeRoles = useMemo(() => roles.filter((one) => one.active), [roles]);
+  const heldRoleIds = useMemo(
+    () => new Set((assignments.value ?? []).map((one) => one.role)),
+    [assignments.value],
+  );
 
-  const [roleId, setRoleId] = useState<string | null>(null);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<ReadonlySet<string>>(new Set());
   const [withdrawing, setWithdrawing] = useState<string | null>(null);
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState<Assignment | null>(null);
   const [reach, setReach] = useState<'tenant' | 'branches'>('tenant');
   const [chosenBranches, setChosenBranches] = useState<ReadonlySet<string>>(new Set());
-  const [missing, setMissing] = useState({ role: false, branches: false });
+  const [missing, setMissing] = useState({ roles: false, branches: false });
   const {
     isWorking,
     refused,
     setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(user, () => {
-    setRoleId(null);
+    setSelectedRoleIds(new Set());
     setReach('tenant');
     setChosenBranches(new Set());
-    setMissing({ role: false, branches: false });
+    setMissing({ roles: false, branches: false });
   });
 
+  /** Every checked role under the one reach chosen for them — `assignEach`. */
   async function assign(): Promise<void> {
     if (isWorking || user === null) return;
 
     const blank = {
-      role: roleId === null,
+      roles: selectedRoleIds.size === 0,
       branches: reach === 'branches' && chosenBranches.size === 0,
     };
     setMissing(blank);
-    if (blank.role || blank.branches) {
-      setRefused(null);
+    if (blank.roles || blank.branches) {
+      reportInvalid();
       return;
     }
 
     const target = user;
-    const chosenRole = roleId as Role['id'];
-    const confinement =
-      reach === 'tenant'
-        ? ({ kind: 'tenant' } as const)
-        : {
-            kind: 'branches' as const,
-            branches: [...chosenBranches] as Branch['id'][],
-            locations: [],
-          };
+    const chosenRoles = [...selectedRoleIds] as Role['id'][];
+    const confinement = confinementOf(reach, chosenBranches);
 
     await attemptWith(async () => {
-      const delivery = await run((of) =>
-        of.assignments.assign({ user: target.id, role: chosenRole, confinement }),
+      const { assigned, refusal } = await assignEach(
+        run,
+        messageFor,
+        target.id,
+        chosenRoles,
+        confinement,
       );
-      const message = messageFor(delivery);
-      if (message === null) {
+      // Reloaded whenever anything went through, a refusal part-way included:
+      // the list above is what this person holds, and it must not go on
+      // saying they hold less than they do.
+      if (assigned.length > 0) {
         assignments.reload();
-        const role = roles.find((one) => one.id === chosenRole);
         toast.show(
-          translator.format('users.scope.assigned', {
-            name: target.name,
-            role: role === undefined ? '' : roleLabel(translator, role),
-          }),
+          assignedMessage(
+            translator,
+            formattingLocale,
+            target.name,
+            roles.filter((one) => assigned.includes(one.id)),
+          ),
           { tone: 'success' },
         );
-        setRoleId(null);
-        setReach('tenant');
-        setChosenBranches(new Set());
       }
-      return message;
+      if (refusal !== null) {
+        setSelectedRoleIds(new Set(chosenRoles.filter((id) => !assigned.includes(id))));
+        return refusal;
+      }
+      setSelectedRoleIds(new Set());
+      setReach('tenant');
+      setChosenBranches(new Set());
+      return null;
     });
   }
 
@@ -770,117 +987,160 @@ function ScopeDialog({ user, onOpenChange }: ScopeDialogProps): ReactNode {
     }
   }
 
-  const roleOptions: readonly SelectOption[] = activeRoles.map((one) => ({
-    id: one.id,
-    label: roleLabel(translator, one),
-  }));
+  const confirmingRole =
+    confirmingWithdraw === null
+      ? null
+      : (roles.find((one) => one.id === confirmingWithdraw.role) ?? null);
 
   return (
-    <Dialog
-      title={translator.format('users.scope.title', { name: user?.name ?? '' })}
-      isOpen={user !== null}
-      onOpenChange={onOpenChange}
-      className="max-w-[36rem]"
-    >
-      <div className="flex flex-col gap-[var(--vx-gap-lg)]">
-        {refused === null ? null : <Banner tone="danger">{refused}</Banner>}
+    <>
+      <Dialog
+        title={translator.format('users.scope.title', { name: user?.name ?? '' })}
+        isOpen={user !== null}
+        onOpenChange={onOpenChange}
+        className="max-w-[36rem]"
+      >
+        <div className="flex flex-col gap-[var(--vx-gap-lg)]">
+          {refused === null ? null : <Banner tone="danger">{refused}</Banner>}
 
-        <div className="flex flex-col gap-[var(--vx-gap-sm)]">
-          <p className="text-footnote font-body-medium text-fg-secondary">
-            {translator.format('users.scope.current')}
-          </p>
-          {/* "Holds no role" is a statement about this person, and it was shown
-              while the read was still out and after it had failed — somebody
-              was told a person held nothing and granted a role on that basis. */}
-          {assignments.value === null ? (
-            <ReadState loaded={assignments} />
-          ) : assignments.value.length === 0 ? (
-            <p className="text-body text-fg-secondary">{translator.format('users.scope.none')}</p>
-          ) : (
-            <ul className="flex flex-col gap-[var(--vx-gap-xs)]">
-              {assignments.value.map((assignment) => {
-                const role = roles.find((one) => one.id === assignment.role);
-                return (
-                  <li
-                    key={assignment.role}
-                    className="border-line flex items-center justify-between gap-[var(--vx-gap-sm)] rounded-[var(--vx-radius)] border px-[var(--vx-pad-md)] py-[var(--vx-pad-sm)]"
-                  >
-                    <span className="flex flex-col">
-                      <span className="font-body-medium">
-                        {role === undefined
-                          ? translator.format('data.unknown')
-                          : roleLabel(translator, role)}
-                      </span>
-                      <span className="text-footnote text-fg-secondary">
-                        {assignment.confinement.kind === 'tenant'
-                          ? translator.format('users.scope.tenantWide')
-                          : branchNames(
-                              formattingLocale,
-                              branches,
-                              assignment.confinement.branches,
-                            )}
-                      </span>
-                    </span>
-                    <Button
-                      isDisabled={withdrawing !== null}
-                      onPress={() => {
-                        void withdraw(assignment);
-                      }}
+          <div className="flex flex-col gap-[var(--vx-gap-sm)]">
+            <p className="text-footnote font-body-medium text-fg-secondary">
+              {translator.format('users.scope.current')}
+            </p>
+            {/* "Holds no role" is a statement about this person, and it was shown
+                while the read was still out and after it had failed — somebody
+                was told a person held nothing and granted a role on that basis. */}
+            {assignments.value === null ? (
+              <ReadState loaded={assignments} />
+            ) : assignments.value.length === 0 ? (
+              <p className="text-body text-fg-secondary">{translator.format('users.scope.none')}</p>
+            ) : (
+              <ul className="flex flex-col gap-[var(--vx-gap-xs)]">
+                {assignments.value.map((assignment) => {
+                  const role = roles.find((one) => one.id === assignment.role);
+                  return (
+                    <li
+                      key={assignment.role}
+                      className="border-line flex items-center justify-between gap-[var(--vx-gap-sm)] rounded-[var(--vx-radius)] border px-[var(--vx-pad-md)] py-[var(--vx-pad-sm)]"
                     >
-                      {translator.format('users.scope.withdraw')}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void assign();
-          }}
-          className="border-line flex flex-col gap-[var(--vx-gap-md)] border-t pt-[var(--vx-gap-lg)]"
-        >
-          <p className="text-footnote font-body-medium text-fg-secondary">
-            {translator.format('users.scope.assign.title')}
-          </p>
-          <Select
-            label={translator.format('users.scope.role')}
-            placeholder={translator.format('users.scope.role.placeholder')}
-            options={roleOptions}
-            value={roleId}
-            onChange={(key) => {
-              setRoleId(String(key));
-              setMissing((was) => ({ ...was, role: false }));
-            }}
-            {...(missing.role
-              ? { errorMessage: translator.format('users.scope.role.required') }
-              : {})}
-          />
-          <ReachFields
-            branches={branches}
-            reach={reach}
-            onReachChange={(next) => {
-              setReach(next);
-              setMissing((was) => ({ ...was, branches: false }));
-            }}
-            chosenBranches={chosenBranches}
-            onChosenBranchesChange={(next) => {
-              setChosenBranches(next);
-              setMissing((was) => ({ ...was, branches: false }));
-            }}
-            branchesMissing={missing.branches}
-          />
-          <div>
-            <Button tone="primary" isDisabled={isWorking} onPress={() => void assign()}>
-              {translator.format('users.scope.assign')}
-            </Button>
+                      <span className="flex flex-col">
+                        <span className="font-body-medium">
+                          {role === undefined
+                            ? translator.format('data.unknown')
+                            : roleLabel(translator, role)}
+                        </span>
+                        <span className="text-footnote text-fg-secondary">
+                          {assignment.confinement.kind === 'tenant'
+                            ? translator.format('users.scope.tenantWide')
+                            : branchNames(
+                                formattingLocale,
+                                branches,
+                                assignment.confinement.branches,
+                              )}
+                        </span>
+                      </span>
+                      <div className="flex gap-[var(--vx-gap-sm)]">
+                        {/* Only for a role that can still be assigned: a
+                            withdrawn one is not in the list below to be seen
+                            ticked, and `SEC` would refuse it. */}
+                        {role?.active !== true ? null : (
+                          <Button
+                            onPress={() => {
+                              setSelectedRoleIds(new Set([assignment.role]));
+                              setReach(assignment.confinement.kind);
+                              setChosenBranches(
+                                assignment.confinement.kind === 'branches'
+                                  ? new Set(assignment.confinement.branches)
+                                  : new Set(),
+                              );
+                              setMissing({ roles: false, branches: false });
+                              formRef.current?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start',
+                              });
+                            }}
+                          >
+                            {translator.format('users.scope.editReach')}
+                          </Button>
+                        )}
+                        <Button
+                          isDisabled={withdrawing !== null}
+                          onPress={() => {
+                            setConfirmingWithdraw(assignment);
+                          }}
+                        >
+                          {translator.format('users.scope.withdraw')}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
-          <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
-        </form>
-      </div>
-    </Dialog>
+
+          <form
+            ref={formRef}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void assign();
+            }}
+            className="border-line flex flex-col gap-[var(--vx-gap-md)] border-t pt-[var(--vx-gap-lg)]"
+          >
+            <p className="text-footnote font-body-medium text-fg-secondary">
+              {translator.format('users.scope.assign.title')}
+            </p>
+            <RoleReachFields
+              roles={activeRoles}
+              selectedRoleIds={selectedRoleIds}
+              onSelectedRoleIdsChange={(next) => {
+                setSelectedRoleIds(next);
+                setMissing((was) => ({ ...was, roles: false }));
+              }}
+              heldRoleIds={heldRoleIds}
+              rolesMissing={missing.roles}
+              branches={branches}
+              reach={reach}
+              onReachChange={(next) => {
+                setReach(next);
+                setMissing((was) => ({ ...was, branches: false }));
+              }}
+              chosenBranches={chosenBranches}
+              onChosenBranchesChange={(next) => {
+                setChosenBranches(next);
+                setMissing((was) => ({ ...was, branches: false }));
+              }}
+              branchesMissing={missing.branches}
+            />
+            <div>
+              <Button tone="primary" isDisabled={isWorking} onPress={() => void assign()}>
+                {translator.format('users.scope.assign')}
+              </Button>
+            </div>
+            <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
+          </form>
+        </div>
+      </Dialog>
+
+      <ConfirmationDialog
+        title={translator.format('users.scope.withdraw.confirm.title')}
+        message={translator.format('users.scope.withdraw.confirm.message', {
+          name: user?.name ?? '',
+          role: confirmingRole === null ? '' : roleLabel(translator, confirmingRole),
+        })}
+        confirmLabel={translator.format('users.scope.withdraw')}
+        tone="danger"
+        isOpen={confirmingWithdraw !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setConfirmingWithdraw(null);
+        }}
+        onConfirm={() => {
+          if (confirmingWithdraw === null) return;
+          const taken = confirmingWithdraw;
+          setConfirmingWithdraw(null);
+          void withdraw(taken);
+        }}
+      />
+    </>
   );
 }

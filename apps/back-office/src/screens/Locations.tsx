@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import {
   actionsColumnWidth,
@@ -32,8 +32,9 @@ import type {
 
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
 import type { OrganisationOfRecord } from '../system.js';
-import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
-import { PlaceDialog, PlaceFields, PlacesMap } from './place.js';
+import { useNavigateTo } from '../routing.js';
+import { PlaceDialog, PlaceFields, PlaceSummary, PlacesMap } from './place.js';
+import { branchColumn, branchesIn, scopedMessage, ScopeFilters, useBranchScope } from './scope.js';
 import {
   ReadState,
   ListingBar,
@@ -42,6 +43,7 @@ import {
   RenameIcon,
   RestoreIcon,
   StaleBanner,
+  STATUS_COLUMN_WIDTH,
   StatusBadge,
   WithdrawIcon,
   matchesQuery,
@@ -50,13 +52,10 @@ import {
 /**
  * The stock locations of `SYS-09`: where goods actually sit inside a branch.
  *
- * This screen is **scoped to one branch and cannot not be**. The contract asks
- * for locations per branch rather than per tenant, because a chain with forty
- * branches has hundreds of them and nobody works across the lot; a screen that
- * listed them all would be a screen that has to be filtered before it can be
- * read. So the branch is chosen first, it is chosen in the address bar, and
- * arriving with none picks the first one open rather than showing an empty
- * grid that is not empty.
+ * One branch's locations, or every branch's at once (`scope.tsx`) — and
+ * opening one asks which branch in the dialog itself, `NewBranchDialog`'s own
+ * shape, so it is never blocked on the listing being filtered to the right
+ * branch first.
  *
  * The **kind** is set once and never edited. `STK` treats a shop floor, a store
  * room and a van differently, and stock that has already moved through a
@@ -78,9 +77,10 @@ export function Locations(): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
   const goTo = useNavigateTo();
-  const route = useRoute();
-  const { branches, isLoading, unreachable, run, ofRecord } = useOrganisation();
+  const { branches: everyBranch, isLoading, unreachable, run, ofRecord } = useOrganisation();
   const messageFor = useDeliveryMessage();
+  const scope = useBranchScope('locations');
+  const { branches, openBranches, chosen, isAllBranches } = scope;
 
   const [query, setQuery] = useState('');
   const [includeWithdrawn, setIncludeWithdrawn] = useState(false);
@@ -90,26 +90,16 @@ export function Locations(): ReactNode {
   const [restoring, setRestoring] = useState<Location | null>(null);
   const [placing, setPlacing] = useState<Location | null>(null);
 
-  const openBranches = useMemo(() => branches.filter((one) => one.active), [branches]);
-  const chosen = useMemo(
-    () => branches.find((one) => one.id === route.subject) ?? null,
-    [branches, route.subject],
-  );
-
-  // Arriving with no branch named, or with one that is not this tenant's, lands
-  // on the first branch that is open. Replacing rather than pushing, so that
-  // Back leaves this screen instead of bouncing off the correction.
-  useEffect(() => {
-    if (chosen !== null || branches.length === 0) return;
-    const first = openBranches[0] ?? branches[0];
-    if (first !== undefined) redirect(hrefOf('locations', first.id));
-  }, [chosen, branches, openBranches]);
-
+  // Every `Location` names its own branch, which is what lets the aggregate's
+  // rows be told apart without a wrapper to carry it.
   const read = useCallback(
-    (branch: Branch['id']) => ofRecord.locations.list(branch, { including: 'all' }),
+    (subject: string): Promise<readonly Location[]> =>
+      Promise.all(
+        branchesIn(subject).map((branch) => ofRecord.locations.list(branch, { including: 'all' })),
+      ).then((lists) => lists.flat()),
     [ofRecord],
   );
-  const locations = useLoaded(chosen?.id ?? null, read);
+  const locations = useLoaded(scope.subject, read);
 
   const rows = useMemo(
     () =>
@@ -120,7 +110,7 @@ export function Locations(): ReactNode {
   );
 
   /**
-   * The branch, and the locations that are somewhere other than the branch.
+   * The branches shown, and the locations that are somewhere other than them.
    *
    * A shop floor and the store room behind it share the branch's doorstep and
    * carry no point of their own, so they are not drawn twice — what appears
@@ -128,20 +118,20 @@ export function Locations(): ReactNode {
    * gives a location its own point for.
    */
   const placed = useMemo((): readonly MapPlace[] => {
-    const here: MapPlace[] =
-      chosen?.point == null
-        ? []
-        : [
-            {
-              id: chosen.id,
-              label: chosen.name,
-              kind: 'branch',
-              lat: chosen.point.lat,
-              lng: chosen.point.lng,
-              isActive: chosen.active,
-              address: chosen.address,
-            },
-          ];
+    const here: MapPlace[] = [];
+    const branchesShown = isAllBranches ? branches : chosen === null ? [] : [chosen];
+    for (const branch of branchesShown) {
+      if (branch.point === null) continue;
+      here.push({
+        id: branch.id,
+        label: branch.name,
+        kind: 'branch',
+        lat: branch.point.lat,
+        lng: branch.point.lng,
+        isActive: branch.active,
+        address: branch.address,
+      });
+    }
 
     for (const one of locations.value ?? []) {
       if (one.point === null) continue;
@@ -156,7 +146,7 @@ export function Locations(): ReactNode {
       });
     }
     return here;
-  }, [chosen, locations.value]);
+  }, [isAllBranches, branches, chosen, locations.value]);
 
   const elsewhere = useMemo(
     (): readonly PickedPoint[] =>
@@ -186,6 +176,11 @@ export function Locations(): ReactNode {
       isRowHeader: true,
       render: (location) => <span className="font-body-medium">{location.name}</span>,
     },
+    ...branchColumn<Location>(
+      scope,
+      translator.format('locations.column.branch'),
+      (location) => location.branch,
+    ),
     {
       id: 'kind',
       header: translator.format('locations.column.kind'),
@@ -198,7 +193,16 @@ export function Locations(): ReactNode {
     {
       id: 'status',
       header: translator.format('locations.column.status'),
-      render: (location) => <StatusBadge isActive={location.active} />,
+      width: STATUS_COLUMN_WIDTH,
+      render: (location) => (
+        <StatusBadge
+          isActive={location.active}
+          disabledReason={scope.withdrawnAbove(
+            location.branch,
+            translator.format('locations.status.branchWithdrawn'),
+          )}
+        />
+      ),
     },
     {
       id: 'actions',
@@ -249,8 +253,10 @@ export function Locations(): ReactNode {
     },
   ];
 
-  // The same three states as the companies screen, and for the same reason.
-  if (branches.length === 0 && unreachable) {
+  // The same three states as the companies screen, and for the same reason —
+  // asked of the whole tenant rather than of the company filtered to, which
+  // may have no branches of its own without the shop having none.
+  if (everyBranch.length === 0 && unreachable) {
     return (
       <>
         <PageHeader
@@ -262,7 +268,7 @@ export function Locations(): ReactNode {
     );
   }
 
-  if (branches.length === 0 && !isLoading) {
+  if (everyBranch.length === 0 && !isLoading) {
     return (
       <>
         <PageHeader
@@ -288,11 +294,6 @@ export function Locations(): ReactNode {
     );
   }
 
-  const branchOptions: readonly SelectOption[] = branches.map((one) => ({
-    id: one.id,
-    label: one.name,
-  }));
-
   return (
     <>
       <PageHeader
@@ -301,7 +302,7 @@ export function Locations(): ReactNode {
         actions={
           <Button
             tone="primary"
-            isDisabled={chosen?.active !== true}
+            isDisabled={openBranches.length === 0}
             onPress={() => {
               setIsOpening(true);
             }}
@@ -320,28 +321,19 @@ export function Locations(): ReactNode {
         includeWithdrawn={includeWithdrawn}
         onIncludeWithdrawn={setIncludeWithdrawn}
       >
-        <Select
-          label={translator.format('locations.branch')}
-          placeholder={translator.format('locations.branch.placeholder')}
-          options={branchOptions}
-          value={chosen?.id ?? null}
-          onChange={(key) => {
-            redirect(hrefOf('locations', String(key)));
-          }}
-          className="w-[16rem] max-w-full"
-        />
+        <ScopeFilters scope={scope} screen="locations" />
       </ListingBar>
 
       <ReadState loaded={locations} />
       {locations.unreachable ? null : (locations.value ?? []).length === 0 &&
         !locations.isLoading ? (
         <EmptyState
-          message={translator.format('locations.empty')}
+          message={scopedMessage(translator, scope, 'locations.empty')}
           description={translator.format('locations.empty.explanation')}
           action={
             <Button
               tone="primary"
-              isDisabled={chosen?.active !== true}
+              isDisabled={openBranches.length === 0}
               onPress={() => {
                 setIsOpening(true);
               }}
@@ -363,41 +355,67 @@ export function Locations(): ReactNode {
         </Panel>
       )}
 
-      {chosen === null ? null : (
-        <PlacesMap
-          label={translator.format('locations.map', { branch: chosen.name })}
-          places={placed}
-          emptyMessage={translator.format('locations.map.empty')}
-          renderDetails={(place) => {
-            const location = (locations.value ?? []).find((one) => one.id === place.id);
-            const of = location ?? chosen;
-            return (
-              <div className="flex flex-col items-start gap-[var(--vx-gap-xs)]">
-                <span className="font-body-semibold text-fg">{of.name}</span>
-                <span className="text-footnote text-fg-secondary">
-                  {translator.format(
+      <PlacesMap
+        label={scopedMessage(translator, scope, 'locations.map', { branch: chosen?.name ?? '' })}
+        places={placed}
+        emptyMessage={translator.format('locations.map.empty')}
+        renderDetails={(place) => {
+          const location = (locations.value ?? []).find((one) => one.id === place.id);
+          const branch = branches.find((one) => one.id === place.id);
+          const of = location ?? branch;
+          if (of === undefined) return null;
+          // Whatever the pin is, it reads as stranded exactly when its row
+          // would: a location by its branch or that branch's company, a
+          // branch by its company. A withdrawn branch's own pin already says
+          // so through `isActive`.
+          const home = location?.branch ?? branch?.id;
+          return (
+            <PlaceSummary
+              title={of.name}
+              isActive={of.active}
+              disabledReason={
+                home === undefined
+                  ? undefined
+                  : scope.withdrawnAbove(
+                      home,
+                      translator.format('locations.status.branchWithdrawn'),
+                    )
+              }
+              fields={[
+                // A location's branch, in the aggregate: one branch's map
+                // already names it in its title, and a branch's pin is the
+                // branch.
+                ...(isAllBranches && location !== undefined
+                  ? [
+                      {
+                        label: translator.format('locations.column.branch'),
+                        value: scope.nameOf(location.branch),
+                      },
+                    ]
+                  : []),
+                {
+                  label: translator.format('locations.column.kind'),
+                  value: translator.format(
                     location === undefined ? 'locations.map.branch' : KIND_KEYS[location.kind],
-                  )}
-                </span>
-                {of.address === '' ? null : (
-                  <span className="text-footnote text-fg-secondary">{of.address}</span>
-                )}
-                <StatusBadge isActive={of.active} />
-              </div>
-            );
-          }}
-        />
-      )}
+                  ),
+                },
+                ...(of.address === ''
+                  ? []
+                  : [{ label: translator.format('place.address'), value: of.address }]),
+              ]}
+            />
+          );
+        }}
+      />
 
-      {chosen === null ? null : (
-        <NewLocationDialog
-          branch={chosen}
-          isOpen={isOpening}
-          onOpenChange={setIsOpening}
-          onOpened={locations.reload}
-          around={elsewhere}
-        />
-      )}
+      <NewLocationDialog
+        branches={openBranches}
+        preferred={chosen?.id ?? null}
+        isOpen={isOpening}
+        onOpenChange={setIsOpening}
+        onOpened={locations.reload}
+        around={elsewhere}
+      />
 
       <PlaceDialog
         subject={placing}
@@ -477,17 +495,32 @@ export function Locations(): ReactNode {
 }
 
 interface NewLocationDialogProps {
-  readonly branch: Branch;
+  /** The branches a location may be opened in — active ones, `Branches.tsx`'s own rule. */
+  readonly branches: readonly Branch[];
+  /** The branch the listing is filtered to, which is the one somebody most likely means. Null for the aggregate. */
+  readonly preferred: Branch['id'] | null;
   readonly isOpen: boolean;
   readonly onOpenChange: (isOpen: boolean) => void;
   readonly onOpened: () => void;
-  /** What is already placed in this branch, drawn faintly under the picker. */
+  /** What is already placed, drawn faintly under the picker. */
   readonly around: readonly PickedPoint[];
 }
 
-/** Opening a location: what it is called, and what kind of place it is. */
+/**
+ * Opening a location: which branch, what it is called, and what kind of place
+ * it is.
+ *
+ * **The branch is chosen here rather than assumed from the listing**, the same
+ * shape `NewBranchDialog` (`Branches.tsx`) picks a company in: a location
+ * belongs to one branch permanently, so the dialog needs an answer regardless
+ * of whether the screen behind it is filtered to that branch, to a different
+ * one, or to "كل فروع المتجر" — and defaulting it from the filter when the
+ * filter names a branch this list actually offers is what keeps the ordinary
+ * case a single click.
+ */
 function NewLocationDialog({
-  branch,
+  branches,
+  preferred,
   isOpen,
   onOpenChange,
   onOpened,
@@ -498,6 +531,11 @@ function NewLocationDialog({
   const { run } = useOrganisation();
   const messageFor = useDeliveryMessage();
 
+  const only = branches.length === 1 ? (branches[0] ?? null) : null;
+  // The record rather than its identifier, so that what is handed to the
+  // command is a branch this shop actually has open — `NewBranchDialog`'s own
+  // reason for resolving a company the same way.
+  const [branch, setBranch] = useState<Branch | null>(null);
   const [name, setName] = useState('');
   // The shop floor, because it is the location every shop has and the one most
   // often opened first. A default that is right most of the time is a field
@@ -507,29 +545,39 @@ function NewLocationDialog({
   // its branch, and only the warehouse across town needs a point of its own.
   const [address, setAddress] = useState('');
   const [point, setPoint] = useState<PickedPoint | null>(null);
-  const [isMissing, setIsMissing] = useState(false);
+  const [missing, setMissing] = useState<{ branch: boolean; name: boolean }>({
+    branch: false,
+    name: false,
+  });
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(isOpen, () => {
+    // A shop with one open branch never answers this question; a listing
+    // filtered to one branch has already answered it.
+    setBranch(only ?? branches.find((one) => one.id === preferred) ?? null);
     setName('');
     setKind('shop-floor');
     setAddress('');
     setPoint(null);
-    setIsMissing(false);
+    setMissing({ branch: false, name: false });
   });
 
   async function attempt(): Promise<void> {
     if (isWorking) return;
-    if (name.trim() === '') {
-      setIsMissing(true);
-      setRefused(null);
+
+    const blank = { branch: branch === null, name: name.trim() === '' };
+    setMissing(blank);
+    if (branch === null || blank.name) {
+      reportInvalid();
       return;
     }
 
     const chosen = name.trim();
+    const into = branch;
     // A van is never placed, so nothing is sent for one — the command would
     // refuse it, and a refusal over something the screen never offered would
     // be this screen's mistake rather than the administrator's.
@@ -537,7 +585,7 @@ function NewLocationDialog({
     await attemptWith(async () => {
       const delivery = await run((of) =>
         of.locations.open({
-          branch: branch.id,
+          branch: into.id,
           name: chosen,
           kind,
           address,
@@ -553,6 +601,11 @@ function NewLocationDialog({
       return message;
     });
   }
+
+  const branchOptions: readonly SelectOption[] = branches.map((one) => ({
+    id: one.id,
+    label: one.name,
+  }));
 
   const kindOptions: readonly SelectOption[] = KINDS.map((one) => ({
     id: one,
@@ -588,6 +641,7 @@ function NewLocationDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();
@@ -595,16 +649,30 @@ function NewLocationDialog({
         className="flex flex-col gap-[var(--vx-gap-md)]"
       >
         {refused === null ? null : <Banner tone="danger">{refused}</Banner>}
+        <Select
+          label={translator.format('locations.new.branch')}
+          placeholder={translator.format('locations.new.branch.placeholder')}
+          options={branchOptions}
+          value={branch?.id ?? null}
+          onChange={(key) => {
+            setBranch(branches.find((one) => one.id === key) ?? null);
+            setMissing((was) => ({ ...was, branch: false }));
+          }}
+          isRequired
+          {...(missing.branch
+            ? { errorMessage: translator.format('locations.new.branch.required') }
+            : {})}
+        />
         <TextInput
           label={translator.format('locations.new.name')}
           value={name}
           onChange={(next) => {
             setName(next);
-            setIsMissing(false);
+            setMissing((was) => ({ ...was, name: false }));
           }}
           autoFocus
           isRequired
-          {...(isMissing ? { errorMessage: translator.format('name.required') } : {})}
+          {...(missing.name ? { errorMessage: translator.format('name.required') } : {})}
         />
         <Select
           label={translator.format('locations.new.kind')}

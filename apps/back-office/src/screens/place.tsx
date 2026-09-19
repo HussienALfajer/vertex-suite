@@ -23,6 +23,7 @@ import type { GeoPoint, OrganisationRefusal } from '@vertex/sys/contract';
 
 import { useDeliveryMessage, useOrganisation } from '../organisation.js';
 import type { OrganisationOfRecord } from '../system.js';
+import { StatusBadge } from './structure.js';
 
 /**
  * The address and the place on the map of `SYS-14`, for the two screens that
@@ -308,5 +309,59 @@ export function PlacesMap({
         className="h-[30rem] w-full"
       />
     </Panel>
+  );
+}
+
+export interface PlaceSummaryField {
+  readonly label: string;
+  readonly value: ReactNode;
+}
+
+export interface PlaceSummaryProps {
+  /** The name a marker is opened by — bold and unlabelled, the way a heading is. */
+  readonly title: string;
+  /** Everything else worth knowing, each said against the word for what it is. */
+  readonly fields: readonly PlaceSummaryField[];
+  readonly isActive: boolean;
+  /** `StatusBadge`'s own, so a pin reads the same status its row in the table does. */
+  readonly disabledReason?: string | undefined;
+  /** Where a screen offers a next step from the popover — `Branches.tsx`'s own "مواقع الفرع". */
+  readonly action?: ReactNode;
+}
+
+/**
+ * What a marker's popover says, for both maps that open one over something —
+ * `Branches.tsx`'s over a branch, `Locations.tsx`'s over a location or the
+ * branch that holds it.
+ *
+ * **Every line here is named.** A bare stack of values under a heading reads
+ * as the heading and a guess the moment there is more than one line — the
+ * kind, the company, the address are three unrelated-looking sentences until
+ * something says which is which. The status keeps its badge rather than a
+ * label of its own: a coloured pill is already a complete statement, and
+ * `الحالة: قيد الاستخدام` would be the one line here saying the same thing
+ * twice.
+ */
+export function PlaceSummary({
+  title,
+  fields,
+  isActive,
+  disabledReason,
+  action,
+}: PlaceSummaryProps): ReactNode {
+  return (
+    <div className="flex min-w-[11rem] flex-col items-start gap-[var(--vx-gap-sm)]">
+      <span className="font-body-semibold text-fg">{title}</span>
+      <div className="flex flex-col gap-[var(--vx-gap-xs)]">
+        {fields.map((field) => (
+          <p key={field.label} className="text-footnote">
+            <span className="text-fg-muted">{field.label}: </span>
+            <span className="text-fg-secondary">{field.value}</span>
+          </p>
+        ))}
+      </div>
+      <StatusBadge isActive={isActive} disabledReason={disabledReason} />
+      {action}
+    </div>
   );
 }

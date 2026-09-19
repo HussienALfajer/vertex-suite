@@ -35,6 +35,9 @@ const system = developmentSystem({
     { handle: 'owner', password: 'till-morning-1' },
     { handle: 'ahmad', password: 'till-morning-1', active: false },
   ],
+  // `pnpm demo` opens the shop already set up; `pnpm dev`, and the journeys
+  // that run against it, open it empty — the state `SYS-09` is proven from.
+  demo: import.meta.env.MODE === 'demo',
 });
 
 createRoot(container).render(

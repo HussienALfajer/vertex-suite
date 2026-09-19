@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import {
   actionsColumnWidth,
@@ -27,7 +27,8 @@ import type { Branch, OrganisationRefusal, Register } from '@vertex/sys/contract
 
 import { useDeliveryMessage, useLoaded, useOrganisation } from '../organisation.js';
 import type { OrganisationOfRecord } from '../system.js';
-import { hrefOf, redirect, useNavigateTo, useRoute } from '../routing.js';
+import { useNavigateTo } from '../routing.js';
+import { branchColumn, branchesIn, scopedMessage, ScopeFilters, useBranchScope } from './scope.js';
 import {
   ReadState,
   DeviceIcon,
@@ -36,6 +37,7 @@ import {
   RenameIcon,
   RestoreIcon,
   StaleBanner,
+  STATUS_COLUMN_WIDTH,
   StatusBadge,
   WithdrawIcon,
   matchesQuery,
@@ -52,8 +54,9 @@ import {
  * two: the position keeps its prefix for ever, and the machine carries a
  * generation that goes up whenever a different one takes over.
  *
- * Scoped to one branch, chosen in the address bar, for the reason the locations
- * screen is: a till belongs to a branch and nobody works across forty of them.
+ * One branch's tills, or every branch's at once (`scope.tsx`); the idle count
+ * and the device column read whichever rows are on screen, so neither needs a
+ * second path for the aggregate.
  *
  * **The prefix is set once and never edited**, and the contract offers no
  * command for it. Every number this register has ever issued carries it, and a
@@ -79,9 +82,10 @@ export function Registers(): ReactNode {
   const translator = useTranslator();
   const toast = useToast();
   const goTo = useNavigateTo();
-  const route = useRoute();
-  const { branches, isLoading, unreachable, run, ofRecord } = useOrganisation();
+  const { branches: everyBranch, isLoading, unreachable, run, ofRecord } = useOrganisation();
   const messageFor = useDeliveryMessage();
+  const scope = useBranchScope('registers');
+  const { openBranches, chosen } = scope;
 
   const [query, setQuery] = useState('');
   const [includeWithdrawn, setIncludeWithdrawn] = useState(false);
@@ -91,27 +95,16 @@ export function Registers(): ReactNode {
   const [restoring, setRestoring] = useState<Register | null>(null);
   const [pairing, setPairing] = useState<Register | null>(null);
 
-  const openBranches = useMemo(() => branches.filter((one) => one.active), [branches]);
-  const chosen = useMemo(
-    () => branches.find((one) => one.id === route.subject) ?? null,
-    [branches, route.subject],
-  );
-
-  // Arriving with no branch named lands on the first one open, replacing rather
-  // than pushing so that Back leaves the screen instead of bouncing off the
-  // correction. The same arrangement the locations screen uses, for the same
-  // reason: this list cannot be read without a branch.
-  useEffect(() => {
-    if (chosen !== null || branches.length === 0) return;
-    const first = openBranches[0] ?? branches[0];
-    if (first !== undefined) redirect(hrefOf('registers', first.id));
-  }, [chosen, branches, openBranches]);
-
+  // Every `Register` names its own branch, which is what lets the aggregate's
+  // rows be told apart without a wrapper to carry it.
   const read = useCallback(
-    (branch: Branch['id']) => ofRecord.registers.list(branch, { including: 'all' }),
+    (subject: string): Promise<readonly Register[]> =>
+      Promise.all(
+        branchesIn(subject).map((branch) => ofRecord.registers.list(branch, { including: 'all' })),
+      ).then((lists) => lists.flat()),
     [ofRecord],
   );
-  const registers = useLoaded(chosen?.id ?? null, read);
+  const registers = useLoaded(scope.subject, read);
 
   const rows = useMemo(
     () =>
@@ -156,6 +149,11 @@ export function Registers(): ReactNode {
       isRowHeader: true,
       render: (register) => <span className="font-body-medium">{register.name}</span>,
     },
+    ...branchColumn<Register>(
+      scope,
+      translator.format('registers.column.branch'),
+      (register) => register.branch,
+    ),
     {
       id: 'prefix',
       // Monospaced, because it is read character by character off a printed
@@ -196,7 +194,16 @@ export function Registers(): ReactNode {
     {
       id: 'status',
       header: translator.format('registers.column.status'),
-      render: (register) => <StatusBadge isActive={register.active} />,
+      width: STATUS_COLUMN_WIDTH,
+      render: (register) => (
+        <StatusBadge
+          isActive={register.active}
+          disabledReason={scope.withdrawnAbove(
+            register.branch,
+            translator.format('registers.status.branchWithdrawn'),
+          )}
+        />
+      ),
     },
     {
       id: 'actions',
@@ -252,8 +259,10 @@ export function Registers(): ReactNode {
 
   // The same three states as the locations screen, and for the same reason: a
   // shop that could not be read and a shop with nothing in it look identical
-  // and call for opposite reactions.
-  if (branches.length === 0 && unreachable) {
+  // and call for opposite reactions. Asked of the whole tenant rather than of
+  // the company filtered to, which may have no branches without the shop
+  // having none.
+  if (everyBranch.length === 0 && unreachable) {
     return (
       <>
         <PageHeader
@@ -265,7 +274,7 @@ export function Registers(): ReactNode {
     );
   }
 
-  if (branches.length === 0 && !isLoading) {
+  if (everyBranch.length === 0 && !isLoading) {
     return (
       <>
         <PageHeader
@@ -291,11 +300,6 @@ export function Registers(): ReactNode {
     );
   }
 
-  const branchOptions: readonly SelectOption[] = branches.map((one) => ({
-    id: one.id,
-    label: one.name,
-  }));
-
   return (
     <>
       <PageHeader
@@ -304,7 +308,7 @@ export function Registers(): ReactNode {
         actions={
           <Button
             tone="primary"
-            isDisabled={chosen?.active !== true}
+            isDisabled={openBranches.length === 0}
             onPress={() => {
               setIsOpening(true);
             }}
@@ -329,28 +333,19 @@ export function Registers(): ReactNode {
         includeWithdrawn={includeWithdrawn}
         onIncludeWithdrawn={setIncludeWithdrawn}
       >
-        <Select
-          label={translator.format('registers.branch')}
-          placeholder={translator.format('registers.branch.placeholder')}
-          options={branchOptions}
-          value={chosen?.id ?? null}
-          onChange={(key) => {
-            redirect(hrefOf('registers', String(key)));
-          }}
-          className="w-[16rem] max-w-full"
-        />
+        <ScopeFilters scope={scope} screen="registers" />
       </ListingBar>
 
       <ReadState loaded={registers} />
       {registers.unreachable ? null : (registers.value ?? []).length === 0 &&
         !registers.isLoading ? (
         <EmptyState
-          message={translator.format('registers.empty')}
+          message={scopedMessage(translator, scope, 'registers.empty')}
           description={translator.format('registers.empty.explanation')}
           action={
             <Button
               tone="primary"
-              isDisabled={chosen?.active !== true}
+              isDisabled={openBranches.length === 0}
               onPress={() => {
                 setIsOpening(true);
               }}
@@ -372,14 +367,13 @@ export function Registers(): ReactNode {
         </Panel>
       )}
 
-      {chosen === null ? null : (
-        <NewRegisterDialog
-          branch={chosen}
-          isOpen={isOpening}
-          onOpenChange={setIsOpening}
-          onOpened={registers.reload}
-        />
-      )}
+      <NewRegisterDialog
+        branches={openBranches}
+        preferred={chosen?.id ?? null}
+        isOpen={isOpening}
+        onOpenChange={setIsOpening}
+        onOpened={registers.reload}
+      />
 
       <DeviceDialog
         register={pairing}
@@ -456,24 +450,36 @@ export function Registers(): ReactNode {
 }
 
 interface NewRegisterDialogProps {
-  readonly branch: Branch;
+  /** The branches a till may be opened in — active ones, `Branches.tsx`'s own rule. */
+  readonly branches: readonly Branch[];
+  /** The branch the listing is filtered to, which is the one somebody most likely means. Null for the aggregate. */
+  readonly preferred: Branch['id'] | null;
   readonly isOpen: boolean;
   readonly onOpenChange: (isOpen: boolean) => void;
   readonly onOpened: () => void;
 }
 
 /**
- * Opening a till: what it is called, and the mark every number it issues will
- * carry.
+ * Opening a till: which branch, what it is called, and the mark every number
+ * it issues will carry.
  *
- * Written here rather than assembled from `NameDialog` because the second field
- * is not decoration. The prefix is permanent, it is unique across the whole
- * tenant rather than within this branch, and the refusals it comes back with
- * are about it rather than about the name — so the field needs its own
- * sentence saying what it costs to get wrong.
+ * **The branch is chosen here rather than assumed from the listing**, the same
+ * shape `NewLocationDialog` (`Locations.tsx`) picks one in: a till belongs to
+ * one branch permanently, so the dialog needs an answer regardless of whether
+ * the screen behind it is filtered to that branch, to a different one, or to
+ * "كل فروع المتجر" — and defaulting it from the filter when the filter names a
+ * branch this list actually offers is what keeps the ordinary case a single
+ * click.
+ *
+ * The name and prefix are written here rather than assembled from `NameDialog`
+ * because the prefix field is not decoration. It is permanent, it is unique
+ * across the whole tenant rather than within one branch, and the refusals it
+ * comes back with are about it rather than about the name — so the field needs
+ * its own sentence saying what it costs to get wrong.
  */
 function NewRegisterDialog({
-  branch,
+  branches,
+  preferred,
   isOpen,
   onOpenChange,
   onOpened,
@@ -483,30 +489,44 @@ function NewRegisterDialog({
   const { run } = useOrganisation();
   const messageFor = useDeliveryMessage();
 
+  const only = branches.length === 1 ? (branches[0] ?? null) : null;
+  // The record rather than its identifier, so that what is handed to the
+  // command is a branch this shop actually has open — `NewLocationDialog`'s
+  // own reason for resolving a branch the same way.
+  const [branch, setBranch] = useState<Branch | null>(null);
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
-  const [missing, setMissing] = useState<{ name: boolean; prefix: boolean }>({
+  const [missing, setMissing] = useState<{ branch: boolean; name: boolean; prefix: boolean }>({
+    branch: false,
     name: false,
     prefix: false,
   });
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(isOpen, () => {
+    // A shop with one open branch never answers this question; a listing
+    // filtered to one branch has already answered it.
+    setBranch(only ?? branches.find((one) => one.id === preferred) ?? null);
     setName('');
     setPrefix('');
-    setMissing({ name: false, prefix: false });
+    setMissing({ branch: false, name: false, prefix: false });
   });
 
   async function attempt(): Promise<void> {
     if (isWorking) return;
 
-    const blank = { name: name.trim() === '', prefix: prefix.trim() === '' };
+    const blank = {
+      branch: branch === null,
+      name: name.trim() === '',
+      prefix: prefix.trim() === '',
+    };
     setMissing(blank);
-    if (blank.name || blank.prefix) {
-      setRefused(null);
+    if (branch === null || blank.name || blank.prefix) {
+      reportInvalid();
       return;
     }
 
@@ -516,11 +536,12 @@ function NewRegisterDialog({
     // two would eventually disagree about a character nobody had thought about,
     // and the disagreement would show up as a field that refuses something the
     // shop would have accepted.
+    const into = branch;
     const chosen = name.trim();
     const mark = prefix.trim();
     await attemptWith(async () => {
       const delivery = await run((of) =>
-        of.registers.open({ branch: branch.id, name: chosen, prefix: mark }),
+        of.registers.open({ branch: into.id, name: chosen, prefix: mark }),
       );
       const message = messageFor(delivery);
       if (message === null) {
@@ -531,6 +552,11 @@ function NewRegisterDialog({
       return message;
     });
   }
+
+  const branchOptions: readonly SelectOption[] = branches.map((one) => ({
+    id: one.id,
+    label: one.name,
+  }));
 
   return (
     <Dialog
@@ -560,6 +586,7 @@ function NewRegisterDialog({
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           // §11.1 has Enter submit the form somebody is standing in.
           event.preventDefault();
@@ -568,6 +595,20 @@ function NewRegisterDialog({
         className="flex flex-col gap-[var(--vx-gap-md)]"
       >
         {refused === null ? null : <Banner tone="danger">{refused}</Banner>}
+        <Select
+          label={translator.format('registers.new.branch')}
+          placeholder={translator.format('registers.new.branch.placeholder')}
+          options={branchOptions}
+          value={branch?.id ?? null}
+          onChange={(key) => {
+            setBranch(branches.find((one) => one.id === key) ?? null);
+            setMissing((was) => ({ ...was, branch: false }));
+          }}
+          isRequired
+          {...(missing.branch
+            ? { errorMessage: translator.format('registers.new.branch.required') }
+            : {})}
+        />
         <TextInput
           label={translator.format('registers.new.name')}
           value={name}
@@ -638,7 +679,8 @@ function DeviceDialog({ register, onOpenChange, onAssigned }: DeviceDialogProps)
   const {
     isWorking,
     refused,
-    setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(register, () => {
     setClaimed('');
@@ -653,7 +695,7 @@ function DeviceDialog({ register, onOpenChange, onAssigned }: DeviceDialogProps)
     const typed = claimed.trim();
     if (typed === '') {
       setIsMissing(true);
-      setRefused(null);
+      reportInvalid();
       return;
     }
 
@@ -712,6 +754,7 @@ function DeviceDialog({ register, onOpenChange, onAssigned }: DeviceDialogProps)
       }
     >
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void attempt();

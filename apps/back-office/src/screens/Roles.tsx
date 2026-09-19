@@ -269,12 +269,16 @@ export function Roles(): ReactNode {
         onOpenChange={setIsDefining}
         onSubmit={async (name) => {
           const delivery = await run((of) => of.roles.define({ name }));
-          const message = messageFor(delivery);
-          if (message === null) {
+          if (delivery.kind === 'done') {
             reload();
             toast.show(translator.format('roles.defined', { name }), { tone: 'success' });
+            // Straight to the panel that already holds both of the next two
+            // questions — its rights and who holds it — rather than leaving
+            // whoever just defined it to find the row and open it themselves.
+            goTo('roles', delivery.value.id);
+            return null;
           }
-          return message;
+          return messageFor(delivery);
         }}
       />
 
@@ -514,6 +518,7 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState<string | null>(null);
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState<Assignment | null>(null);
   const [reach, setReach] = useState<'tenant' | 'branches'>('tenant');
   const [chosenBranches, setChosenBranches] = useState<ReadonlySet<string>>(new Set());
   const [missing, setMissing] = useState({ user: false, branches: false });
@@ -521,6 +526,8 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
     isWorking,
     refused,
     setRefused,
+    formRef,
+    reportInvalid,
     attempt: attemptWith,
   } = useAttempt(role.id, () => {
     setUserId(null);
@@ -538,7 +545,7 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
     };
     setMissing(blank);
     if (blank.user || blank.branches) {
-      setRefused(null);
+      reportInvalid();
       return;
     }
 
@@ -634,14 +641,35 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
                       : branchNames(formattingLocale, branches, assignment.confinement.branches)}
                   </span>
                 </span>
-                <Button
-                  isDisabled={withdrawing !== null}
-                  onPress={() => {
-                    void withdraw(assignment);
-                  }}
-                >
-                  {translator.format('users.scope.withdraw')}
-                </Button>
+                <div className="flex gap-[var(--vx-gap-sm)]">
+                  {/* Only for somebody still in the shop: a withdrawn person is
+                      not among the people the form below can be pointed at. */}
+                  {person?.active !== true ? null : (
+                    <Button
+                      onPress={() => {
+                        setUserId(assignment.user);
+                        setReach(assignment.confinement.kind);
+                        setChosenBranches(
+                          assignment.confinement.kind === 'branches'
+                            ? new Set(assignment.confinement.branches)
+                            : new Set(),
+                        );
+                        setMissing({ user: false, branches: false });
+                        formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                    >
+                      {translator.format('users.scope.editReach')}
+                    </Button>
+                  )}
+                  <Button
+                    isDisabled={withdrawing !== null}
+                    onPress={() => {
+                      setConfirmingWithdraw(assignment);
+                    }}
+                  >
+                    {translator.format('users.scope.withdraw')}
+                  </Button>
+                </div>
               </li>
             );
           })}
@@ -649,6 +677,7 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
       )}
 
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void assign();
@@ -692,6 +721,26 @@ function HoldersSection({ role }: HoldersSectionProps): ReactNode {
         </div>
         <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
       </form>
+
+      <ConfirmationDialog
+        title={translator.format('users.scope.withdraw.confirm.title')}
+        message={translator.format('users.scope.withdraw.confirm.message', {
+          name: users.find((one) => one.id === confirmingWithdraw?.user)?.name ?? '',
+          role: roleLabel(translator, role),
+        })}
+        confirmLabel={translator.format('users.scope.withdraw')}
+        tone="danger"
+        isOpen={confirmingWithdraw !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setConfirmingWithdraw(null);
+        }}
+        onConfirm={() => {
+          if (confirmingWithdraw === null) return;
+          const taken = confirmingWithdraw;
+          setConfirmingWithdraw(null);
+          void withdraw(taken);
+        }}
+      />
     </div>
   );
 }

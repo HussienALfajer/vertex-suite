@@ -167,7 +167,10 @@ function ToastItem({
   return (
     <div
       className={clsx(
-        'rounded-card pointer-events-auto flex items-start border shadow-lg',
+        // Centred on the cross axis: the dismiss control is a fixed square
+        // taller than one line of text, and `items-start` left it sitting
+        // low against the text's cap height instead of the middle of the row.
+        'rounded-card pointer-events-auto flex items-center border shadow-lg',
         // A floor as well as a ceiling. Sized to its text alone, a
         // confirmation naming a one-character branch is a 7rem chip that reads
         // as a stray badge; the floor keeps every message the same deliberate
@@ -203,7 +206,7 @@ function ToastItem({
           if (back?.isConnected === true) back.focus();
           onDismiss(toast.id);
         }}
-        className="-me-[var(--vx-pad-sm)] -mt-[var(--vx-pad-xs)]"
+        className="-me-[var(--vx-pad-sm)]"
       >
         <svg
           viewBox="0 0 20 20"

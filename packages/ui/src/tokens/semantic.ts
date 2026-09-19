@@ -133,6 +133,17 @@ export const COMPONENT_TOKENS: Readonly<Record<string, ThemedToken>> = {
   'switch-knob-on': { light: 'var(--vx-on-primary)', dark: 'var(--vx-on-primary)' },
 
   /**
+   * `Badge`'s quiet neutral tone — the one that "carries no meaning at all"
+   * and so cannot borrow an accent tint the way the other five tones do. It
+   * shipped on `fill-secondary` directly, which is the switch's own bug over
+   * again: every table row these badges sit in is `surface-2`, so in the
+   * light theme the badge's fill and its row were the same white and the
+   * pill read as bare text with no pill at all. `border-strong` as a fill is
+   * the switch track's own fix, reused rather than re-derived.
+   */
+  'badge-neutral': { light: 'var(--vx-border-strong)', dark: 'var(--vx-border-strong)' },
+
+  /**
    * The map's land, for the same reason the switch has a track.
    *
    * `SYS-14` draws a landmass on a page, and the surfaces cannot do it: in the

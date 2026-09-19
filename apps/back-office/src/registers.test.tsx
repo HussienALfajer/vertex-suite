@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { newId } from '@vertex/kernel';
@@ -38,8 +38,17 @@ async function openBranch(shop: OpenShop, name: string): Promise<void> {
   await screen.findByRole('rowheader', { name });
 }
 
-async function openRegister(shop: OpenShop, name: string, prefix: string): Promise<void> {
+async function openRegister(
+  shop: OpenShop,
+  name: string,
+  prefix: string,
+  branch?: string,
+): Promise<void> {
   await shop.person.click(firstButton(catalogue['registers.open']));
+  if (branch !== undefined) {
+    const dialog = await screen.findByRole('dialog');
+    await chooseOption(shop, catalogue['registers.new.branch'], branch, dialog);
+  }
   await shop.person.type(screen.getByLabelText(catalogue['registers.new.name']), name);
   await shop.person.type(screen.getByLabelText(catalogue['registers.new.prefix']), prefix);
   await shop.person.click(screen.getByRole('button', { name: catalogue['registers.new.submit'] }));
@@ -70,7 +79,7 @@ describe('Registers and the machines at them — SYS-09', () => {
   it('opens a till carrying the mark every number it issues will carry', async () => {
     const shop = await aShopTradingFrom('حلب');
 
-    expect(await screen.findByText(catalogue['registers.empty'])).toBeTruthy();
+    expect(await screen.findByText(catalogue['registers.empty.allBranches'])).toBeTruthy();
     await openRegister(shop, 'صندوق المدخل', 'AL1');
 
     expect(await screen.findByRole('rowheader', { name: 'صندوق المدخل' })).toBeTruthy();
@@ -80,7 +89,7 @@ describe('Registers and the machines at them — SYS-09', () => {
 
   it('refuses a mark another till already carries, anywhere in the shop', async () => {
     const shop = await aShopTradingFrom('حلب', 'حمص');
-    await openRegister(shop, 'صندوق حلب', 'AL1');
+    await openRegister(shop, 'صندوق حلب', 'AL1', 'حلب');
     await screen.findByRole('rowheader', { name: 'صندوق حلب' });
 
     await chooseOption(shop, catalogue['registers.branch'], 'حمص');
@@ -205,5 +214,62 @@ describe('The machine at a till, and its generation — SYS-02', () => {
     await waitFor(() => {
       expect(screen.queryByText(catalogue['registers.idle'])).toBeNull();
     });
+  });
+});
+
+describe('Every branch’s tills at once — SYS-09', () => {
+  /** The row a till's name heads, for what else it says about it. */
+  function rowOf(name: string): HTMLElement {
+    const row = screen.getByRole('rowheader', { name }).closest<HTMLElement>('[role="row"]');
+    if (row === null) throw new Error(`"${name}" heads no row.`);
+    return row;
+  }
+
+  it('lays every branch’s tills in one table, each row naming its branch', async () => {
+    const shop = await aShopTradingFrom('حلب', 'حمص');
+    await openRegister(shop, 'صندوق حلب', 'AL1', 'حلب');
+    await screen.findByRole('rowheader', { name: 'صندوق حلب' });
+    await openRegister(shop, 'صندوق حمص', 'HS1', 'حمص');
+    await screen.findByRole('rowheader', { name: 'صندوق حمص' });
+
+    expect(within(rowOf('صندوق حلب')).getByText('حلب')).toBeTruthy();
+    expect(within(rowOf('صندوق حمص')).getByText('حمص')).toBeTruthy();
+    // Both tills stand idle, and the count reads the rows on screen whether
+    // they are one branch's or every branch's.
+    expect(
+      await screen.findByText(say.format('registers.idle.explanation', { count: 2 })),
+    ).toBeTruthy();
+  });
+
+  it('asks which branch a new till belongs to, when more than one could be meant', async () => {
+    const shop = await aShopTradingFrom('حلب', 'حمص');
+
+    await openRegister(shop, 'صندوق المدخل', 'AL1');
+
+    // A till's mark is on every number it issues, and it belongs to one
+    // branch for good; the dialog does not guess which.
+    expect(await screen.findByText(catalogue['registers.new.branch.required'])).toBeTruthy();
+    expect(screen.queryByRole('rowheader', { name: 'صندوق المدخل' })).toBeNull();
+  });
+
+  it('says a till in use cannot sell while its branch is withdrawn', async () => {
+    const shop = await aShopTradingFrom('حلب');
+    await openRegister(shop, 'صندوق المدخل', 'AL1');
+    await screen.findByRole('rowheader', { name: 'صندوق المدخل' });
+
+    await goTo(shop, catalogue['nav.branches']);
+    await shop.person.click(
+      screen.getByRole('button', { name: catalogue['branches.withdraw.title'] }),
+    );
+    await shop.person.click(screen.getByRole('button', { name: catalogue['branches.withdraw'] }));
+    await waitFor(() => {
+      expect(screen.queryByRole('rowheader', { name: 'حلب' })).toBeNull();
+    });
+    await goTo(shop, catalogue['nav.registers']);
+
+    await screen.findByRole('rowheader', { name: 'صندوق المدخل' });
+    expect(
+      within(rowOf('صندوق المدخل')).getByText(catalogue['registers.status.branchWithdrawn']),
+    ).toBeTruthy();
   });
 });

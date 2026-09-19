@@ -67,15 +67,16 @@ passing; `check:coverage` reads the feature list from `docs/core-features.md`, t
 unit has none. Running it after the suites means proven is a test that passed, not a test that
 exists.
 
-| Command          |                                           |
-| ---------------- | ----------------------------------------- |
-| `pnpm verify`    | everything, in the order CI runs it       |
-| `pnpm test`      | tests only                                |
-| `pnpm typecheck` | types only                                |
-| `pnpm lint`      | lint only                                 |
-| `pnpm format`    | rewrite files to the formatter's opinion  |
-| `pnpm e2e`       | the keyboard journeys, in a browser       |
-| `pnpm next`      | the next unit, derived from the documents |
+| Command          |                                             |
+| ---------------- | ------------------------------------------- |
+| `pnpm verify`    | everything, in the order CI runs it         |
+| `pnpm test`      | tests only                                  |
+| `pnpm typecheck` | types only                                  |
+| `pnpm lint`      | lint only                                   |
+| `pnpm format`    | rewrite files to the formatter's opinion    |
+| `pnpm e2e`       | the keyboard journeys, in a browser         |
+| `pnpm next`      | the next unit, derived from the documents   |
+| `pnpm demo`      | the back office, over a shop already set up |
 
 ## Conventions
 

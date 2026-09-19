@@ -20,6 +20,7 @@
     "check:boundaries": "node tools/check-boundaries.mjs",
     "check:coverage": "node tools/check-coverage.mjs",
     "next": "node tools/next.mjs",
+    "demo": "pnpm --filter @vertex/back-office run demo",
     "e2e": "pnpm --filter \"./apps/*\" --workspace-concurrency=1 run e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

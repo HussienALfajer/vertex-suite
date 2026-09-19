@@ -215,6 +215,21 @@ describe('control boundaries — §4.6', () => {
     expect(measured('dark')).toBeCloseTo(1.8, 1);
     expect(measured('light')).toBeLessThan(GRAPHIC_TARGET);
   });
+
+  it('a neutral badge fill carries its text at the text floor, wherever it sits', () => {
+    // `badge-neutral` is `border-strong` used as a fill (§4.7), so what is read
+    // is `text-secondary` on that overlay composited over the surface under it
+    // — a table row (`surface-2`) or a dialog (`surface-3`).
+    const token = BORDERS['border-strong'];
+    if (token === undefined) throw new Error('No border-strong token.');
+    for (const theme of ['light', 'dark'] as const) {
+      const ink = neutralAt(palette.neutral, NEUTRAL_ROLES.textSecondary[theme]);
+      for (const role of [NEUTRAL_ROLES.surface2, NEUTRAL_ROLES.surface3]) {
+        const fill = composite(token[theme], neutralAt(palette.neutral, role[theme]));
+        expect(contrastRatio(ink, fill), theme).toBeGreaterThanOrEqual(TEXT_TARGET);
+      }
+    }
+  });
 });
 
 describe('chart series', () => {

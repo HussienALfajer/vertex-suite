@@ -51,6 +51,14 @@ async function defineRole(shop: OpenShop, name: string): Promise<void> {
   await screen.findByRole('rowheader', { name });
 }
 
+/** Answers the confirmation a withdrawal is asked through. */
+async function confirmWithdrawal(shop: OpenShop): Promise<void> {
+  const question = await screen.findByRole('alertdialog');
+  await shop.person.click(
+    within(question).getByRole('button', { name: catalogue['users.scope.withdraw'] }),
+  );
+}
+
 /** Opens a role's own permissions and holders, from its row. */
 async function openRole(shop: OpenShop, name: string): Promise<void> {
   await shop.person.click(
@@ -91,6 +99,18 @@ describe('Roles — SEC-01', () => {
     await defineRole(shop, 'مشرف المستودع الليلي');
 
     expect(screen.getByRole('rowheader', { name: 'مشرف المستودع الليلي' })).toBeTruthy();
+  });
+
+  it('opens a role just defined, where its rights and holders are asked next', async () => {
+    const shop = await aShopOnRoles();
+    await defineRole(shop, 'مشرف المستودع الليلي');
+
+    // A role with no rights and nobody holding it does nothing yet; the two
+    // questions that make it do something are on the panel it opens to.
+    await waitFor(() => {
+      expect(globalThis.location.search).toMatch(/^\?id=/u);
+    });
+    expect(await screen.findByText(catalogue['roles.holders.title'])).toBeTruthy();
   });
 
   it('renames a role, withdraws it and puts it back', async () => {
@@ -241,6 +261,7 @@ describe('Roles — SEC-04', () => {
     await shop.person.click(
       screen.getByRole('button', { name: catalogue['users.scope.withdraw'] }),
     );
+    await confirmWithdrawal(shop);
     expect(await screen.findByText(catalogue['roles.holders.none'])).toBeTruthy();
   });
 
@@ -251,6 +272,7 @@ describe('Roles — SEC-04', () => {
     await shop.person.click(
       screen.getByRole('button', { name: catalogue['users.scope.withdraw'] }),
     );
+    await confirmWithdrawal(shop);
 
     expect(await screen.findByText(say.format('refusal.sec.last-owner', {}))).toBeTruthy();
     expect(screen.queryByText(catalogue['roles.holders.none'])).toBeNull();
@@ -273,7 +295,7 @@ describe('A role that is not "owner" can be the tenant’s only way to edit role
     await shop.person.click(
       within(rowFor('سارة')).getByRole('button', { name: catalogue['users.scope.action'] }),
     );
-    await chooseOption(shop, catalogue['users.scope.role'], say.format('role.manager'));
+    await shop.person.click(screen.getByRole('checkbox', { name: say.format('role.manager') }));
     await shop.person.click(screen.getByRole('button', { name: catalogue['users.scope.assign'] }));
     await screen.findByText(
       say.format('users.scope.assigned', { name: 'سارة', role: say.format('role.manager') }),

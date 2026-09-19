@@ -111,14 +111,22 @@ export { Badge, type BadgeProps, type BadgeTone } from './components/Badge.js';
 export { type Tone } from './components/styles.js';
 
 export { Select, type SelectOption, type SelectProps } from './components/Select.js';
+export {
+  FormatBuilder,
+  type FormatBuilderMark,
+  type FormatBuilderProps,
+} from './components/FormatBuilder.js';
 export { Checkbox, Switch, type CheckboxProps, type SwitchProps } from './components/Toggle.js';
 export {
   ConfirmationDialog,
   Dialog,
+  UnsavedChangesDialog,
   type ConfirmationDialogProps,
   type DialogProps,
+  type UnsavedChangesDialogProps,
 } from './components/Dialog.js';
 export { useAttempt, type Attempt } from './components/useAttempt.js';
+export { focusFirstInvalid } from './components/focusFirstInvalid.js';
 export {
   actionsColumnWidth,
   DataTable,
