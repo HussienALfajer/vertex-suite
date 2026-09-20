@@ -3,6 +3,7 @@ import type { TenantId } from '@vertex/contracts';
 import type {
   Account,
   AccountMapping,
+  Attachment,
   EntrySource,
   JournalEntry,
   JournalEntryId,
@@ -81,6 +82,14 @@ export interface AppendedShapes {
   readonly entry: JournalEntry;
   /** `fin/line/<tenant>/<entry>/<ordinal>`: read by entry, which is how lines are always read. */
   readonly line: JournalLine;
+  /**
+   * `fin/attachment/<tenant>/<entry>/<ordinal>`: what the accountant attached
+   * to a manual entry (`FIN-04`) — the name, the type, the size and the hash,
+   * and never the bytes, which the host keeps elsewhere (`AttachmentStore`).
+   * Appended with the entry, because the evidence for a posting is as
+   * immutable as the posting.
+   */
+  readonly attachment: Attachment;
   /**
    * `fin/posted/<tenant>/<kind>/<document>`: the entry a business event became.
    *

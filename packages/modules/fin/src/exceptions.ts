@@ -56,7 +56,11 @@ function fieldsOf<T>(arriving: unknown): Arriving<T> {
 function sealedException(exception: PostingException): PostingException {
   return Object.freeze({
     ...exception,
-    arrived: sealedPosted(exception.arrived.entry, exception.arrived.lines),
+    arrived: sealedPosted(
+      exception.arrived.entry,
+      exception.arrived.lines,
+      exception.arrived.attachments,
+    ),
     refused: Object.freeze({
       ...exception.refused,
       values: Object.freeze({ ...exception.refused.values }),
@@ -111,7 +115,7 @@ export function acceptEntry(
   arrived: Posted,
   arrivedAt: Instant,
 ): Outcome<Accepted> {
-  const { entry, lines } = arrived;
+  const { entry, lines, attachments } = arrived;
   ownedBy(entry, tenant);
   balancedOrThrow(entry, lines);
 
@@ -141,13 +145,14 @@ export function acceptEntry(
       // As it arrived, with nothing of this store's on it: the period and the
       // queue mark are this store's to settle when the entry is posted here.
       arrived: sealedPosted(
-        entryFrom(entry, lines, {
+        entryFrom(entry, lines, attachments, {
           number: entry.number,
           day: entry.day,
           period: entry.period,
           exception: null,
         }),
         lines,
+        attachments,
       ),
       refused: admitted.error,
       arrivedAt,
@@ -166,13 +171,14 @@ export function acceptEntry(
   // else: the number is the one the register printed (`SYS-02`).
   const posted = writePosted(
     session,
-    entryFrom(entry, lines, {
+    entryFrom(entry, lines, attachments, {
       number: entry.number,
       day: entry.day,
       period: admitted.value.period.id,
       exception: null,
     }),
     lines,
+    attachments,
   );
   return ok(Object.freeze({ outcome: 'posted', posted }));
 }
@@ -224,13 +230,14 @@ export function resolveException(
 
   const posted = writePosted(
     session,
-    entryFrom(arrived.entry, arrived.lines, {
+    entryFrom(arrived.entry, arrived.lines, arrived.attachments, {
       number: arrived.entry.number,
       day: on,
       period: admitted.value.period.id,
       exception: id,
     }),
     arrived.lines,
+    arrived.attachments,
   );
   writeRecord(session, 'exception', tenant, [id], {
     ...found,

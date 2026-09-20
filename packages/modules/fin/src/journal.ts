@@ -8,6 +8,7 @@ import { admitPosting, fiscalYearLabel, postingPlaceOn } from './calendar.js';
 import {
   JOURNAL_ENTRY_DOCUMENT,
   type AccountingPeriodId,
+  type Attachment,
   type EntryFacts,
   type EntrySource,
   type JournalEntry,
@@ -21,7 +22,13 @@ import {
   type RecordSession,
   type Reversal,
 } from './contract.js';
-import { appendRecord, readRecord, scanRecords, type Placement } from './records.js';
+import {
+  appendRecord,
+  readRecord,
+  scanRecords,
+  type Placement,
+  type StoredShapes,
+} from './records.js';
 
 /**
  * The journal: `FIN-02`'s second half, which writes, and `FIN-03`, which is the
@@ -57,8 +64,20 @@ export function sealedEntry(entry: JournalEntry): JournalEntry {
   });
 }
 
-export function sealedPosted(entry: JournalEntry, lines: readonly JournalLine[]): Posted {
-  return Object.freeze({ entry: sealedEntry(entry), lines: Object.freeze(lines.map(sealedLine)) });
+export function sealedAttachment(attachment: Attachment): Attachment {
+  return Object.freeze({ ...attachment });
+}
+
+export function sealedPosted(
+  entry: JournalEntry,
+  lines: readonly JournalLine[],
+  attachments: readonly Attachment[],
+): Posted {
+  return Object.freeze({
+    entry: sealedEntry(entry),
+    lines: Object.freeze(lines.map(sealedLine)),
+    attachments: Object.freeze(attachments.map(sealedAttachment)),
+  });
 }
 
 /**
@@ -72,6 +91,7 @@ export function sealedPrepared(prepared: PreparedEntry): PreparedEntry {
     source: Object.freeze({ ...prepared.source }),
     total: Object.freeze({ ...prepared.total }),
     lines: Object.freeze(prepared.lines.map(sealedLine)),
+    attachments: Object.freeze(prepared.attachments.map(sealedAttachment)),
   });
 }
 
@@ -84,39 +104,75 @@ export function entryIn(
 }
 
 /**
- * An entry's lines, in their order, each read **by name**: the entry says how
- * many it has, and every one sits under its own ordinal. Never a scan — the
- * posting path reads an entry back whenever a replay finds its event already
- * posted, and a scan there would make the replay conflict with every command
- * adding a record anywhere. A line the entry counts and the store lacks is a
- * store that lost a record written with the entry, and is not answered around.
+ * What an entry counts, each read **by name**: the entry says how many it has,
+ * and every one sits under its own ordinal. Never a scan — the posting path
+ * reads an entry back whenever a replay finds its event already posted, and a
+ * scan there would make the replay conflict with every command adding a record
+ * anywhere. One the entry counts and the store lacks is a store that lost a
+ * record written with the entry, and is not answered around.
  */
+function countedOf<C extends 'line' | 'attachment'>(
+  session: RecordSession,
+  tenant: TenantId,
+  collection: C,
+  entry: JournalEntry,
+  count: number,
+): readonly StoredShapes[C][] {
+  const found: StoredShapes[C][] = [];
+  for (let ordinal = 1; ordinal <= count; ordinal += 1) {
+    const one = readRecord(session, collection, tenant, [entry.id, String(ordinal)]);
+    if (one === null) {
+      throw new Error(
+        `${collection} ${String(ordinal)} of entry ${entry.id} of tenant ${tenant} is missing.`,
+      );
+    }
+    found.push(one);
+  }
+  return found;
+}
+
 function linesOf(
   session: RecordSession,
   tenant: TenantId,
   entry: JournalEntry,
 ): readonly JournalLine[] {
-  const lines: JournalLine[] = [];
-  for (let ordinal = 1; ordinal <= entry.lineCount; ordinal += 1) {
-    const line = readRecord(session, 'line', tenant, [entry.id, String(ordinal)]);
-    if (line === null) {
-      throw new Error(
-        `Line ${String(ordinal)} of entry ${entry.id} of tenant ${tenant} is missing.`,
-      );
-    }
-    lines.push(line);
-  }
-  return lines;
+  return countedOf(session, tenant, 'line', entry, entry.lineCount);
 }
 
-/** One entry with its lines, sealed, or null. */
+/**
+ * One attachment of an entry, by its place — or null for a place the entry has
+ * nothing at. A place is counted from one; anything else names nothing.
+ */
+export function attachmentIn(
+  session: RecordSession,
+  tenant: TenantId,
+  entry: JournalEntry,
+  ordinal: number,
+): Attachment | null {
+  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > entry.attachmentCount) return null;
+  const attachment = readRecord(session, 'attachment', tenant, [entry.id, String(ordinal)]);
+  // Counted by the entry and absent from the store: see `countedOf`.
+  if (attachment === null) {
+    throw new Error(
+      `attachment ${String(ordinal)} of entry ${entry.id} of tenant ${tenant} is missing.`,
+    );
+  }
+  return sealedAttachment(attachment);
+}
+
+/** One entry with its lines and attachments, sealed, or null. */
 export function postedIn(
   session: RecordSession,
   tenant: TenantId,
   id: JournalEntryId,
 ): Posted | null {
   const entry = entryIn(session, tenant, id);
-  return entry === null ? null : sealedPosted(entry, linesOf(session, tenant, entry));
+  if (entry === null) return null;
+  return sealedPosted(
+    entry,
+    linesOf(session, tenant, entry),
+    countedOf(session, tenant, 'attachment', entry, entry.attachmentCount),
+  );
 }
 
 /**
@@ -251,12 +307,13 @@ export function balancedOrThrow(facts: EntryFacts, lines: readonly JournalLine[]
  * The entry as it will be written: the facts, and what only posting settles.
  *
  * Picked field by field rather than spread, because a `PreparedEntry` carries
- * its lines and an entry record must not — the lines are records of their own,
- * and the entry carries only how many there are.
+ * its lines and its attachments and an entry record must not — each is a
+ * record of its own, and the entry carries only how many there are.
  */
 export function entryFrom(
   facts: EntryFacts,
   lines: readonly JournalLine[],
+  attachments: readonly Attachment[],
   settled: {
     readonly number: string;
     readonly day: LocalDate;
@@ -269,6 +326,7 @@ export function entryFrom(
     tenant: facts.tenant,
     number: settled.number,
     lineCount: lines.length,
+    attachmentCount: attachments.length,
     source: Object.freeze({ ...facts.source }),
     branch: facts.branch,
     register: facts.register,
@@ -285,8 +343,29 @@ export function entryFrom(
 }
 
 /**
- * Writes an admitted entry: the entry, its lines, the placement of its event,
- * and — for a reversal — the pointer from the original (`FIN-03`).
+ * Raises unless what an entry counts is numbered one to N, in order.
+ *
+ * Or the entry could never be read back by name; this module numbers every
+ * line and every attachment it prepares, so anything else was altered.
+ */
+function numberedOrThrow(
+  entry: JournalEntry,
+  what: string,
+  counted: readonly { readonly ordinal: number }[],
+): void {
+  counted.forEach((one, index) => {
+    if (one.ordinal !== index + 1) {
+      throw new Error(
+        `The ${what} of entry ${entry.id} are not numbered one to ${String(counted.length)}.`,
+      );
+    }
+  });
+}
+
+/**
+ * Writes an admitted entry: the entry, its lines, its attachments, the
+ * placement of its event, and — for a reversal — the pointer from the original
+ * (`FIN-03`).
  *
  * Every one an append, and the placement last, so that the key a replay reads
  * by name is written only when everything it points at is.
@@ -295,21 +374,22 @@ export function writePosted(
   session: RecordSession,
   entry: JournalEntry,
   lines: readonly JournalLine[],
+  attachments: readonly Attachment[],
 ): Posted {
   const { tenant } = entry;
-  // Numbered one to N in order, or the entry could never be read back by name;
-  // this module numbers every line it prepares, so anything else was altered.
-  lines.forEach((line, index) => {
-    if (line.ordinal !== index + 1) {
-      throw new Error(
-        `The lines of entry ${entry.id} are not numbered one to ${String(lines.length)}.`,
-      );
-    }
-  });
+  numberedOrThrow(entry, 'lines', lines);
+  numberedOrThrow(entry, 'attachments', attachments);
   appendRecord(session, 'entry', tenant, [entry.id], entry);
   for (const line of lines) {
     appendRecord(session, 'line', tenant, [entry.id, String(line.ordinal)], {
       ...line,
+      entry: entry.id,
+      tenant,
+    });
+  }
+  for (const attachment of attachments) {
+    appendRecord(session, 'attachment', tenant, [entry.id, String(attachment.ordinal)], {
+      ...attachment,
       entry: entry.id,
       tenant,
     });
@@ -326,7 +406,7 @@ export function writePosted(
     source: entry.source,
     entry: entry.id,
   });
-  return sealedPosted(entry, lines);
+  return sealedPosted(entry, lines, attachments);
 }
 
 /**
@@ -383,11 +463,11 @@ export async function postEntry(
   const admitted = admitPosting(session, tenant, prepared.day);
   if (!admitted.ok) return admitted;
 
-  const entry = entryFrom(prepared, prepared.lines, {
+  const entry = entryFrom(prepared, prepared.lines, prepared.attachments, {
     number: numbered.value.number,
     day: prepared.day,
     period: admitted.value.period.id,
     exception: null,
   });
-  return ok(writePosted(session, entry, prepared.lines));
+  return ok(writePosted(session, entry, prepared.lines, prepared.attachments));
 }

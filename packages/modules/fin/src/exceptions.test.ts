@@ -393,6 +393,35 @@ describe('Fiscal calendar and period closing — FIN-05', () => {
     expect(await fin.journal.entry(fin.by, arrived.entry.id)).toBeNull();
     expect(await fin.exceptions.exceptions(fin.byOther, { including: 'all' })).toEqual([]);
   });
+
+  it('records an arrival’s attachments as they arrived, and never asks the store for a key that is not a hash', async () => {
+    const { fin, till } = shop;
+    const made = await fin.postedElsewhere(till.by, receipt(shop, '2026-09-14'));
+    // An attachment record whose hash is not one this module computed: the
+    // entry is taken as it arrived, and the one thing the store is never asked
+    // for is a key that could carry a path in it.
+    const arrived: Posted = {
+      ...made,
+      entry: { ...made.entry, attachmentCount: 1 },
+      attachments: [
+        {
+          id: newId<'attachment'>(),
+          tenant: fin.tenant,
+          entry: made.entry.id,
+          ordinal: 1,
+          name: 'receipt.pdf',
+          mediaType: 'application/pdf',
+          size: 3,
+          sha256: '../../etc/passwd',
+        },
+      ],
+    };
+
+    posted(taken(await arrive(shop, arrived)));
+    expect((await fin.journal.entry(fin.by, made.entry.id))?.attachments).toHaveLength(1);
+    await expect(fin.journal.attachment(fin.by, made.entry.id, 1)).rejects.toThrow(/not a SHA-256/);
+    expect(fin.attachments.keys()).toEqual([]);
+  });
 });
 
 describe('Who decides on a queued entry', () => {

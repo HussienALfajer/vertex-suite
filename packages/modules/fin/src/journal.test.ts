@@ -167,6 +167,7 @@ describe('Automatic posting engine — FIN-02', () => {
       tenant: fin.tenant,
       number: '2026-000001',
       lineCount: 2,
+      attachmentCount: 0,
       source: draft.source,
       branch,
       register: null,
@@ -825,8 +826,16 @@ describe('Immutable entries — FIN-03', () => {
       'prepare',
       'prepareReversal',
     ]);
-    expect(Object.keys(fin.journalAdmin)).toEqual(['reverse']);
-    expect(Object.keys(fin.journal).sort()).toEqual(['entries', 'entry', 'entryFor', 'reversalOf']);
+    // The accountant writes by hand and opens the books (FIN-04, FIN-06),
+    // and both go through the engine: neither is a way to a posted line.
+    expect(Object.keys(fin.journalAdmin).sort()).toEqual(['open', 'record', 'reverse']);
+    expect(Object.keys(fin.journal).sort()).toEqual([
+      'attachment',
+      'entries',
+      'entry',
+      'entryFor',
+      'reversalOf',
+    ]);
     expect(Object.keys(fin.exceptionsAdmin)).toEqual(['post']);
 
     // And beneath it, the writer of an entry refuses to write where an entry
@@ -1073,20 +1082,29 @@ describe('Who may correct the journal', () => {
 
   it('declares the rights over the journal and the exceptions queue, and seeds them to whoever reads and keeps the books', () => {
     const declared = new Map(FIN_PERMISSION_SEEDS.map((one) => [one.id, one]));
-    const { journalEntry, postingException } = FIN_PERMISSIONS;
+    const { journalEntry, openingBalance, postingException } = FIN_PERMISSIONS;
 
     expect(
-      [...declared.keys()].filter((id) => /^fin\.(journal-entry|posting-exception)\./.test(id)),
+      [...declared.keys()].filter((id) =>
+        /^fin\.(journal-entry|opening-balance|posting-exception)\./.test(id),
+      ),
     ).toEqual([
       'fin.journal-entry.view',
+      'fin.journal-entry.create',
       'fin.journal-entry.reverse',
+      'fin.opening-balance.create',
       'fin.posting-exception.view',
       'fin.posting-exception.resolve',
     ]);
     for (const right of [journalEntry.view, postingException.view]) {
       expect(declared.get(right)?.seededFor).toEqual(['manager', 'accountant']);
     }
-    for (const right of [journalEntry.reverse, postingException.resolve]) {
+    for (const right of [
+      journalEntry.create,
+      journalEntry.reverse,
+      openingBalance.create,
+      postingException.resolve,
+    ]) {
       expect(declared.get(right)?.seededFor).toEqual(['accountant']);
       expect(declared.get(right)?.sensitive).toBeUndefined();
     }

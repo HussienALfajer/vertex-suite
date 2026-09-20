@@ -490,9 +490,14 @@ function declarationOf(
  *
  * A group takes no postings — the posting engine of `FIN-02` refuses it — so
  * mapping onto one, or resolving onto one that has since gained children, is
- * refused here with the same word.
+ * refused here with the same word. The accountant's own line names an account
+ * outright (`FIN-04`), and is held to the same three.
  */
-function postable(session: RecordSession, tenant: TenantId, id: AccountId): Outcome<Account> {
+export function postable(
+  session: RecordSession,
+  tenant: TenantId,
+  id: AccountId,
+): Outcome<Account> {
   const account = accountIn(session, tenant, id);
   if (account === null) return refuse('fin.account-not-found', { account: id });
   if (!account.active) return refuse('fin.account-inactive', { account: id });

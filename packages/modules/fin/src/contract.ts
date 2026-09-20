@@ -13,7 +13,7 @@ import {
 } from '@vertex/contracts';
 import type { CurrencyCode, Id, Instant, LocalDate, Money, Refusal, Result } from '@vertex/kernel';
 import { contractKey, type CommandContext, type UnitOfWork } from '@vertex/platform';
-import type { RateStampId } from '@vertex/fx/contract';
+import type { RateOverrideQuote, RateRefusalCode, RateStampId } from '@vertex/fx/contract';
 
 /**
  * What `FIN` lets the rest of the system see.
@@ -701,7 +701,9 @@ export interface EntryDraft {
  *
  * The **account** is the one the role resolved to when the entry was prepared,
  * and the role is kept beside it: a mapping the accountant changes afterwards
- * changes what the next entry lands in and never what this one did.
+ * changes what the next entry lands in and never what this one did. A line the
+ * accountant placed by account rather than by role (`FIN-04`) has no role, and
+ * says so with null rather than with a name this module invented for it.
  */
 export interface JournalLine extends TenantOwned {
   readonly id: JournalLineId;
@@ -709,7 +711,7 @@ export interface JournalLine extends TenantOwned {
   /** Its place in the entry, counted from one, and what a refusal names. */
   readonly ordinal: number;
   readonly account: AccountId;
-  readonly role: string;
+  readonly role: string | null;
   readonly side: EntrySide;
   /** In the functional currency. */
   readonly amount: LedgerAmount;
@@ -753,10 +755,10 @@ export interface EntryFacts extends TenantOwned {
 }
 
 /**
- * An entry worked out and not yet written: every fact of `EntryFacts` and every
- * line, with everything that could refuse already decided — but for the two
- * things only the transaction that writes it can decide, its period and its
- * number.
+ * An entry worked out and not yet written: every fact of `EntryFacts`, every
+ * line and every attachment, with everything that could refuse already decided
+ * — but for the two things only the transaction that writes it can decide, its
+ * period and its number.
  *
  * Frozen, all the way down, for the reason `FX` freezes a prepared stamp: it
  * travels through a caller before `post` writes it without asking again, and
@@ -765,6 +767,8 @@ export interface EntryFacts extends TenantOwned {
  */
 export interface PreparedEntry extends EntryFacts {
   readonly lines: readonly JournalLine[];
+  /** What the accountant attached (`FIN-04`); nothing, for an entry a module posts. */
+  readonly attachments: readonly Attachment[];
 }
 
 /**
@@ -784,19 +788,116 @@ export interface PreparedEntry extends EntryFacts {
  * back whenever a replay finds the event already posted, and a scan there
  * would make that replay conflict with every command adding a record
  * anywhere, which is the cost `TenantCalendar` keeps the calendar off for the
- * same reason.
+ * same reason. `attachmentCount` is the same arrangement for what the
+ * accountant attached (`FIN-04`).
  */
 export interface JournalEntry extends EntryFacts {
   readonly number: string;
   readonly lineCount: number;
+  readonly attachmentCount: number;
   readonly period: AccountingPeriodId;
   readonly exception: PostingExceptionId | null;
 }
 
-/** An entry and its lines, which is how an entry is always read: one is nothing without the other. */
+/**
+ * An entry, its lines and its attachments, which is how an entry is always
+ * read: the lines are nothing without the entry, and the attachments are the
+ * evidence for it (`FIN-04`) — what they are and how to verify them, never
+ * their bytes, which `Journal.attachment` fetches one at a time.
+ */
 export interface Posted {
   readonly entry: JournalEntry;
   readonly lines: readonly JournalLine[];
+  readonly attachments: readonly Attachment[];
+}
+
+export type AttachmentId = Id<'attachment'>;
+
+/**
+ * What may be attached to a manual entry (`FIN-04`): a scanned invoice, a
+ * photograph of a receipt, a signed count sheet.
+ *
+ * A document and the three image encodings a phone and a scanner produce, and
+ * nothing else: not HTML, which a browser would run, and not an office
+ * document, which carries macros. The list is a decision about what the store
+ * node will hold and later serve to a browser, so it is closed, and the bytes
+ * are held to it as well as the label: see `fin.attachment-content-mismatch`.
+ */
+export const ATTACHMENT_MEDIA_TYPES = Object.freeze([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+] as const);
+
+export type AttachmentMediaType = (typeof ATTACHMENT_MEDIA_TYPES)[number];
+
+/**
+ * Ten megabytes, as many bytes as one attachment may carry.
+ *
+ * A receipt photographed at full resolution is two or three; a scanned
+ * multi-page invoice is under ten. Anything larger is a video or a mistake,
+ * and the limit is what keeps it from being hashed and kept on the machine
+ * every till in the shop depends on.
+ */
+export const ATTACHMENT_SIZE_LIMIT = 10 * 1024 * 1024;
+
+/** A file as the accountant hands it in: what to call it, what it is, and its bytes. */
+export interface AttachmentUpload {
+  readonly name: string;
+  readonly mediaType: AttachmentMediaType;
+  readonly bytes: Uint8Array;
+}
+
+/**
+ * An attachment as the journal records it (`FIN-04`): what it was called,
+ * what it is, how big, and the SHA-256 of its bytes — and never the bytes.
+ *
+ * The bytes live where the host keeps files (`AttachmentStore`), under a key
+ * derived from the hash; the record is what says the bytes are the ones that
+ * were attached. Written once with the entry and never again (`FIN-03`): the
+ * evidence for a posting is as immutable as the posting.
+ */
+export interface Attachment extends TenantOwned {
+  readonly id: AttachmentId;
+  readonly entry: JournalEntryId;
+  /** Its place among the entry's attachments, counted from one. */
+  readonly ordinal: number;
+  /** As the accountant named it: text for a screen to show, and never a path or a header without escaping. */
+  readonly name: string;
+  readonly mediaType: AttachmentMediaType;
+  /** In bytes. */
+  readonly size: number;
+  /** Lower-case hexadecimal. */
+  readonly sha256: string;
+}
+
+/** An attachment with its bytes, as `Journal.attachment` hands it back. */
+export interface AttachedFile {
+  readonly attachment: Attachment;
+  readonly bytes: Uint8Array;
+}
+
+/**
+ * Where the bytes of an attachment are kept, which is not the record store.
+ *
+ * A host provides it — a directory on the store node, an object store in the
+ * cloud — the way a host provides the session driver: ten megabytes of scanned
+ * invoice have no business in a transactional store that every sale in the
+ * shop is serialised against, and in a sync stream every register replays.
+ *
+ * The key is this module's and opaque to the store; it is safe as a path. It
+ * is derived from the tenant and the hash of the bytes, so keeping the same
+ * bytes under the same key again is not an error and changes nothing —
+ * which is what lets the bytes be kept **before** the transaction that
+ * records them: a transaction that then fails leaves a file nothing points
+ * at, harmless and reused by the next attempt, where the other order would
+ * leave a record pointing at nothing.
+ */
+export interface AttachmentStore {
+  put(key: string, bytes: Uint8Array): Promise<void>;
+  /** The bytes kept under the key, or null for a key nothing was kept under. */
+  get(key: string): Promise<Uint8Array | null>;
 }
 
 /**
@@ -818,6 +919,156 @@ export interface ReversalTerms {
   /** Why. Required: a correction nobody can explain a month later is an error an auditor has to assume. */
   readonly reason: string;
 }
+
+/**
+ * The kinds of event this module posts on its own account, in the grammar
+ * every other module names its events in (`EntrySource`).
+ *
+ * A reversal names the entry it undoes (`FIN-03`); a manual entry and an
+ * opening entry name themselves, by the identifier the accountant's command
+ * carried — which is what makes recording either of them repeatable: the
+ * command `SYN-02` replays, or the button pressed twice, lands on the entry
+ * it already made.
+ */
+export const FIN_ENTRY_KINDS = Object.freeze({
+  reversal: 'fin.reversal',
+  manualEntry: 'fin.manual-entry',
+  openingBalance: 'fin.opening-balance',
+} as const);
+
+/**
+ * One line of a manual entry, as the accountant writes it (`FIN-04`): an
+ * account, chosen from the chart; a side; and an amount.
+ *
+ * **The amount is in whatever currency the accountant has it in.** In the
+ * functional currency it is the figure the ledger balances. In any other
+ * currency the tenant has, this module values it — at the branch's rate for
+ * today (`FX-04`, `FX-05`), on the side the line's own side selects (`FX-06`:
+ * a debit is money received, so it takes the buy rate; a credit is money paid
+ * out, and takes the sell rate) — and the line carries the amount as stated
+ * and the stamp that valued it, exactly as a sale in pounds does. An
+ * accountant does not convert, because the rate is `FX`'s and the rounding
+ * points are `FX`'s, and a figure typed from a calculator is one nobody can
+ * audit against a board.
+ *
+ * `override` is `FX-06`'s: a rate typed over the day's, with a written reason,
+ * under `FX`'s own right — asked by `FX`, at the branch, exactly as it is
+ * asked of a cashier. It has nothing to replace on a line already in the
+ * functional currency, and is refused there.
+ */
+export interface ManualLine {
+  readonly account: AccountId;
+  readonly side: EntrySide;
+  readonly amount: Money;
+  readonly override?: RateOverrideQuote | null;
+  readonly memo?: string | null;
+}
+
+/**
+ * An adjusting entry as the accountant writes it (`FIN-04`).
+ *
+ * The identifier is the caller's, for the reason `EntryDraft`'s is: it goes on
+ * the screen's own record of what was submitted, so a submission the wire
+ * delivers twice makes one entry. The description is **required** — the
+ * feature says so, and an adjustment with no words beside it is a figure an
+ * auditor has to assume is wrong. Attachments are the evidence for it.
+ */
+export interface ManualEntry {
+  readonly id: JournalEntryId;
+  readonly branch: BranchId;
+  readonly day: LocalDate;
+  readonly description: string;
+  readonly lines: readonly ManualLine[];
+  readonly attachments?: readonly AttachmentUpload[];
+}
+
+/**
+ * The purposes whose accounts the system keeps from its own documents: the
+ * **control accounts**, in the accountant's word for them.
+ *
+ * Inventory is the sum of the stock ledger, a till's balance the sum of its
+ * movements, a customer's balance the sum of their documents, a supplier's
+ * the same — and `FIN-08` verifies every night that the ledger and each of
+ * those agree. A line the accountant writes onto one of these by hand is a
+ * figure the subledger knows nothing about: the ledger and the till disagree
+ * from that moment, the nightly verification reports it forever, and nothing
+ * anybody can count in the shop explains it. So a manual entry is refused
+ * onto them (`fin.account-controlled`), and what changes them is the document
+ * that moves them — a stock adjustment, a cash movement, a credit note — or
+ * the opening entry of `FIN-06`, whose figures are the one origin that comes
+ * from nowhere else.
+ *
+ * The other reserved purposes are not here on purpose. Cost of sales,
+ * shrinkage, the exchange difference and the rounding difference are results,
+ * not balances anything else keeps, and opening-balance equity is closed into
+ * capital by hand at the first year end — the ordinary adjusting entry the
+ * feature exists for.
+ */
+export const CONTROL_ACCOUNTS: readonly ReservedAccount[] = Object.freeze([
+  'inventory',
+  'cash',
+  'receivables',
+  'payables',
+]);
+
+/**
+ * One figure of the opening balances (`FIN-06`): an amount in any currency
+ * the tenant has, and — for one not in the functional currency — a rate typed
+ * over the day's (`FX-06`).
+ *
+ * Valued as a manual line is, and stamped at **the rate of the day it is
+ * entered**, not the day the books open on: `FX-04` keeps rates for today
+ * only, so there is no rate of last January to stamp it with, and a rate the
+ * accountant knows to have been different then is typed as an override, with
+ * the reason written down where the review will read it.
+ */
+export interface OpeningFigure {
+  readonly amount: Money;
+  readonly override?: RateOverrideQuote | null;
+}
+
+/**
+ * What a shop has on the day its books open (`FIN-06`), as the accountant
+ * enters it: the stock on hand, what is in each till, what customers owe and
+ * what is owed to suppliers.
+ *
+ * Structured, and not a manual entry, because these four are the control
+ * accounts (`CONTROL_ACCOUNTS`) and this is the one door into them that is
+ * not a document: the entry posts each figure to the account reserved for its
+ * purpose and balances the whole against opening-balance equity, on
+ * whichever side balances it. Every figure is optional and a positive amount;
+ * what a shop does not have is left out, not entered as nought.
+ *
+ * Per branch, since every entry is booked at one (`EntryFacts`) and a till is
+ * a branch's: a shop with two branches opens each. A till is named by the
+ * currency of its figure — `FIN-01` keeps one cash account per currency — and
+ * counted in its own notes, so its figure is stated in that currency and no
+ * other. `day` is the day the books open on, and the entry is dated on it.
+ */
+export interface OpeningBalances {
+  readonly id: JournalEntryId;
+  readonly branch: BranchId;
+  readonly day: LocalDate;
+  readonly inventory?: OpeningFigure | null;
+  readonly tills?: readonly OpeningFigure[];
+  readonly customerDebts?: OpeningFigure | null;
+  readonly supplierDebts?: OpeningFigure | null;
+  /** Words, when there are any: the entry is described by its kind and its day otherwise. */
+  readonly description?: string | null;
+}
+
+/**
+ * Which of the four figures a refusal about an opening balance points at, in
+ * place of a line number the accountant never saw.
+ */
+export const OPENING_FIGURES = Object.freeze([
+  'inventory',
+  'till',
+  'customer-debts',
+  'supplier-debts',
+] as const);
+
+export type OpeningFigureName = (typeof OPENING_FIGURES)[number];
 
 /**
  * What became of an entry that arrived for a period since closed
@@ -882,14 +1133,17 @@ export interface JournalListing {
  * Why the engine refused.
  *
  * A refusal about one line names it (`line`, counted from one), so that a
- * screen can point at the line rather than at the entry. The chart's and the
- * calendar's own refusals pass through as they are — an unmapped role, a
- * closed period — because the code and its values are what a screen already
- * knows how to say about them.
+ * screen can point at the line rather than at the entry; one about an opening
+ * figure names the figure as well (`figure`, and the till's `currency`),
+ * because the accountant entering opening balances never saw a line. The
+ * chart's, the calendar's and `FX`'s own refusals pass through as they are —
+ * an unmapped role, a closed period, a missing rate — because the code and
+ * its values are what a screen already knows how to say about them.
  */
 export type PostingRefusalCode =
   | ChartRefusalCode
   | CalendarRefusalCode
+  | RateRefusalCode
   /** Not an identifier this system issues. */
   | 'fin.entry-id-invalid'
   /** Not `module.document` — see `EntrySource`. */
@@ -901,6 +1155,8 @@ export type PostingRefusalCode =
   | 'fin.branch-inactive'
   /** Given, and not words. */
   | 'fin.description-invalid'
+  /** A manual entry with no words beside it (`FIN-04`: the description is mandatory). */
+  | 'fin.description-required'
   /** No lines: an entry with nothing in it balances, and records nothing. */
   | 'fin.entry-empty'
   /** Debits and credits differ in the functional currency. Exactly: there is no tolerance, and the `FX-07` residual is a line. */
@@ -927,6 +1183,29 @@ export type PostingRefusalCode =
   | 'fin.line-stamp-required'
   | 'fin.line-stamp-invalid'
   | 'fin.line-memo-invalid'
+  /** A rate typed over the day's, on a line in the functional currency, which no rate values. */
+  | 'fin.line-override-on-functional'
+  /**
+   * An amount in another currency worth less than the last place the books
+   * keep, at today's rate: nothing in the books, and a line of nothing is
+   * refused as it is for every module's draft rather than written as a
+   * nought.
+   */
+  | 'fin.line-amount-valueless'
+  /** A manual line onto an account the system keeps from its own documents; see `CONTROL_ACCOUNTS`. */
+  | 'fin.account-controlled'
+  /** Not a file: no name, no bytes, or bytes that are not bytes. */
+  | 'fin.attachment-invalid'
+  /** Not one of `ATTACHMENT_MEDIA_TYPES`. */
+  | 'fin.attachment-type-unsupported'
+  /** The bytes do not begin the way a file of the stated type begins. */
+  | 'fin.attachment-content-mismatch'
+  /** Over `ATTACHMENT_SIZE_LIMIT`. */
+  | 'fin.attachment-too-large'
+  /** Opening balances with no figure in them (`FIN-06`). */
+  | 'fin.opening-balances-empty'
+  /** Two figures for one till: `FIN-01` keeps one cash account per currency. */
+  | 'fin.opening-till-repeated'
   /** `SYS` would not number the entry; `reason` carries its code. */
   | 'fin.numbering-refused'
   | 'fin.entry-not-found'
@@ -1027,6 +1306,12 @@ export interface PostingEngine {
    * for its date: that is what the queue is for. A reversal that arrives for an
    * entry the system of record has since reversed itself is answered with that
    * reversal, as any other event already posted is.
+   *
+   * An arrival's attachments are recorded as they arrived, and their bytes are
+   * the sender's to deliver to this store's `AttachmentStore` under the same
+   * key (`fin/attachment/<tenant>/<sha256>`): this writes records, never
+   * bytes. Nothing made at a register attaches anything today — the manual
+   * entry is made at the system of record — so nothing arrives with any.
    */
   accept(uow: UnitOfWork<RecordSession>, arrived: Posted): Booked<Accepted>;
 }
@@ -1053,14 +1338,67 @@ export interface Journal {
 
   /** The entry that reversed this one, or null while it stands. */
   reversalOf(by: CommandContext, id: JournalEntryId): Promise<Reversal | null>;
+
+  /**
+   * One attachment of an entry with its bytes (`FIN-04`), read by its place
+   * among the entry's attachments — or null, for an entry the tenant does not
+   * have or a place it has nothing at.
+   *
+   * The bytes come from where the host keeps them and are verified against the
+   * hash the entry records before they are handed out. Bytes that are missing
+   * or differ are a store that lost what it was given, which is a defect and
+   * raises, never a refusal: nothing a caller could do would make the evidence
+   * for a posting reappear.
+   */
+  attachment(
+    by: CommandContext,
+    entry: JournalEntryId,
+    ordinal: number,
+  ): Promise<AttachedFile | null>;
 }
 
 /**
- * What the accountant does to the journal, which is one thing: correct it, by
- * a reversing entry (`FIN-03`). There is no edit and no delete, because there
- * is no such command and nothing beneath this interface could carry one out.
+ * What the accountant does to the journal, which is three things and no
+ * fourth: write an adjusting entry by hand (`FIN-04`), open the books
+ * (`FIN-06`), and correct an entry by reversing it (`FIN-03`). There is no
+ * edit and no delete, because there is no such command and nothing beneath
+ * this interface could carry one out.
+ *
+ * Every command here asks its right through `ModuleContext.authorise`, before
+ * anything is asked of `SYS` or `FX` and before its transaction opens, at the
+ * tenant-wide place: the books are the tenant's, and what is written into
+ * them by hand is judged there (`SEC-04`).
  */
 export interface JournalAdministration {
+  /**
+   * Records a manual entry (`FIN-04`), in a transaction of this module's own.
+   *
+   * Through the same engine every business event posts through, and held to
+   * every rule it holds them to — every account a leaf in use, the two sides
+   * equal to the last place of the functional currency, the day in an open
+   * period — plus three of its own: a description is required, an attachment
+   * is a PDF or an image of at most `ATTACHMENT_SIZE_LIMIT` bytes, and no line
+   * lands on a control account (`CONTROL_ACCOUNTS`). A line stated in another
+   * currency is valued by `FX` at today's rate on the side its own side
+   * selects, and its stamp is written in the same transaction as the entry.
+   *
+   * Recording the same entry again — the same identifier — is answered with
+   * the entry it already made, and moves nothing.
+   */
+  record(by: CommandContext, entry: ManualEntry): Booked<Posted>;
+
+  /**
+   * Posts the opening balances of a branch as one dated opening journal entry
+   * (`FIN-06`), in a transaction of this module's own.
+   *
+   * Each figure goes to the account reserved for its purpose, a till's to the
+   * cash account of its currency, and the whole is balanced against
+   * opening-balance equity. Refused with nothing to open with, and for a till
+   * given twice. Repeating it with the same identifier is answered with the
+   * entry it already made.
+   */
+  open(by: CommandContext, balances: OpeningBalances): Booked<Posted>;
+
   /**
    * Reverses a posted entry, in a transaction of this module's own. Asked at
    * the tenant-wide place: the books are the tenant's, and a correction to
@@ -1116,12 +1454,19 @@ export const PostingExceptionAdministration = contractKey<PostingExceptionAdmini
  * module declares its own (`modules.md` §4.4).
  *
  * `FIN` is a module like the rest where its own postings are concerned: the
- * opening journal entry of `FIN-06` balances against opening-balance equity,
- * and that account is reached through a role reserved for the purpose — not
- * by a code this module happens to know it seeded.
+ * opening journal entry of `FIN-06` puts the stock on hand, the tills, the
+ * customers' debts and the suppliers' into the accounts reserved for those
+ * purposes and balances against opening-balance equity — every one of them
+ * reached through a role reserved for the purpose, not by a code this module
+ * happens to know it seeded. Five roles for one entry, and each says in the
+ * journal where its line came from.
  */
 export const FIN_ACCOUNT_ROLES = Object.freeze({
   openingBalanceEquity: 'fin.opening-balance-equity',
+  openingInventory: 'fin.opening-inventory',
+  openingCash: 'fin.opening-cash',
+  openingCustomerDebts: 'fin.opening-customer-debts',
+  openingSupplierDebts: 'fin.opening-supplier-debts',
 } as const);
 
 /** The four rights over a thing that is made, read, revised and taken out of use. */
@@ -1166,17 +1511,32 @@ export interface PeriodRights {
 }
 
 /**
- * Reading the journal, and correcting it.
+ * Reading the journal, writing into it by hand, and correcting it.
  *
- * `reverse` is the only thing anybody does to a posted entry (`FIN-03`), and
- * it is not an `edit`: nothing about the entry changes. Declared under its own
- * verb so that the role editor says what it is, and so that no `edit` or
- * `delete` over a journal entry exists to be granted — a right nobody could
- * exercise would read as protection and be none.
+ * `create` is the manual entry of `FIN-04`, which is the one way a person
+ * writes a journal entry. `reverse` is the only thing anybody does to a posted
+ * entry (`FIN-03`), and it is not an `edit`: nothing about the entry changes.
+ * Declared under its own verb so that the role editor says what it is, and so
+ * that no `edit` or `delete` over a journal entry exists to be granted — a
+ * right nobody could exercise would read as protection and be none.
  */
 export interface JournalRights {
   readonly view: PermissionId;
+  readonly create: PermissionId;
   readonly reverse: PermissionId;
+}
+
+/**
+ * Opening the books (`FIN-06`): a thing that is made once per branch and
+ * never revised, since what corrects it is a reversal.
+ *
+ * Its own right rather than the manual entry's, because it is the one door
+ * into the control accounts that is not a document, and a shop may want the
+ * person migrating its old books to hold it without holding the right to
+ * adjust the new ones by hand.
+ */
+export interface OpeningRights {
+  readonly create: PermissionId;
 }
 
 /** Reading the exceptions queue of `FIN-05`, and deciding what is in it. */
@@ -1258,6 +1618,7 @@ export interface FinPermissions {
   readonly fiscalYear: CalendarRights;
   readonly accountingPeriod: PeriodRights;
   readonly journalEntry: JournalRights;
+  readonly openingBalance: OpeningRights;
   readonly postingException: ExceptionRights;
 }
 
@@ -1285,13 +1646,20 @@ export const FIN_PERMISSIONS: FinPermissions = Object.freeze({
     // that changes what a period already reported can still be made to say.
     reopen: right('accounting-period', operation('reopen'), NOBODY, true),
   }),
-  // The journal is written by the modules, never by a person; what a person
-  // does to it is read it and, when it is wrong, correct it — and a correction
-  // that leaves the original standing beside it is the accountant's ordinary
-  // work, not the owner's sensitive act.
+  // The journal is written by the modules; what a person does to it is read
+  // it, adjust it by hand — `FIN-04` says an accountant-only screen, and an
+  // adjusting entry is the accountant's ordinary work — and, when it is wrong,
+  // correct it. A correction that leaves the original standing beside it is
+  // that same ordinary work, not the owner's sensitive act.
   journalEntry: Object.freeze({
     view: right('journal-entry', 'view', READERS),
+    create: right('journal-entry', 'create', ACCOUNTANT),
     reverse: right('journal-entry', operation('reverse'), ACCOUNTANT),
+  }),
+  // Opening the books is done once, by whoever carries the old figures into
+  // the new ones; see `OpeningRights` for why it is not the manual entry's right.
+  openingBalance: Object.freeze({
+    create: right('opening-balance', 'create', ACCOUNTANT),
   }),
   // A late arrival for a closed month is a decision about the books, and the
   // accountant's: the manager reads the queue to know what the shop is
