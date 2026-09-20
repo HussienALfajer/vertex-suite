@@ -33,6 +33,7 @@ import {
   type TabDefinition,
 } from '@vertex/ui';
 
+import { useCalendar } from '../calendar.js';
 import { messageForRefusal } from '../catalogue.js';
 import { useCurrencies } from '../currencies.js';
 import { useLedger } from '../ledger.js';
@@ -282,10 +283,19 @@ function Read<T>({
   return children(answer.value);
 }
 
-/** The span has to be a span before anything can be asked about it. */
+/**
+ * The span has to be a span before anything can be asked about it — and while
+ * the calendar that seeds it is still on its way, the page is loading rather
+ * than waiting on a person.
+ */
 function NotYet(): ReactNode {
   const translator = useTranslator();
-  return <p className="text-body text-fg-muted">{translator.format('statements.needSpan')}</p>;
+  const { isLoading } = useCalendar();
+  return (
+    <p className="text-body text-fg-muted">
+      {translator.format(isLoading ? 'data.loading' : 'statements.needSpan')}
+    </p>
+  );
 }
 
 /**
@@ -497,12 +507,14 @@ function BalanceSheetView({ asked }: { readonly asked: Asked | null }): ReactNod
  * The account filter narrows to one account. Omitted, the statement details
  * every account that has a balance at the end of the span or moved within it,
  * which is what "general ledger" means — and, on a shop with three hundred
- * accounts, a page nobody reads in one sitting.
+ * accounts, a page nobody reads in one sitting. Withdrawn accounts are on the
+ * list: this reads the books rather than writing into them, and an account
+ * taken out of use keeps every line ever posted to it.
  */
 function GeneralLedgerView({ asked }: { readonly asked: Asked | null }): ReactNode {
   const translator = useTranslator();
   const { statements } = useLedger();
-  const accounts = useLeafAccounts();
+  const accounts = useLeafAccounts('all');
   const [only, setOnly] = useState<string | null>(null);
 
   const options = useMemo(() => accountOptions(translator, accounts), [translator, accounts]);

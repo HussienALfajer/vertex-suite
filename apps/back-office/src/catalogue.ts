@@ -348,13 +348,19 @@ export const catalogue = {
   /**
    * `FIN-02`–`FIN-07`'s own refusals, as sentences.
    *
-   * A refusal about one line names it — the engine carries `line` on every one
-   * of them, counted from one — so the accountant is pointed at the row rather
-   * than at the entry. A refusal about an opening figure names the figure
-   * instead, resolved through `opening.figure.*` and never selected on in ICU:
-   * `customer-debts` is not an identifier, and a `select` on one makes the
-   * whole message unparseable (`catalogue.test.ts`).
+   * A refusal about one line points at it, and `{where}` is what it points
+   * with: the line, counted from one, for a manual entry; the **figure** for
+   * an opening balance, since the accountant entering one never saw a line
+   * (`Place` in `@vertex/fin`); the attachment, by its place in the list, for
+   * one about the evidence. One placeholder, resolved by `placeOf` **before**
+   * the message is formatted, because ICU has no optional argument — a message
+   * that named `{line}` would throw for a figure, and a `select` on
+   * `customer-debts` would not parse at all (`catalogue.test.ts`).
    */
+  'refusal.place.line': 'السطر {line, number}',
+  'refusal.place.till': 'صندوق {currency}',
+  'refusal.place.attachment': 'المرفق {attachment, number}',
+  'refusal.place.attachments': 'المرفقات',
   'refusal.fin.entry-id-invalid': 'رقم القيد غير صالح. حدّث الصفحة وأعد المحاولة.',
   'refusal.fin.source-kind-invalid': 'نوع المستند غير صالح.',
   'refusal.fin.source-document-required': 'المستند الذي يقابل هذا القيد غير محدّد.',
@@ -377,36 +383,36 @@ export const catalogue = {
   'refusal.fin.account-role-reserved': 'هذا الدور محجوز لحساب النظام، ولا يُربط بحساب آخر.',
   'refusal.fin.account-role-unmapped': 'لم يُربط الدور «{role}» بحساب بعد. اربطه ثم أعد المحاولة.',
   'refusal.fin.account-controlled':
-    'السطر {line, number}: لا يُكتب بخط اليد على حساب يمسكه النظام من مستنداته ({reserved}). ما يحرّكه مستند — جرد، حركة صندوق، إشعار — أو القيد الافتتاحي.',
-  'refusal.fin.line-side-unknown': 'السطر {line, number}: الجهة غير معروفة.',
-  'refusal.fin.line-amount-invalid': 'السطر {line, number}: المبلغ غير صالح، أو ليس أكثر من صفر.',
+    '{where}: لا يُكتب بخط اليد على حساب يمسكه النظام من مستنداته ({reserved}). ما يحرّكه مستند — جرد، حركة صندوق، إشعار — أو القيد الافتتاحي.',
+  'refusal.fin.line-side-unknown': '{where}: الجهة غير معروفة.',
+  'refusal.fin.line-amount-invalid': '{where}: المبلغ غير صالح، أو ليس أكثر من صفر.',
   'refusal.fin.line-amount-too-precise':
-    'السطر {line, number}: المبلغ {amount} بمنازل أكثر مما تُمسك به العملة {currency} ({decimals, number}). لا يُقرَّب هنا.',
-  'refusal.fin.line-currency-unknown':
-    'السطر {line, number}: العملة {currency} ليست من عملات المتجر.',
-  'refusal.fin.line-currency-not-functional':
-    'السطر {line, number}: المبلغ ليس بعملة الدفاتر {functional}.',
-  'refusal.fin.line-original-invalid': 'السطر {line, number}: المبلغ بعملة المستند غير صالح.',
+    '{where}: المبلغ {amount} بمنازل أكثر مما تُمسك به العملة {currency} ({decimals, number}). لا يُقرَّب هنا.',
+  'refusal.fin.line-currency-unknown': '{where}: العملة {currency} ليست من عملات المتجر.',
+  'refusal.fin.line-currency-not-functional': '{where}: المبلغ ليس بعملة الدفاتر {functional}.',
+  'refusal.fin.line-original-invalid': '{where}: المبلغ بعملة المستند غير صالح.',
   'refusal.fin.line-original-is-functional':
-    'السطر {line, number}: المبلغ بعملة المستند هو المبلغ نفسه، مكرَّرًا.',
+    '{where}: المبلغ بعملة المستند هو المبلغ نفسه، مكرَّرًا.',
   'refusal.fin.line-original-required':
-    'السطر {line, number}: هذا الحساب يُمسك بعملة، فلا بد من المبلغ بتلك العملة.',
+    '{where}: هذا الحساب يُمسك بعملة، فلا بد من المبلغ بتلك العملة.',
   'refusal.fin.line-currency-mismatch':
-    'السطر {line, number}: الحساب يُمسك بعملة {account}، والمبلغ المذكور بعملة {original}.',
-  'refusal.fin.line-stamp-required': 'السطر {line, number}: لا شيء يقول بأي سعر صرف قُوِّم المبلغ.',
-  'refusal.fin.line-stamp-invalid': 'السطر {line, number}: مرجع سعر الصرف غير صالح.',
-  'refusal.fin.line-memo-invalid': 'السطر {line, number}: الملاحظة غير صالحة.',
+    '{where}: الحساب يُمسك بعملة {account}، والمبلغ المذكور بعملة {original}.',
+  'refusal.fin.line-stamp-required': '{where}: لا شيء يقول بأي سعر صرف قُوِّم المبلغ.',
+  'refusal.fin.line-stamp-invalid': '{where}: مرجع سعر الصرف غير صالح.',
+  'refusal.fin.line-memo-invalid': '{where}: الملاحظة غير صالحة.',
   'refusal.fin.line-override-on-functional':
-    'السطر {line, number}: لا سعر صرف يقوّم مبلغًا هو أصلًا بعملة الدفاتر.',
+    '{where}: لا سعر صرف يقوّم مبلغًا هو أصلًا بعملة الدفاتر.',
   'refusal.fin.line-amount-valueless':
-    'السطر {line, number}: المبلغ بسعر اليوم أقل من أصغر منزلة تُمسك بها الدفاتر، فلا يساوي شيئًا فيها.',
-  'refusal.fin.attachment-invalid': 'المرفق {attachment, number} ليس ملفًا صالحًا.',
+    '{where}: المبلغ بسعر اليوم أقل من أصغر منزلة تُمسك بها الدفاتر، فلا يساوي شيئًا فيها.',
+  // The one refusal `FIN` makes about the list of attachments as well as about
+  // one of them, so its place is the list when no file is named.
+  'refusal.fin.attachment-invalid': '{where}: ما وصل ليس ملفًا صالحًا — بلا اسم، أو بلا محتوى.',
   'refusal.fin.attachment-type-unsupported':
-    'المرفق {attachment, number} من نوع غير مقبول ({mediaType}). يُقبل PDF والصور فقط.',
+    '{where}: من نوع غير مقبول ({mediaType}). يُقبل PDF والصور فقط.',
   'refusal.fin.attachment-content-mismatch':
-    'المرفق {attachment, number}: محتوى الملف لا يطابق نوعه المعلن ({mediaType}).',
+    '{where}: محتوى الملف لا يطابق نوعه المعلن ({mediaType}).',
   'refusal.fin.attachment-too-large':
-    'المرفق {attachment, number} حجمه {size, number} بايت، وهو أكبر من الحد المسموح {limit, number}.',
+    '{where}: حجمه {size, number} بايت، وهو أكبر من الحد المسموح {limit, number}.',
   'refusal.fin.opening-balances-empty': 'لا رصيد افتتاحي مُدخَل. أدخل رقمًا واحدًا على الأقل.',
   'refusal.fin.opening-till-repeated':
     'الصندوق: أُدخلت العملة {currency} مرتين. لكل عملة صندوق واحد، وجمع الرقمين يُخفي عدًّا مكرَّرًا.',
@@ -1684,13 +1690,15 @@ export const catalogue = {
   'opening.posted.open': 'فتح القيد في اليومية',
 
   /**
-   * Which of the four figures a refusal about an opening balance points at.
+   * Which of the four figures a refusal about an opening balance points at
+   * (`placeOf`), in place of a line number the accountant never saw.
    *
    * Their own keys, resolved before the message is formatted, because `FIN`
    * spells two of them with a hyphen — `customer-debts` — and an ICU `select`
    * selector is an identifier, so a branch by that name makes the whole
    * message unparseable. The same arrangement `account.reserved.*` uses, for
-   * exactly the same reason (`catalogue.test.ts`).
+   * exactly the same reason (`catalogue.test.ts`). The till is the one not
+   * read from here: it is named by its currency (`refusal.place.till`).
    */
   'opening.figure.inventory': 'البضاعة',
   'opening.figure.till': 'الصندوق',
@@ -1846,31 +1854,52 @@ export function messageForRefusal(translator: Translator, refused: Refusal): str
   // The same for the purpose an account is reserved for, and for the same
   // reason: `inventory` is what the ledger calls it, not what a shopkeeper does.
   const reserved = refused.values['reserved'];
-  // And for the opening figure a refusal about `FIN-06` points at, which `FIN`
-  // spells `customer-debts`: see `nameOfOpeningFigure`.
-  const figure = refused.values['figure'];
+  // And for where the refusal points, which is a sentence of its own.
+  const where = placeOf(translator, refused);
   return translator.format(key, {
     ...formattable(refused.values),
     ...(named ? { right: nameOfPermission(translator, right) } : {}),
     ...(typeof reserved === 'string'
       ? { reserved: nameOfReservedAccount(translator, reserved) }
       : {}),
-    ...(typeof figure === 'string' ? { figure: nameOfOpeningFigure(translator, figure) } : {}),
+    ...(where === null ? {} : { where }),
   });
 }
 
 /**
- * Which of `FIN-06`'s four figures a refusal points at, as a person would say
- * it.
+ * Where a refusal points, in a person's words — or null for one about the
+ * entry as a whole.
  *
- * `nameOfReservedAccount`'s arrangement, for exactly its reason: the figure
- * reaches this file as `FIN` spells it — `customer-debts` — and a hyphen is
- * not an identifier, so an ICU `select` on one would make the whole message
- * unparseable. It is resolved to a word **before** the message is formatted.
+ * `FIN` marks a refusal about one line with `line`, counted from one, and one
+ * about an opening figure with `figure` as well, because the accountant
+ * entering opening balances never saw a line (`Place` in `@vertex/fin`); one
+ * about the evidence carries `attachment`, the file's place in the list, and
+ * the refusal that the list is not a list carries nothing at all. ICU has no
+ * optional argument, so the message cannot choose between these: it names
+ * `{where}`, and this chooses.
+ *
+ * The figure goes through a key of its own rather than an ICU `select`, for
+ * `nameOfReservedAccount`'s reason: `FIN` spells it `customer-debts`, a hyphen
+ * is not an identifier, and a `select` on one makes the whole message
+ * unparseable. A till is named by its currency — `FIN-01` keeps one per
+ * currency, and "the till" would not say which.
  */
-export function nameOfOpeningFigure(translator: Translator, figure: string): string {
-  const key = `opening.figure.${figure}`;
-  return translator.has(key) ? translator.format(key) : figure;
+function placeOf(translator: Translator, refused: Refusal): string | null {
+  const { figure, currency, line, attachment } = refused.values;
+  if (typeof figure === 'string') {
+    if (figure === 'till' && typeof currency === 'string') {
+      return translator.format('refusal.place.till', { currency });
+    }
+    const key = `opening.figure.${figure}`;
+    return translator.has(key) ? translator.format(key) : figure;
+  }
+  if (typeof line === 'number') return translator.format('refusal.place.line', { line });
+  if (typeof attachment === 'number') {
+    return translator.format('refusal.place.attachment', { attachment });
+  }
+  return refused.code.startsWith('fin.attachment-')
+    ? translator.format('refusal.place.attachments')
+    : null;
 }
 
 export function createTranslator(locale = 'ar'): Translator {

@@ -47,10 +47,12 @@ function Host({
   currency,
   onChange,
   numerals,
+  locale,
 }: {
   readonly currency: Currency;
   readonly onChange: MoneyInputProps['onChange'];
   readonly numerals: Numerals;
+  readonly locale: string;
 }): ReactNode {
   const [held, setHeld] = useState<Money | null>(null);
   // A screen that changes which currency a figure is in clears the figure,
@@ -63,7 +65,7 @@ function Host({
     setHeld(null);
   }
   return (
-    <VertexProvider translator={translator} locale="ar" numerals={numerals} root={null}>
+    <VertexProvider translator={translator} locale={locale} numerals={numerals} root={null}>
       <MoneyInput
         label={LABEL}
         currency={currency}
@@ -89,15 +91,18 @@ interface Rendered {
   readonly withCurrency: (currency: Currency) => void;
 }
 
-function field(currency: Currency = USD, numerals: Numerals = 'latn'): Rendered {
+function field(currency: Currency = USD, numerals: Numerals = 'latn', locale = 'ar'): Rendered {
   const user = userEvent.setup();
   const changed = vi.fn<MoneyInputProps['onChange']>();
-  const view = render(<Host currency={currency} onChange={changed} numerals={numerals} />);
+  const host = (of: Currency): ReactNode => (
+    <Host currency={of} onChange={changed} numerals={numerals} locale={locale} />
+  );
+  const view = render(host(currency));
   return {
     user,
     changed,
     withCurrency: (next) => {
-      view.rerender(<Host currency={next} onChange={changed} numerals={numerals} />);
+      view.rerender(host(next));
     },
   };
 }
@@ -190,6 +195,19 @@ describe('MoneyInput', () => {
     // they are dropped; the digits and the mark become the reader's own.
     expect(handedBack(changed)).toBe('1234.5 USD');
     expect(box().value).toBe('١٢٣٤٫٥٠');
+  });
+
+  it('takes the decimal mark of a locale that writes it as a comma, and drops its full stop', async () => {
+    // Half the world writes `1.234,50`. The product is read in Arabic today,
+    // but this is a design-system control for a product line, and a field that
+    // dropped every comma as a group mark would leave a Turkish or a German
+    // reader unable to type the fraction of any amount at all.
+    const { user, changed } = field(USD, 'latn', 'de');
+
+    await user.type(box(), '1.234,5');
+
+    expect(handedBack(changed)).toBe('1234.5 USD');
+    expect(box().value).toBe('1234,5');
   });
 
   it('shows the currency it is an amount of, because a bare figure is one nobody can check', () => {

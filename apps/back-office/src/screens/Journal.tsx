@@ -246,7 +246,11 @@ export function Journal(): ReactNode {
           label={translator.format('journal.table')}
           columns={columns}
           rows={rows}
-          emptyMessage={translator.format(entries.isLoading ? 'data.loading' : 'journal.empty')}
+          // Still loading while the calendar is: the listing has not been
+          // asked for yet, and "no entries" would be an answer nobody gave.
+          emptyMessage={translator.format(
+            calendarLoading || entries.isLoading ? 'data.loading' : 'journal.empty',
+          )}
         />
       </Panel>
 

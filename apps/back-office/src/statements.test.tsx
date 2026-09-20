@@ -76,6 +76,28 @@ function amountUnder(page: HTMLElement, label: string): string {
     .trim();
 }
 
+/**
+ * Takes an account out of use through the chart screen, the way an accountant
+ * does — and through the screen rather than the port on purpose, since the
+ * chart every ledger screen reads is the one `chart.tsx` holds, and only a
+ * command through it re-reads that.
+ */
+async function withdrawAccount(shop: OpenShop, code: string): Promise<void> {
+  await goTo(shop, catalogue['nav.chart']);
+  const row = (await screen.findAllByRole('row')).find((one) => one.textContent.startsWith(code));
+  if (row === undefined) throw new Error(`No row for account "${code}".`);
+  await shop.person.click(
+    within(row).getByRole('button', { name: catalogue['chart.withdraw.action'] }),
+  );
+  const dialog = await screen.findByRole('alertdialog');
+  await shop.person.click(
+    within(dialog).getByRole('button', { name: catalogue['chart.withdraw.action'] }),
+  );
+  await waitFor(() => {
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+}
+
 /** Turns to one of the four, and waits for the page it is. */
 async function turnTo(shop: OpenShop, tab: string): Promise<HTMLElement> {
   await shop.person.click(screen.getByRole('tab', { name: tab }));
@@ -162,6 +184,28 @@ describe('Financial statements — FIN-07', () => {
     expect(page.textContent).toContain(RENT_ACCRUAL.description);
     const postings = within(page).getAllByRole('grid', { name: catalogue['statements.postings'] });
     expect(postings.length).toBeGreaterThan(0);
+  });
+
+  it('still names an account taken out of use, because its lines are still in the books', async () => {
+    // The chooser reads the books rather than writing into them: an account
+    // withdrawn after a year of postings keeps every one of them, and a ledger
+    // that could not be asked for it would be a ledger hiding a year of one
+    // account's books — the reason the branch filter names withdrawn branches.
+    const shop = await aShopWithStatements();
+    await withdrawAccount(shop, RENT);
+    await goTo(shop, catalogue['nav.statements']);
+    await screen.findByRole('tab', { name: catalogue['statements.generalLedger'] });
+    const page = await turnTo(shop, catalogue['statements.generalLedger']);
+
+    const chooser = screen.getByRole('combobox', { name: catalogue['statements.account'] });
+    await shop.person.click(chooser);
+    await shop.person.type(chooser, RENT);
+    await shop.person.click(await screen.findByRole('option', { name: new RegExp(RENT) }));
+
+    await waitFor(() => {
+      expect(page.textContent).toContain(RENT_ACCRUAL.description);
+    });
+    expect(page.textContent).not.toContain(ACCRUED);
   });
 
   it('refuses a page in a currency there is no rate for today, rather than using yesterday’s', async () => {

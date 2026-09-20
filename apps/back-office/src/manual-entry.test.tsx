@@ -248,6 +248,7 @@ describe('Manual journal entry — FIN-04', () => {
 
     expect((amountOf(1) as HTMLInputElement).value).toBe('1.2345');
   });
+
   it('opens on the currency the books are kept in, even landed on straight from an address', async () => {
     // The screen can be reached by its own address — a bookmark, a reload —
     // and then `FX` has not answered yet when the first draft is made. A line

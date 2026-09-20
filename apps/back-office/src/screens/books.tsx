@@ -198,26 +198,33 @@ export function flatten(nodes: readonly AccountNode[]): readonly Account[] {
 }
 
 /**
- * Every account a posting may actually land in: a **leaf**, still in use.
+ * Every **leaf** of the chart — the accounts a line lands in, since a group is
+ * only ever the sum of what is beneath it.
  *
- * Both are `FIN`'s own rules about where a line may go (`resolve` returns only
- * an account a posting may land in), so offering anything else would be
- * offering somebody a choice that ends in `fin.account-has-children` or
+ * `in-use` is what a screen that **writes** offers: a leaf still in use is
+ * `FIN`'s own rule about where a line may go (`resolve` returns only an
+ * account a posting may land in), so offering anything else would be offering
+ * somebody a choice that ends in `fin.account-has-children` or
  * `fin.account-inactive`. The module still judges what arrives: a chart can
  * change between this list being built and the entry being recorded.
+ *
+ * `all` is what a screen that **reads** offers. An account withdrawn last
+ * month still has every line ever posted to it, and a ledger whose chooser
+ * could not name it would be a chooser that hides a year of one account's
+ * books — the reason `BranchFilter` names withdrawn branches too.
  */
-export function useLeafAccounts(): readonly Account[] {
+export function useLeafAccounts(including: 'in-use' | 'all' = 'in-use'): readonly Account[] {
   const { tree } = useChart();
-  return useMemo(() => leaves(tree), [tree]);
+  return useMemo(() => leaves(tree, including === 'all'), [tree, including]);
 }
 
-function leaves(nodes: readonly AccountNode[]): readonly Account[] {
+function leaves(nodes: readonly AccountNode[], withdrawnToo: boolean): readonly Account[] {
   return nodes.flatMap((node) =>
     node.children.length === 0
-      ? node.account.active
+      ? node.account.active || withdrawnToo
         ? [node.account]
         : []
-      : leaves(node.children),
+      : leaves(node.children, withdrawnToo),
   );
 }
 

@@ -276,15 +276,27 @@ function amountOf(plain: string): string | null {
  * Group marks are dropped rather than refused: they are what `Intl` writes,
  * never what a figure means, and somebody pasting `1,234.50` means what
  * somebody typing `1234.5` means.
+ *
+ * **The locale's own decimal mark is read before anything is dropped.** Half
+ * the world writes the decimal as a comma and the thousands as a full stop or
+ * a space, so the ASCII marks are only the shorthand this file allows for a
+ * Latin keyboard **after** the locale has had its say: a field that dropped
+ * every comma as a group mark would refuse the decimal mark of every one of
+ * those locales, and the fraction of an amount could never be typed there.
  */
 function readFigure(typed: string, marks: Marks, decimals: number): string | null {
   let plain = '';
   for (const character of typed) {
-    if (character === marks.group || character === ',' || character === ' ') continue;
-    if (character === marks.decimal || character === '.') {
+    if (character === marks.decimal) {
       plain += '.';
       continue;
     }
+    if (character === marks.group || character === ' ') continue;
+    if (character === '.') {
+      plain += '.';
+      continue;
+    }
+    if (character === ',') continue;
     const written = marks.digits.indexOf(character);
     if (written !== -1) {
       plain += String(written);

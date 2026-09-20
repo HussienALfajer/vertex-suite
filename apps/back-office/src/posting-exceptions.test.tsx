@@ -19,7 +19,7 @@ import type {
   PostingRefusal,
 } from '@vertex/fin/contract';
 
-import { catalogue, createTranslator } from './catalogue.js';
+import { catalogue } from './catalogue.js';
 import { developmentSystem } from './dev-system.js';
 import { aTradingShop, typeDay, ACCRUED, NOON, RENT, TRADING_DAY } from './ledger.fixture.js';
 import { flatten } from './screens/books.js';
@@ -44,8 +44,6 @@ import type { PostingExceptionsOfRecord, SystemOfRecord } from './system.js';
  * which decisions it offers, what it demands before sending one, and what it
  * does with the answer — is the screen's own.
  */
-
-const say = createTranslator();
 
 const SHOP = { company: 'مؤسسة الشام', branch: 'حلب' };
 
@@ -229,6 +227,26 @@ describe('Posting exceptions — FIN-05', () => {
     expect(rowFor(number)).toBeTruthy();
   });
 
+  it('asks for the other day, rather than starting on the day the calendar refused', async () => {
+    // The entry's own day is the one day "another day" cannot be: it is the
+    // day the calendar turned away. A dialog that started there would post,
+    // on Enter, into the refusal the person opened it to get out of.
+    const { shop, number } = await aShopWithAQueue();
+    await shop.person.click(
+      within(rowFor(number)).getByRole('button', {
+        name: catalogue['exceptions.decide.action'],
+      }),
+    );
+
+    await shop.person.click(screen.getByText(catalogue['exceptions.decide.redate']));
+    await shop.person.click(
+      screen.getByRole('button', { name: catalogue['exceptions.decide.submit'] }),
+    );
+
+    expect(await screen.findByText(catalogue['exceptions.decide.day.required'])).toBeTruthy();
+    expect(rowFor(number)).toBeTruthy();
+  });
+
   it('posts a queued entry on another day, against the reason it was given', async () => {
     const { shop, queue, number } = await aShopWithAQueue();
     await shop.person.click(
@@ -280,7 +298,6 @@ describe('Posting exceptions — FIN-05', () => {
     await waitFor(() => {
       expect(within(dialog).getAllByText(catalogue['refusal.fin.period-closed']).length).toBe(2);
     });
-    expect(say.format('exceptions.decide.title')).toBeTruthy();
     expect(rowFor(number)).toBeTruthy();
   });
 });

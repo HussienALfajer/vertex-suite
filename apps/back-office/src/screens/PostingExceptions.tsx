@@ -62,7 +62,7 @@ export function PostingExceptions(): ReactNode {
   const [deciding, setDeciding] = useState<PostingException | null>(null);
 
   const queue = useLoaded(includeResolved ? 'all' : 'pending', (including) =>
-    exceptions.exceptions({ including: including === 'all' ? 'all' : 'pending' }),
+    exceptions.exceptions({ including }),
   );
 
   const rows = queue.value ?? [];
@@ -258,7 +258,11 @@ function DecisionDialog({
     attempt: attemptWith,
   } = useAttempt(subject, () => {
     setRedate(false);
-    setDay(subject?.arrived.entry.day ?? null);
+    // Empty, and not the entry's own day: that day is the one the calendar
+    // refused, so it is the one day "another day" cannot be. The reversal
+    // dialog starts on the original's day for the opposite reason — there the
+    // same day is the common case.
+    setDay(null);
     setReason('');
     setMissing({ day: false, reason: false });
   });
