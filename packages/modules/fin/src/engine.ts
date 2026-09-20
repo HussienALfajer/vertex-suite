@@ -1,5 +1,13 @@
 import type { BranchId, DeviceId, RegisterId } from '@vertex/contracts';
-import { isId, ok, parseId, refuse, type Money, type Result } from '@vertex/kernel';
+import {
+  isId,
+  ok,
+  parseId,
+  refuse,
+  toDecimalString,
+  type Money,
+  type Result,
+} from '@vertex/kernel';
 import type { CommandContext, ModuleContext, UnitOfWork } from '@vertex/platform';
 import {
   Currencies,
@@ -217,6 +225,17 @@ export async function valuing<Session extends RecordSession>(
         `FX left a residual of ${valued.value.residual.amount.amount.toFixed()} valuing one ` +
           'amount, which cannot be.',
       );
+    }
+    // Positive in the books, as every line is held to be before it is
+    // written (`figureOf`): a penny of pounds rounds to nothing at the ledger
+    // point, and a line of nothing balanced against another is an entry that
+    // records nothing under a number.
+    if (!valued.value.total.amount.greaterThan(0)) {
+      return refuseAt(line.place, 'fin.line-amount-valueless', {
+        amount: toDecimalString(line.amount),
+        currency: line.amount.currency,
+        functional: books.functional.code,
+      });
     }
     values.push({ amount: valued.value.total, stamp: stamp.value.stamp.id });
     prepared.push(stamp.value);

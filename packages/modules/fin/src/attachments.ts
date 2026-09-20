@@ -198,6 +198,8 @@ export async function digested(files: readonly JudgedFile[]): Promise<readonly J
   return uploads;
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
 /**
  * Where the bytes of an attachment are kept: under the tenant and the hash.
  *
@@ -207,6 +209,14 @@ export async function digested(files: readonly JudgedFile[]): Promise<readonly J
  * keeping it again, as a replayed command does, changes nothing.
  */
 export function keyOfAttachment(tenant: TenantId, sha256: string): string {
+  // The hash is this module's own, computed by `sha256Of` for everything it
+  // keeps — so anything else here is a record that did not come from this
+  // module, and a key built from it could carry a separator into the store's
+  // path. Raised, because a store must never be asked for a key of any other
+  // shape.
+  if (!SHA256_HEX.test(sha256)) {
+    throw new Error(`"${sha256}" is not a SHA-256 in lower-case hexadecimal.`);
+  }
   return `fin/attachment/${encodeURIComponent(tenant)}/${sha256}`;
 }
 

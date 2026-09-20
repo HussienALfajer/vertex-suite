@@ -668,6 +668,28 @@ describe('Manual journal entry — FIN-04', () => {
       code: 'fx.rate-missing',
       values: { line: 1, branch: shop.branch, currency: 'EUR', day: '2026-09-20' },
     });
+    // A pound amount worth less than the last place the books keep is worth
+    // nothing in them, and a line of nothing is refused as one is for every
+    // module's draft — not written as a nought that balances against another.
+    expect(refusalOf(await record({ amount: syp('0.01') }))).toEqual({
+      code: 'fin.line-amount-valueless',
+      values: { line: 1, amount: '0.01', currency: 'SYP', functional: 'USD' },
+    });
+    expect(
+      refusalOf(
+        await fin.journalAdmin.record(fin.by, {
+          ...accrual(shop),
+          lines: [
+            { account: seeded(accounts, 'rent').id, side: 'debit', amount: syp('0.01') },
+            {
+              account: seeded(accounts, 'accrued-expenses').id,
+              side: 'credit',
+              amount: syp('0.01'),
+            },
+          ],
+        }),
+      ).code,
+    ).toBe('fin.line-amount-valueless');
     expect(await fin.journal.entries(fin.by)).toEqual([]);
     expect(fin.stamps()).toEqual([]);
   });

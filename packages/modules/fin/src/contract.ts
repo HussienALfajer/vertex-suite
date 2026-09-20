@@ -863,6 +863,7 @@ export interface Attachment extends TenantOwned {
   readonly entry: JournalEntryId;
   /** Its place among the entry's attachments, counted from one. */
   readonly ordinal: number;
+  /** As the accountant named it: text for a screen to show, and never a path or a header without escaping. */
   readonly name: string;
   readonly mediaType: AttachmentMediaType;
   /** In bytes. */
@@ -1184,6 +1185,13 @@ export type PostingRefusalCode =
   | 'fin.line-memo-invalid'
   /** A rate typed over the day's, on a line in the functional currency, which no rate values. */
   | 'fin.line-override-on-functional'
+  /**
+   * An amount in another currency worth less than the last place the books
+   * keep, at today's rate: nothing in the books, and a line of nothing is
+   * refused as it is for every module's draft rather than written as a
+   * nought.
+   */
+  | 'fin.line-amount-valueless'
   /** A manual line onto an account the system keeps from its own documents; see `CONTROL_ACCOUNTS`. */
   | 'fin.account-controlled'
   /** Not a file: no name, no bytes, or bytes that are not bytes. */
@@ -1298,6 +1306,12 @@ export interface PostingEngine {
    * for its date: that is what the queue is for. A reversal that arrives for an
    * entry the system of record has since reversed itself is answered with that
    * reversal, as any other event already posted is.
+   *
+   * An arrival's attachments are recorded as they arrived, and their bytes are
+   * the sender's to deliver to this store's `AttachmentStore` under the same
+   * key (`fin/attachment/<tenant>/<sha256>`): this writes records, never
+   * bytes. Nothing made at a register attaches anything today — the manual
+   * entry is made at the system of record — so nothing arrives with any.
    */
   accept(uow: UnitOfWork<RecordSession>, arrived: Posted): Booked<Accepted>;
 }
