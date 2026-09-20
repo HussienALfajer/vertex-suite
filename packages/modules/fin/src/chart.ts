@@ -3,6 +3,7 @@ import { isId, newId, ok, parseId, refuse, type CurrencyCode, type Result } from
 import type { AccountRoleDeclaration } from '@vertex/platform';
 import type { TenantCurrency } from '@vertex/fx/contract';
 
+import { shown, written } from './arriving.js';
 import {
   ACCOUNT_KINDS,
   type Account,
@@ -51,40 +52,6 @@ const KINDS: ReadonlySet<string> = new Set(ACCOUNT_KINDS);
 
 function isKind(value: unknown): value is AccountKind {
   return typeof value === 'string' && KINDS.has(value);
-}
-
-/**
- * Something a person wrote: letters, and not punctuation or a bare figure
- * standing in for a name.
- *
- * The standard the exemption comments in `tools/` and the override reason in
- * `FX` are held to, and here because an account named `5400` is an account
- * with no name: the code already says that.
- */
-function named(value: unknown): string | null {
-  if (typeof value !== 'string' || !/\p{L}/u.test(value)) return null;
-  return value.trim();
-}
-
-/**
- * What arrived, for a refusal to show: the value itself when it can be shown,
- * and otherwise what kind of thing it was — an object rendered by its default
- * form says nothing to the person reading the refusal.
- */
-function shown(value: unknown): string {
-  switch (typeof value) {
-    case 'string':
-      return value;
-    case 'number':
-    case 'boolean':
-    case 'bigint':
-      return String(value);
-    case 'symbol':
-    case 'undefined':
-    case 'object':
-    case 'function':
-      return typeof value;
-  }
 }
 
 /** Which side an account of a kind normally carries its balance on. */
@@ -236,7 +203,7 @@ export function addAccount(
   if (typeof code !== 'string' || !CODE.test(code)) {
     return refuse('fin.account-code-invalid', { code: shown(code) });
   }
-  const trimmed = named(name);
+  const trimmed = written(name);
   if (trimmed === null) return refuse('fin.account-name-required', { code });
   if (!isKind(kind)) return refuse('fin.account-kind-unknown', { kind: shown(kind) });
   const arriving = parentArriving(parent);
@@ -272,7 +239,7 @@ export function renameAccount(
 ): Outcome<Account> {
   const account = accountIn(session, tenant, id);
   if (account === null) return refuse('fin.account-not-found', { account: id });
-  const trimmed = named(name);
+  const trimmed = written(name);
   if (trimmed === null) return refuse('fin.account-name-required', { code: account.code });
   if (account.name === trimmed) return ok(account);
   return ok(store(session, { ...account, name: trimmed }));

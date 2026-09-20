@@ -1,21 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addDays,
+  addMonths,
   compareInstants,
   fixedClock,
   instant,
   instantFrom,
+  localDate,
+  localDateFrom,
   localDateOf,
   manualClock,
   millisBetween,
   offsetClock,
+  partsOfDay,
   plusMillis,
   systemClock,
   timeZoneNamed,
   toDate,
   toISOString,
 } from './clock.js';
-import { InvalidInstantError, InvalidTimeZoneError } from './errors.js';
+import { InvalidDayError, InvalidInstantError, InvalidTimeZoneError } from './errors.js';
 
 const NOON = instant(Date.UTC(2026, 8, 15, 12, 0, 0));
 
@@ -137,5 +142,116 @@ describe('localDateOf', () => {
 
   it('raises for a zone it does not know, which a checked name never is', () => {
     expect(() => localDateOf(NOON, 'Mars/Olympus')).toThrow(InvalidTimeZoneError);
+  });
+});
+
+describe('localDate', () => {
+  it('reads the one spelling a day is written in, and no other', () => {
+    expect(localDate('2026-03-14')).toBe('2026-03-14');
+    expect(localDate('0001-01-01')).toBe('0001-01-01');
+    expect(localDate('9999-12-31')).toBe('9999-12-31');
+
+    for (const text of [
+      '',
+      '2026-3-14',
+      '14-03-2026',
+      '2026/03/14',
+      ' 2026-03-14',
+      '2026-03-14 ',
+      '2026-03-14T00:00:00Z',
+      '٢٠٢٦-٠٣-١٤',
+      '+2026-03-14',
+    ]) {
+      expect(localDate(text), text).toBeNull();
+    }
+  });
+
+  it('refuses a day written correctly that no calendar has', () => {
+    expect(localDate('2026-02-29')).toBeNull();
+    expect(localDate('2024-02-29')).toBe('2024-02-29');
+    expect(localDate('2026-02-30')).toBeNull();
+    expect(localDate('2026-13-01')).toBeNull();
+    expect(localDate('2026-00-10')).toBeNull();
+    expect(localDate('2026-04-31')).toBeNull();
+    expect(localDate('2026-01-00')).toBeNull();
+    expect(localDate('0000-01-01')).toBeNull();
+  });
+
+  it('answers null for anything that is not a string at all, which a wire can send', () => {
+    const sent: readonly unknown[] = [null, undefined, 20260314, {}, ['2026-03-14']];
+    for (const [index, value] of sent.entries()) {
+      expect(localDate(value as string), String(index)).toBeNull();
+    }
+  });
+});
+
+describe('localDateFrom and partsOfDay', () => {
+  it('writes the day three figures name, zero-padded so that days sort as text', () => {
+    expect(localDateFrom(2026, 3, 14)).toBe('2026-03-14');
+    expect(localDateFrom(2026, 1, 1)).toBe('2026-01-01');
+    // A year below a hundred is that year, not nineteen hundred and it.
+    expect(localDateFrom(26, 3, 14)).toBe('0026-03-14');
+  });
+
+  it('raises for figures that name no day, rather than rolling over to another', () => {
+    expect(() => localDateFrom(2026, 2, 30)).toThrow(InvalidDayError);
+    expect(() => localDateFrom(2026, 13, 1)).toThrow(InvalidDayError);
+    expect(() => localDateFrom(2026, 0, 1)).toThrow(InvalidDayError);
+    expect(() => localDateFrom(2026, 3, 14.5)).toThrow(InvalidDayError);
+    expect(() => localDateFrom(0, 1, 1)).toThrow(InvalidDayError);
+    expect(() => localDateFrom(10_000, 1, 1)).toThrow(InvalidDayError);
+  });
+
+  it('reads back exactly the figures a day was written from', () => {
+    expect(partsOfDay(localDateFrom(2026, 3, 14))).toEqual({ year: 2026, month: 3, day: 14 });
+    expect(partsOfDay(localDateFrom(26, 12, 31))).toEqual({ year: 26, month: 12, day: 31 });
+  });
+});
+
+describe('addDays and addMonths', () => {
+  const day = (text: string) => {
+    const value = localDate(text);
+    if (value === null) throw new Error(`"${text}" is not a day.`);
+    return value;
+  };
+
+  it('moves a day forwards and backwards over the ends of months and years', () => {
+    expect(addDays(day('2026-03-14'), 1)).toBe('2026-03-15');
+    expect(addDays(day('2026-03-14'), 0)).toBe('2026-03-14');
+    expect(addDays(day('2026-03-14'), -1)).toBe('2026-03-13');
+    expect(addDays(day('2026-01-31'), 1)).toBe('2026-02-01');
+    expect(addDays(day('2026-12-31'), 1)).toBe('2027-01-01');
+    expect(addDays(day('2027-01-01'), -1)).toBe('2026-12-31');
+    expect(addDays(day('2024-02-28'), 1)).toBe('2024-02-29');
+    expect(addDays(day('2026-02-28'), 1)).toBe('2026-03-01');
+    expect(addDays(day('2026-01-01'), 365)).toBe('2027-01-01');
+  });
+
+  it('moves a day by whole months, clamped to the end of the month it lands in', () => {
+    expect(addMonths(day('2026-01-15'), 1)).toBe('2026-02-15');
+    expect(addMonths(day('2026-01-31'), 1)).toBe('2026-02-28');
+    expect(addMonths(day('2024-01-31'), 1)).toBe('2024-02-29');
+    expect(addMonths(day('2026-01-31'), 3)).toBe('2026-04-30');
+    expect(addMonths(day('2026-03-31'), -1)).toBe('2026-02-28');
+    expect(addMonths(day('2026-12-01'), 1)).toBe('2027-01-01');
+    expect(addMonths(day('2026-01-01'), 12)).toBe('2027-01-01');
+    expect(addMonths(day('2026-06-30'), 0)).toBe('2026-06-30');
+  });
+
+  it('never drifts, because a span is always measured from where it started', () => {
+    // Stepping one month at a time from the thirty-first loses the days the
+    // clamp took: twice by one lands on the twenty-eighth of March, and once by
+    // two on the thirty-first, which is the answer a fiscal year needs.
+    const start = day('2026-01-31');
+    expect(addMonths(addMonths(start, 1), 1)).toBe('2026-03-28');
+    expect(addMonths(start, 2)).toBe('2026-03-31');
+  });
+
+  it('raises rather than answering with a day outside the years one is written for', () => {
+    expect(() => addDays(day('0001-01-01'), -1)).toThrow(InvalidDayError);
+    expect(() => addDays(day('9999-12-31'), 1)).toThrow(InvalidDayError);
+    expect(() => addMonths(day('9999-12-31'), 1)).toThrow(InvalidDayError);
+    expect(() => addDays(day('2026-03-14'), 1.5)).toThrow(InvalidDayError);
+    expect(() => addMonths(day('2026-03-14'), Number.NaN)).toThrow(InvalidDayError);
   });
 });

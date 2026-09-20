@@ -1,5 +1,5 @@
-import type { TenantId } from '@vertex/contracts';
-import type { CurrencyCode } from '@vertex/kernel';
+import type { BranchId, TenantId } from '@vertex/contracts';
+import type { CurrencyCode, LocalDate, Result } from '@vertex/kernel';
 import { instant, manualClock, newId, orThrow, type Id, type ManualClock } from '@vertex/kernel';
 import {
   commandContext,
@@ -28,8 +28,17 @@ import {
   ROUNDING_ACCOUNT,
   type TenantCurrency,
 } from '@vertex/fx/contract';
+import { DEFAULT_TIME_ZONE, Organisation, type Branch } from '@vertex/sys/contract';
 
-import { ChartAdministration, ChartOfAccounts } from './contract.js';
+import { admitPosting } from './calendar.js';
+import {
+  ChartAdministration,
+  ChartOfAccounts,
+  FiscalCalendar,
+  FiscalCalendarAdministration,
+  type AccountingPeriod,
+  type CalendarRefusal,
+} from './contract.js';
 import { finModule } from './index.js';
 
 /**
@@ -60,6 +69,8 @@ export interface Installed {
   readonly store: MemoryStore;
   readonly chart: ChartOfAccounts;
   readonly admin: ChartAdministration;
+  readonly calendar: FiscalCalendar;
+  readonly calendarAdmin: FiscalCalendarAdministration;
   /** The shop's time. Noon in Damascus on 20 September 2026, which is 09:00 UTC. */
   readonly clock: ManualClock;
   readonly tenant: Id<'tenant'>;
@@ -97,6 +108,18 @@ export interface Installed {
   withdrawCurrency(code: CurrencyCode): void;
   /** `FX` for a tenant that has no currencies at all. */
   forgetCurrencies(tenant?: Id<'tenant'>): void;
+  /**
+   * A branch, as `SYS` would have opened one. In the order they are opened
+   * here, which is the order their identifiers carry.
+   */
+  openBranch(options?: { readonly timeZone?: string; readonly tenant?: Id<'tenant'> }): BranchId;
+  /**
+   * The posting engine of `FIN-02`, reduced to what `FIN-05` needs from it: an
+   * entry dated on a day, written inside one transaction, which the calendar
+   * either admits or refuses. `U06.3` replaces this with the engine itself —
+   * and it will call exactly what this calls.
+   */
+  post(day: LocalDate, by?: CommandContext): Promise<Result<AccountingPeriod, CalendarRefusal>>;
 }
 
 /** 12:00 in Damascus, which keeps UTC+3 all year. */
@@ -126,6 +149,12 @@ function authorityStandIn(
   });
 }
 
+/**
+ * What `FIN` is entitled to know about a shop's structure, which so far is the
+ * branches and the zone each counts its days in.
+ */
+type Branches = Map<BranchId, Branch>;
+
 function unasked(module: string, method: string): never {
   throw new Error(
     `FIN asked ${module} for ${method}, which it has never needed. If that is now a real ` +
@@ -133,9 +162,38 @@ function unasked(module: string, method: string): never {
   );
 }
 
-/** Nothing yet: the branch, its day and the document number arrive with the posting engine. */
-function organisationStandIn(): ModuleDefinition<MemorySession> {
-  return defineModule<MemorySession>({ code: 'SYS', labelKey: 'module.sys' });
+/**
+ * `SYS`, stood in for: the tenant's branches and nothing else.
+ *
+ * The day and the document number of the posting engine arrive in `U06.3`; what
+ * `FIN-05` asks for is the zone the calendar's first year is counted in.
+ */
+function organisationStandIn(branches: Branches): ModuleDefinition<MemorySession> {
+  return defineModule<MemorySession>({
+    code: 'SYS',
+    labelKey: 'module.sys',
+    provides: [
+      provideContract(Organisation, () => ({
+        // Answered in the caller's tenant and nowhere else: a branch of another
+        // shop group must be as absent to `FIN` as one that was never opened.
+        branches: (by, listing) =>
+          Promise.resolve(
+            [...branches.values()].filter(
+              (one) => one.tenant === by.tenant && (listing?.including === 'all' || one.active),
+            ),
+          ),
+        company: () => unasked('SYS', 'a company'),
+        branch: () => unasked('SYS', 'one branch'),
+        location: () => unasked('SYS', 'a location'),
+        register: () => unasked('SYS', 'a register'),
+        companies: () => unasked('SYS', 'every company'),
+        locations: () => unasked('SYS', 'the locations of a branch'),
+        registers: () => unasked('SYS', 'the registers of a branch'),
+        profile: () => unasked('SYS', 'a business profile'),
+        setting: () => unasked('SYS', 'a setting'),
+      })),
+    ],
+  });
 }
 
 /**
@@ -222,8 +280,9 @@ export function installFin(): Installed {
     true;
 
   const held = new Map<TenantId, TenantCurrency[]>();
+  const branches: Branches = new Map();
   const catalogue = [
-    organisationStandIn(),
+    organisationStandIn(branches),
     authorityStandIn(() => decide),
     currenciesStandIn(held),
     finModule<MemorySession>(),
@@ -315,6 +374,8 @@ export function installFin(): Installed {
     store,
     chart: registry.require(ChartOfAccounts),
     admin: registry.require(ChartAdministration),
+    calendar: registry.require(FiscalCalendar),
+    calendarAdmin: registry.require(FiscalCalendarAdministration),
     clock,
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),
@@ -337,6 +398,25 @@ export function installFin(): Installed {
     },
     forgetCurrencies(of = tenant) {
       held.set(of, []);
+    },
+    openBranch(options = {}): BranchId {
+      const branch: Branch = {
+        id: newId<'branch'>(),
+        tenant: options.tenant ?? tenant,
+        company: newId<'company'>(),
+        name: 'Aleppo',
+        address: '',
+        point: null,
+        timeZone: options.timeZone ?? DEFAULT_TIME_ZONE,
+        active: true,
+      };
+      branches.set(branch.id, branch);
+      return branch.id;
+    },
+    post(day: LocalDate, by: CommandContext = commandContext({ tenant, actor: newId<'user'>() })) {
+      return transactor.run(by, (uow) =>
+        Promise.resolve(admitPosting(uow.session, by.tenant, day)),
+      );
     },
     async defineCurrency(code, options = {}) {
       const of = options.tenant ?? tenant;

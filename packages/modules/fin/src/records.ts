@@ -1,6 +1,12 @@
 import type { TenantId } from '@vertex/contracts';
 
-import type { Account, AccountMapping, RecordSession } from './contract.js';
+import type {
+  Account,
+  AccountMapping,
+  PeriodReopening,
+  RecordSession,
+  TenantCalendar,
+} from './contract.js';
 
 /**
  * The key layout, and the one place a stored shape is asserted.
@@ -28,6 +34,17 @@ export interface StoredShapes {
   readonly account: Account;
   /** `fin/mapping/<tenant>/<role>`: one account per role, the latest mapping winning. */
   readonly mapping: AccountMapping;
+  /**
+   * `fin/calendar/<tenant>`: every fiscal year of the tenant, in one record.
+   *
+   * The only key here with no last segment, because there is exactly one per
+   * tenant — which is the point of it. `TenantCalendar` says why the years are
+   * not a record each: `FIN-02` asks which period a day falls in for every
+   * entry it writes, and a key it can read by name costs that path nothing.
+   */
+  readonly calendar: TenantCalendar;
+  /** `fin/reopening/<tenant>/<period>/<id>`: append-only, and read by period. */
+  readonly reopening: PeriodReopening;
 }
 
 export type Collection = keyof StoredShapes;
