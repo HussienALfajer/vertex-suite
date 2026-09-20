@@ -62,6 +62,8 @@ export default defineConfig({
       { find: /^@vertex\/sys$/, replacement: source('modules/sys') },
       { find: /^@vertex\/fx\/contract$/, replacement: source('modules/fx', 'contract.ts') },
       { find: /^@vertex\/fx$/, replacement: source('modules/fx') },
+      { find: /^@vertex\/fin\/contract$/, replacement: source('modules/fin', 'contract.ts') },
+      { find: /^@vertex\/fin$/, replacement: source('modules/fin') },
       { find: /^@vertex\/sec\/contract$/, replacement: source('modules/sec', 'contract.ts') },
       { find: /^@vertex\/platform$/, replacement: source('platform') },
     ],

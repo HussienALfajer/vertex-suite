@@ -17,6 +17,14 @@ import {
 } from '@vertex/platform';
 import { OWNER, SEEDED_ROLES, type PermissionId } from '@vertex/contracts';
 import {
+  ChartAdministration,
+  ChartOfAccounts,
+  FiscalCalendar,
+  FiscalCalendarAdministration,
+  finModule,
+  type AttachmentStore,
+} from '@vertex/fin';
+import {
   Currencies,
   CurrencyAdministration,
   ExchangeRates,
@@ -43,6 +51,8 @@ import type { Branch } from '@vertex/sys/contract';
 
 import { DEMO_LOCATIONS, DEMO_ORGANISATION, DEMO_RATES } from './demo/catalogue.js';
 import type {
+  CalendarOfRecord,
+  ChartOfRecord,
   CurrenciesOfRecord,
   DeclaredRight,
   OrganisationOfRecord,
@@ -217,9 +227,37 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const clock = options.clock ?? systemClock;
   const tenant = newId<'tenant'>();
 
-  const catalogue = [sysModule<MemorySession>(), authorityStandIn(), fxModule<MemorySession>()];
+  /**
+   * Where the bytes of an attachment would go, if anything attached one yet.
+   *
+   * `finModule` asks a host for this the way it asks for a session driver —
+   * where files live is a fact about the installation, not about the ledger
+   * (`AttachmentStore`) — so it is answered before the module composes rather
+   * than when a screen first needs it. A `Map` is the honest answer for a
+   * browser: `FIN-04`'s manual entry is `U06.7`'s screen, and until it exists
+   * nothing here puts a byte in. Copied on the way in and on the way out, so
+   * a caller cannot reach back into what it handed over.
+   */
+  const attachmentBytes = new Map<string, Uint8Array>();
+  const attachments: AttachmentStore = {
+    put(key, bytes) {
+      attachmentBytes.set(key, Uint8Array.from(bytes));
+      return Promise.resolve();
+    },
+    get(key) {
+      const found = attachmentBytes.get(key);
+      return Promise.resolve(found === undefined ? null : Uint8Array.from(found));
+    },
+  };
+
+  const catalogue = [
+    sysModule<MemorySession>(),
+    authorityStandIn(),
+    fxModule<MemorySession>(),
+    finModule<MemorySession>({ attachments }),
+  ];
   const plan = orThrow(
-    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX'] }),
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN'] }),
     (refusal) => new Error(`The edition would not compose: ${refusal.code}`),
   );
 
@@ -257,6 +295,10 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const currenciesAdmin = registry.require(CurrencyAdministration);
   const ratesRead = registry.require(ExchangeRates);
   const ratesAdmin = registry.require(RateAdministration);
+  const chartRead = registry.require(ChartOfAccounts);
+  const chartAdmin = registry.require(ChartAdministration);
+  const calendarRead = registry.require(FiscalCalendar);
+  const calendarAdmin = registry.require(FiscalCalendarAdministration);
 
   /**
    * Who is asking, which is the transport's business and not a screen's.
@@ -548,6 +590,102 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     adopt: async (branch) => {
       await ensureRatesReady();
       return ratesAdmin.adopt(by(), branch);
+    },
+  };
+
+  /**
+   * The retail chart of `FIN-01` and the first fiscal year of `FIN-05`, ready
+   * before anybody asks for either.
+   *
+   * Both are installation's rather than an accountant's (`SYS-03`), which is
+   * why neither port offers a `seed` — so they run here, at the system's own
+   * place, exactly as `FX`'s currencies do and for the same reasons: both
+   * seeds are idempotent, neither asks anything of a specific person, and one
+   * promise is cached so two screens mounting at once await the same attempt
+   * instead of racing it.
+   *
+   * **The chart waits for the currencies**, and that order is `FIN-01`'s own:
+   * the seed opens one cash account per currency the tenant has, so a chart
+   * seeded first would be a chart with a cash group and nothing under it. A
+   * currency defined afterwards reaches the ledger through the event `FIN`
+   * subscribes to, not through here.
+   *
+   * Cleared on failure, as the currencies' seed is: a transport that hiccuped
+   * is a `reload()` away from trying again rather than a refusal every caller
+   * is stuck with for the session.
+   */
+  let ledger: Promise<void> | null = null;
+  function ensureLedgerSeeded(): Promise<void> {
+    ledger ??= (async () => {
+      try {
+        await ensureCurrenciesSeeded();
+        orThrow(
+          await retrying(() => chartAdmin.seed(systemContext(tenant))),
+          (refusal) => new Error(`Seeding the chart of accounts was refused: ${refusal.code}`),
+        );
+        orThrow(
+          await retrying(() => calendarAdmin.seed(systemContext(tenant))),
+          (refusal) => new Error(`Seeding the fiscal calendar was refused: ${refusal.code}`),
+        );
+      } catch (cause) {
+        ledger = null;
+        throw cause;
+      }
+    })();
+    return ledger;
+  }
+
+  const chart: ChartOfRecord = {
+    tree: async (listing) => {
+      await ensureLedgerSeeded();
+      return chartRead.tree(by(), listing);
+    },
+    add: async (input) => {
+      await ensureLedgerSeeded();
+      return chartAdmin.add(by(), input);
+    },
+    rename: async (id, name) => {
+      await ensureLedgerSeeded();
+      return chartAdmin.rename(by(), id, name);
+    },
+    move: async (id, parent) => {
+      await ensureLedgerSeeded();
+      return chartAdmin.move(by(), id, parent);
+    },
+    withdraw: async (id) => {
+      await ensureLedgerSeeded();
+      return chartAdmin.withdraw(by(), id);
+    },
+    restore: async (id) => {
+      await ensureLedgerSeeded();
+      return chartAdmin.restore(by(), id);
+    },
+  };
+
+  const calendar: CalendarOfRecord = {
+    years: async () => {
+      await ensureLedgerSeeded();
+      return calendarRead.years(by());
+    },
+    reopenings: async () => {
+      await ensureLedgerSeeded();
+      return calendarRead.reopenings(by());
+    },
+    append: async (shape) => {
+      await ensureLedgerSeeded();
+      return calendarAdmin.append(by(), shape);
+    },
+    redefine: async (year, definition) => {
+      await ensureLedgerSeeded();
+      return calendarAdmin.redefine(by(), year, definition);
+    },
+    close: async (period) => {
+      await ensureLedgerSeeded();
+      return calendarAdmin.close(by(), period);
+    },
+    reopen: async (period, reason) => {
+      await ensureLedgerSeeded();
+      return calendarAdmin.reopen(by(), period, reason);
     },
   };
 
@@ -1007,5 +1145,7 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     users: usersPort,
     currencies,
     rates,
+    chart,
+    calendar,
   };
 }

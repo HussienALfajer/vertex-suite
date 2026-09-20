@@ -3,7 +3,14 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { Translator } from '@vertex/i18n';
-import { defineCurrency, defineUnit, money, quantity } from '@vertex/kernel';
+import {
+  defineCurrency,
+  defineUnit,
+  localDate,
+  money,
+  quantity,
+  type LocalDate,
+} from '@vertex/kernel';
 
 import { VertexProvider } from '../providers/VertexProvider.js';
 import { Code } from './Code.js';
@@ -180,6 +187,13 @@ describe('<UnitLabel> — a tenant renames a unit', () => {
 describe('<DateTime> — §12', () => {
   const at = new Date('2026-09-14T09:30:00Z');
 
+  /** A calendar day, which the component tells from a moment by its type alone. */
+  const aDay = (written: string): LocalDate => {
+    const value = localDate(written);
+    if (value === null) throw new Error(`"${written}" is not a day.`);
+    return value;
+  };
+
   it('renders in the branch timezone and states the zone', () => {
     const { container } = render(
       <VertexProvider translator={translator} root={null}>
@@ -212,6 +226,35 @@ describe('<DateTime> — §12', () => {
     );
     const text = container.querySelector('[dir="ltr"]')?.textContent ?? '';
     expect(text).not.toBe('');
+    for (const mark of marks) expect(text.includes(mark)).toBe(false);
+  });
+
+  it('renders a calendar day with no zone at all, because it has none', () => {
+    // The other half of the union: a fiscal period opens on a day for the
+    // whole tenant (`FIN-05`), not at an instant that falls on different dates
+    // in different branches. A zone here would be a fact the caller had to
+    // invent to satisfy a prop.
+    const { container } = render(
+      <VertexProvider translator={translator} root={null}>
+        <DateTime value={aDay('2026-09-20')} />
+      </VertexProvider>,
+    );
+
+    expect(container.textContent).toContain('2026');
+    expect(container.textContent).not.toContain('Asia/Damascus');
+    expect(container.textContent).not.toMatch(/GMT|:\d\d/u);
+  });
+
+  it('writes a day as an ltr island, so a right-to-left column cannot reorder it — §9', () => {
+    const marks = [0x200e, 0x200f, 0x061c].map((code) => String.fromCodePoint(code));
+    const { container } = render(
+      <VertexProvider translator={new Translator({ locale: 'ar', catalogue: {} })} root={null}>
+        <DateTime value={aDay('2026-09-20')} />
+      </VertexProvider>,
+    );
+
+    const text = container.querySelector('[dir="ltr"]')?.textContent ?? '';
+    expect(text).toContain('2026');
     for (const mark of marks) expect(text.includes(mark)).toBe(false);
   });
 

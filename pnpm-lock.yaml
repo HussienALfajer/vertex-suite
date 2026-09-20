@@ -199,6 +199,9 @@ importers:
       '@vertex/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@vertex/fin':
+        specifier: workspace:*
+        version: link:../../packages/modules/fin
       '@vertex/fx':
         specifier: workspace:*
         version: link:../../packages/modules/fx
@@ -473,6 +476,9 @@ importers:
       '@fontsource/ibm-plex-sans-arabic':
         specifier: 5.3.0
         version: 5.3.0
+      '@internationalized/date':
+        specifier: 3.12.4
+        version: 3.12.4
       '@vertex/i18n':
         specifier: workspace:*
         version: link:../i18n

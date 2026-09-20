@@ -9,9 +9,9 @@ import {
   type ReactNode,
 } from 'react';
 
-import { isOk, type Refusal, type Result } from '@vertex/kernel';
+import { compareIds, isOk, type Refusal, type Result } from '@vertex/kernel';
 import { useTranslator } from '@vertex/ui';
-import type { Branch, Company } from '@vertex/sys/contract';
+import { DEFAULT_TIME_ZONE, type Branch, type Company } from '@vertex/sys/contract';
 
 import { messageForRefusal } from './catalogue.js';
 import type { OrganisationOfRecord, SystemOfRecord } from './system.js';
@@ -311,5 +311,35 @@ export function useDeliveryMessage(): (delivery: Delivery<unknown>) => string | 
       }
     },
     [translator],
+  );
+}
+
+/**
+ * The zone the tenant counts its days in.
+ *
+ * Every day in this product is somewhere's day (`Branch.timeZone`), and a
+ * moment a screen shows — a period closed, a period opened again — has to be
+ * placed in one to be written down at all. A book kept for the whole tenant
+ * belongs to no single branch, so the zone is taken from the branch the tenant
+ * **opened first**: a fact that does not move as branches open and close, and
+ * the same one `FIN` itself counts the tenant's today in when it installs a
+ * fiscal calendar (`tenantToday` in `@vertex/fin`). Two answers to "whose clock
+ * is this" would be two dates on one screen for one act.
+ *
+ * Identifiers are UUIDv7 and carry the moment they were made, so the smallest
+ * is the first branch. Withdrawn ones count — the shop that started in Damascus
+ * counts its days there whether or not that first shop is still trading — which
+ * is why this reads the list the provider holds, which is withdrawn-inclusive.
+ *
+ * A tenant with no branch at all falls back to the zone a branch is opened in
+ * by default, which is `SYS`'s own answer to the same question.
+ */
+export function useTenantZone(): string {
+  const { branches } = useOrganisation();
+  return useMemo(
+    () =>
+      [...branches].sort((one, other) => compareIds(one.id, other.id))[0]?.timeZone ??
+      DEFAULT_TIME_ZONE,
+    [branches],
   );
 }

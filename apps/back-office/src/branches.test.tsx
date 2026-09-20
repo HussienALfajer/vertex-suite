@@ -118,9 +118,7 @@ describe('Branches — SYS-09', () => {
     // itself when it was, because the replacement was a new array.
     const real = developmentSystem({ people: PEOPLE });
     const slow: SystemOfRecord = {
-      signIn: real.signIn.bind(real),
-      changeOwnPassword: real.changeOwnPassword.bind(real),
-      signOut: real.signOut.bind(real),
+      ...real,
       organisation: {
         ...real.organisation,
         companies: {
@@ -132,9 +130,6 @@ describe('Branches — SYS-09', () => {
           },
         },
       },
-      users: real.users,
-      currencies: real.currencies,
-      rates: real.rates,
     };
 
     const shop = await enterTheShop(slow);

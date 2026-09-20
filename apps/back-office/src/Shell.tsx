@@ -6,6 +6,8 @@ import { ChangePasswordDialog } from './ChangePasswordDialog.js';
 import { useOrganisation } from './organisation.js';
 import { hrefOf, useRoute, type RouteName } from './routing.js';
 import { BusinessProfile } from './screens/BusinessProfile.js';
+import { Chart } from './screens/Chart.js';
+import { FiscalCalendar } from './screens/FiscalCalendar.js';
 import { Branches } from './screens/Branches.js';
 import { Companies } from './screens/Companies.js';
 import { Currencies } from './screens/Currencies.js';
@@ -102,6 +104,20 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       icon: <RateIcon />,
       group: translator.format('nav.group.fx'),
     },
+    {
+      id: 'chart',
+      label: translator.format('nav.chart'),
+      href: hrefOf('chart'),
+      icon: <ChartIcon />,
+      group: translator.format('nav.group.fin'),
+    },
+    {
+      id: 'fiscal-calendar',
+      label: translator.format('nav.fiscalCalendar'),
+      href: hrefOf('fiscal-calendar'),
+      icon: <FiscalCalendarIcon />,
+      group: translator.format('nav.group.fin'),
+    },
   ];
 
   return (
@@ -178,6 +194,10 @@ function Screen({ name }: { readonly name: RouteName }): ReactNode {
       return <Currencies />;
     case 'rates':
       return <Rates />;
+    case 'chart':
+      return <Chart />;
+    case 'fiscal-calendar':
+      return <FiscalCalendar />;
   }
 }
 
@@ -247,6 +267,28 @@ function CurrencyIcon(): ReactNode {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** A tree of accounts: the shape the books are kept in, not a list of them. */
+function ChartIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <path d="M4 3.5v11a1.5 1.5 0 001.5 1.5H8" strokeLinecap="round" />
+      <path d="M4 9.5h4" strokeLinecap="round" />
+      <path d="M9.5 8h7M9.5 14.5h7M9.5 2.5h7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A page of the year divided into months, with one of them ruled off. */
+function FiscalCalendarIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <rect x="2.5" y="4" width="15" height="13" rx="1.5" />
+      <path d="M2.5 8h15M7 2.5v3M13 2.5v3" strokeLinecap="round" />
+      <path d="M10 8v9M2.5 12.5h7" strokeLinecap="round" />
     </svg>
   );
 }

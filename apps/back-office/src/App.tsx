@@ -2,7 +2,9 @@ import { useState, type ReactNode } from 'react';
 
 import { ThemeSwitch, ToastRegion, VertexProvider, type TwoToneTheme } from '@vertex/ui';
 
+import { CalendarProvider } from './calendar.js';
 import { createTranslator } from './catalogue.js';
+import { ChartProvider } from './chart.js';
 import { CurrenciesProvider } from './currencies.js';
 import { OrganisationProvider } from './organisation.js';
 import { RatesProvider } from './rates.js';
@@ -82,7 +84,11 @@ function Screen({
       <UsersProvider system={system}>
         <CurrenciesProvider system={system}>
           <RatesProvider system={system}>
-            <Shell themeSwitch={themeSwitch} />
+            <ChartProvider system={system}>
+              <CalendarProvider system={system}>
+                <Shell themeSwitch={themeSwitch} />
+              </CalendarProvider>
+            </ChartProvider>
           </RatesProvider>
         </CurrenciesProvider>
       </UsersProvider>

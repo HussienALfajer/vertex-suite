@@ -32,15 +32,10 @@ function open(system: SystemOfRecord = developmentSystem({ people: PEOPLE })): v
  */
 function systemThatAnswers(signIn: SystemOfRecord['signIn']): SystemOfRecord {
   const real = developmentSystem({ people: PEOPLE });
-  return {
-    signIn,
-    changeOwnPassword: real.changeOwnPassword.bind(real),
-    signOut: real.signOut.bind(real),
-    organisation: real.organisation,
-    users: real.users,
-    currencies: real.currencies,
-    rates: real.rates,
-  };
+  // Spread rather than member by member: every port but the one under test is
+  // the real system's, and the list of them is not this test's business — it
+  // once had to be edited in four files the day the port grew.
+  return { ...real, signIn };
 }
 
 /** The frame, which is the one thing on screen that says somebody is signed in. */

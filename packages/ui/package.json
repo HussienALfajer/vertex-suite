@@ -58,6 +58,7 @@
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@fontsource/ibm-plex-sans-arabic": "5.3.0",
+    "@internationalized/date": "3.12.4",
     "@vertex/i18n": "workspace:*",
     "@vertex/kernel": "workspace:*",
     "clsx": "2.1.1",

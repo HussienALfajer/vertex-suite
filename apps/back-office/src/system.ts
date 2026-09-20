@@ -22,6 +22,22 @@ import type {
   User,
 } from '@vertex/sec/contract';
 import type {
+  Account,
+  AccountId,
+  AccountNode,
+  AccountingPeriod,
+  AccountingPeriodId,
+  CalendarRefusal,
+  ChartRefusal,
+  FiscalYear,
+  FiscalYearId,
+  Listing as AccountListing,
+  NewAccount,
+  PeriodReopening,
+  YearDefinition,
+  YearShape,
+} from '@vertex/fin/contract';
+import type {
   Branch,
   BusinessProfile,
   Company,
@@ -318,6 +334,77 @@ export interface UsersOfRecord {
   };
 }
 
+type Charted<T> = Promise<Result<T, ChartRefusal>>;
+
+/**
+ * `FIN-01` as the chart screen uses it.
+ *
+ * It is `ChartOfAccounts` and `ChartAdministration` with the same thing taken
+ * out as every port above: the `CommandContext`. `FIN`, like `SYS` and `FX`, is
+ * the real module hosted in this browser — nothing in the chart needs a runtime
+ * a browser does not have — so this is answered by the genuine module from the
+ * moment `dev-system.ts` composes it.
+ *
+ * **There is no `seed`**, and its absence is the point. Installing the retail
+ * chart is what happens to a tenant on its first morning (`SYS-03`), not
+ * something an accountant does to a shop that is trading; a button for it
+ * would be a button that either does nothing or re-runs an installation. The
+ * same goes for the calendar below.
+ *
+ * **There is no `delete`, and no way to change a code.** Both are the
+ * contract's own (`ChartAdministration`): every line ever posted names its
+ * account, and every report ever printed names its code.
+ *
+ * `resolve` and `mappings` are not here either. A module's account **role** is
+ * mapped by the accountant, and this edition declares only roles reserved for
+ * a purpose — which resolve to the seeded account and are mapped by nobody. The
+ * screen for that arrives with the first module whose role needs it.
+ */
+export interface ChartOfRecord {
+  /**
+   * The tenant's accounts as a tree, roots in code order and each subtree in
+   * code order.
+   *
+   * The tree and not the flat list, because the order and the shape are the
+   * module's and a screen that rebuilt them would be a second copy of
+   * `FIN-01`'s own arrangement.
+   */
+  tree(listing?: AccountListing): Promise<readonly AccountNode[]>;
+  add(input: NewAccount): Charted<Account>;
+  rename(id: AccountId, name: string): Charted<Account>;
+  /** Under another parent of the same kind, or to the roots with null. */
+  move(id: AccountId, parent: AccountId | null): Charted<Account>;
+  withdraw(id: AccountId): Charted<Account>;
+  restore(id: AccountId): Charted<Account>;
+}
+
+type Kept<T> = Promise<Result<T, CalendarRefusal>>;
+
+/**
+ * `FIN-05` as the fiscal-calendar screen uses it.
+ *
+ * `FiscalCalendar` and `FiscalCalendarAdministration`, minus the
+ * `CommandContext` and minus the two the screen has no business asking.
+ *
+ * `postingPeriodOn` is not here: it is the question the posting engine asks of
+ * every entry it writes, and a screen that asked it would be offering a second
+ * reading of what the period table already states — which of a shop's months
+ * are open. Nothing here removes a year, because `FIN-05` has no shape for a
+ * calendar with a hole in it.
+ */
+export interface CalendarOfRecord {
+  /** Every fiscal year, in date order, each with its periods. */
+  years(): Promise<readonly FiscalYear[]>;
+  /** Every reopening the books have ever had, oldest first (`FIN-05`). */
+  reopenings(): Promise<readonly PeriodReopening[]>;
+  /** The next year, beginning the day after the last one ends. Its start is never given. */
+  append(shape?: YearShape): Kept<FiscalYear>;
+  redefine(year: FiscalYearId, definition: YearDefinition): Kept<FiscalYear>;
+  close(period: AccountingPeriodId): Kept<AccountingPeriod>;
+  /** Owner-only and `SEC-05` sensitive, against a written reason, and logged. */
+  reopen(period: AccountingPeriodId, reason: string): Kept<AccountingPeriod>;
+}
+
 export interface SystemOfRecord {
   /**
    * A password verified against a sign-in, and nothing more.
@@ -354,4 +441,6 @@ export interface SystemOfRecord {
   readonly users: UsersOfRecord;
   readonly currencies: CurrenciesOfRecord;
   readonly rates: RatesOfRecord;
+  readonly chart: ChartOfRecord;
+  readonly calendar: CalendarOfRecord;
 }
