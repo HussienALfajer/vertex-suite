@@ -3,7 +3,6 @@ import {
   addDays,
   addMonths,
   InvalidDayError,
-  localDate,
   localDateFrom,
   newId,
   ok,
@@ -14,7 +13,7 @@ import {
   type Result,
 } from '@vertex/kernel';
 
-import { shown, written } from './arriving.js';
+import { dayArriving, shown, written } from './arriving.js';
 import type {
   AccountingPeriod,
   AccountingPeriodId,
@@ -245,15 +244,6 @@ function shapeArriving(shape: unknown): Outcome<YearShape> {
 }
 
 /**
- * A day as it may actually arrive: the brand is gone at run time, and a day
- * reaches this module from a screen, off a wire and out of `SYN-02`'s replay.
- */
-function dayArriving(day: unknown): Outcome<LocalDate> {
-  const read = localDate(day as string);
-  return read === null ? refuse('fin.day-invalid', { day: shown(day) }) : ok(read);
-}
-
-/**
  * Installs the tenant's first fiscal year, unless it has one
  * (`FiscalCalendarAdministration.seed`).
  *
@@ -454,19 +444,15 @@ export function reopeningsIn(
 }
 
 /**
- * The open period an entry dated on `day` belongs in, or why there is none
- * (`FiscalCalendar.postingPeriodOn`).
+ * Where a day falls: its year and its open period, or why it falls nowhere an
+ * entry may be written.
  *
  * The four answers are kept apart because they are acted on differently: a day
  * that is not a day is a defect upstream, a calendar that was never installed
  * is a shop not yet set up, a day outside the years is a calendar somebody has
  * to extend, and a closed period is the one `FIN-05` routes to a decision.
  */
-export function postingPeriodOn(
-  session: RecordSession,
-  tenant: TenantId,
-  day: LocalDate,
-): Outcome<AccountingPeriod> {
+function placeOf(session: RecordSession, tenant: TenantId, day: LocalDate): Outcome<Located> {
   const dated = dayArriving(day);
   if (!dated.ok) return dated;
   const on = dated.value;
@@ -474,12 +460,52 @@ export function postingPeriodOn(
   const years = yearsOf(calendarIn(session, tenant));
   if (years.length === 0) return refuse('fin.calendar-unseeded', { day: on });
 
-  const period = years
-    .find((year) => year.opensOn <= on && on <= year.closesOn)
-    ?.periods.find((one) => one.opensOn <= on && on <= one.closesOn);
-  if (period === undefined) return refuse('fin.day-outside-calendar', { day: on });
+  const year = years.find((one) => one.opensOn <= on && on <= one.closesOn);
+  const period = year?.periods.find((one) => one.opensOn <= on && on <= one.closesOn);
+  if (year === undefined || period === undefined) {
+    return refuse('fin.day-outside-calendar', { day: on });
+  }
   if (period.closed !== null) return refuse('fin.period-closed', { day: on, period: period.id });
-  return ok(sealedPeriod(period));
+  return ok({ years, year, period });
+}
+
+/**
+ * The open period an entry dated on `day` belongs in, or why there is none
+ * (`FiscalCalendar.postingPeriodOn`).
+ */
+export function postingPeriodOn(
+  session: RecordSession,
+  tenant: TenantId,
+  day: LocalDate,
+): Outcome<AccountingPeriod> {
+  const placed = placeOf(session, tenant, day);
+  return placed.ok ? ok(sealedPeriod(placed.value.period)) : placed;
+}
+
+/** A period an entry may be, or has been, admitted into, and the year it belongs to. */
+export interface Admitted {
+  readonly period: AccountingPeriod;
+  readonly year: FiscalYear;
+}
+
+/**
+ * The period an entry dated on `day` would be admitted into, and its year —
+ * reading only.
+ *
+ * The posting engine asks this before it asks `SYS` for a number, because the
+ * number is issued under the year's label and because `SYS` may refuse: a
+ * refusal that came after the period had been marked would leave a write behind
+ * in the caller's transaction, which is the one thing every function in this
+ * module does its checking before its writing to avoid.
+ */
+export function postingPlaceOn(
+  session: RecordSession,
+  tenant: TenantId,
+  day: LocalDate,
+): Outcome<Admitted> {
+  const placed = placeOf(session, tenant, day);
+  if (!placed.ok) return placed;
+  return ok({ period: sealedPeriod(placed.value.period), year: sealed(placed.value.year) });
 }
 
 /**
@@ -491,24 +517,44 @@ export function postingPeriodOn(
  * whether the entry may be written and marks the period so that its year can no
  * longer be reshaped underneath it. The mark is written once per period and
  * never again, so the second entry of a month costs the calendar nothing.
+ *
+ * The year comes back with the period because the entry is numbered under it
+ * (`fiscalYearLabel`), and it is the year as the calendar now holds it — the
+ * mark included — so a caller reading the two cannot find them disagreeing.
  */
 export function admitPosting(
   session: RecordSession,
   tenant: TenantId,
   day: LocalDate,
-): Outcome<AccountingPeriod> {
-  const allowed = postingPeriodOn(session, tenant, day);
-  if (!allowed.ok || allowed.value.posted) return allowed;
+): Outcome<Admitted> {
+  const placed = placeOf(session, tenant, day);
+  if (!placed.ok) return placed;
+  const { year, period } = placed.value;
+  if (period.posted) return ok({ period: sealedPeriod(period), year: sealed(year) });
 
-  const located = locate(session, tenant, allowed.value.id);
-  // Located a moment ago by the same read: absent here is a store that changed
-  // under an open transaction, which is not something to paper over.
-  if (located === null) {
-    throw new Error(`The period ${allowed.value.id} left the calendar of tenant ${tenant}.`);
-  }
-  const posted: AccountingPeriod = { ...located.period, posted: true };
-  store(session, tenant, withPeriod(located, posted));
-  return ok(sealedPeriod(posted));
+  const posted: AccountingPeriod = { ...period, posted: true };
+  const years = store(session, tenant, withPeriod(placed.value, posted));
+  const marked = years.find((one) => one.id === year.id);
+  // Written a moment ago from the same list: absent is a defect in `withPeriod`.
+  if (marked === undefined) throw new Error(`The year ${year.id} left the calendar just written.`);
+  return ok({ period: sealedPeriod(posted), year: sealed(marked) });
+}
+
+/**
+ * What a fiscal year is called where a document number prints it (`SYS-02`).
+ *
+ * The calendar year, or the two it spans — `2026`, `2026-2027` — in full,
+ * because a label is read off a receipt by somebody who was not there when it
+ * was chosen, and `2026-27` at the turn of a century is a riddle. `SYS`
+ * partitions a series by whatever this says and never learns what it means; a
+ * label is what two years that span the same calendar years share, which is
+ * two short years counting on under one series and never two documents under
+ * one number.
+ */
+export function fiscalYearLabel(year: FiscalYear): string {
+  const opens = partsOfDay(year.opensOn).year;
+  const closes = partsOfDay(year.closesOn).year;
+  return opens === closes ? String(opens) : `${String(opens)}-${String(closes)}`;
 }
 
 /**
