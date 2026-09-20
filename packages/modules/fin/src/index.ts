@@ -1,10 +1,8 @@
-import type { BranchId, DeviceId, PermissionId, RegisterId } from '@vertex/contracts';
+import type { PermissionId } from '@vertex/contracts';
 import {
   compareIds,
-  isId,
   localDateOf,
   ok,
-  parseId,
   refuse,
   type CurrencyCode,
   type LocalDate,
@@ -15,15 +13,16 @@ import {
   provideContract,
   subscribeTo,
   untilCommitted,
+  type AccountRoleDeclaration,
   type CommandContext,
   type ModuleContext,
   type ModuleDefinition,
   type PermissionDeclaration,
-  type UnitOfWork,
 } from '@vertex/platform';
 import { Currencies, CurrencyDefined } from '@vertex/fx/contract';
-import { DEFAULT_TIME_ZONE, DocumentNumbering, Organisation } from '@vertex/sys/contract';
+import { DEFAULT_TIME_ZONE, Organisation } from '@vertex/sys/contract';
 
+import { bookkeeping } from './bookkeeping.js';
 import {
   appendYear,
   closePeriod,
@@ -64,9 +63,9 @@ import {
   PostingExceptions,
   type AccountId,
   type AccountingPeriodId,
+  type AttachmentStore,
   type CalendarRefusal,
   type ChartRefusal,
-  type EntryDraft,
   type EntrySource,
   type ExceptionDecision,
   type ExceptionListing,
@@ -74,26 +73,18 @@ import {
   type JournalEntryId,
   type JournalListing,
   type Listing,
+  type ManualEntry,
   type NewAccount,
-  type Posted,
+  type OpeningBalances,
   type PostingExceptionId,
-  type PostingRefusal,
-  type PreparedEntry,
   type RecordSession,
   type ReversalTerms,
   type YearDefinition,
   type YearShape,
 } from './contract.js';
-import {
-  draftArriving,
-  prepareEntry,
-  reversalArriving,
-  reversalOf,
-  type Books,
-  type Making,
-} from './drafts.js';
-import { acceptEntry, exceptionIn, exceptionsIn, resolveException } from './exceptions.js';
-import { entriesIn, postedFor, postedIn, postEntry, reversalIn } from './journal.js';
+import { postingEngine } from './engine.js';
+import { exceptionIn, exceptionsIn, resolveException } from './exceptions.js';
+import { entriesIn, postedFor, postedIn, reversalIn } from './journal.js';
 
 export * from './contract.js';
 export { yearState } from './calendar.js';
@@ -114,6 +105,44 @@ function permissions(): readonly PermissionDeclaration[] {
 }
 
 /**
+ * The account roles this module posts to itself (`FIN_ACCOUNT_ROLES`), each
+ * reserved for the purpose the seed opens an account for, and each declared
+ * the way every other module declares one: `FIN` posts to itself through the
+ * same door everybody else uses.
+ */
+function accounts(): readonly AccountRoleDeclaration[] {
+  const declare = (
+    role: string,
+    normalBalance: AccountRoleDeclaration['normalBalance'],
+    reserved: NonNullable<AccountRoleDeclaration['reserved']>,
+  ): AccountRoleDeclaration => ({
+    role,
+    labelKey: `account-role.${role}`,
+    normalBalance,
+    reserved,
+  });
+  return [
+    declare(FIN_ACCOUNT_ROLES.openingBalanceEquity, 'credit', 'opening-equity'),
+    declare(FIN_ACCOUNT_ROLES.openingInventory, 'debit', 'inventory'),
+    declare(FIN_ACCOUNT_ROLES.openingCash, 'debit', 'cash'),
+    declare(FIN_ACCOUNT_ROLES.openingCustomerDebts, 'debit', 'receivables'),
+    declare(FIN_ACCOUNT_ROLES.openingSupplierDebts, 'credit', 'payables'),
+  ];
+}
+
+/**
+ * What a host provides this module with, beyond what every module is handed.
+ *
+ * The attachment store is the host's for the reason the session driver is:
+ * where files go is a fact about the installation — a directory on the store
+ * node, an object store in the cloud — and not about the ledger.
+ */
+export interface FinOptions {
+  /** Where the bytes of what the accountant attaches are kept (`FIN-04`). */
+  readonly attachments: AttachmentStore;
+}
+
+/**
  * `FIN`, as an edition hosts it.
  *
  * A factory for the reason `SYS` and `FX` are: the session type belongs to the
@@ -123,16 +152,18 @@ function permissions(): readonly PermissionDeclaration[] {
  * It depends on `SYS`, `SEC` and `FX`, as `modules.md` §3 says. Of `FX` it asks
  * the tenant's currencies — to open a cash account for each (`FIN-01`), and to
  * know what an entry balances in and how finely each currency is kept
- * (`FIN-02`) — and it hears one thing: a currency defined afterwards, which is
- * the only way a module beneath this one can reach it (§4). Of `SYS` it asks
- * the tenant's branches, for the zone the first of them counts its days in
- * (`FIN-05`); one branch, that an entry is booked at a shop that trades; the
- * registers of a branch, to know the till a command is being run at; and the
- * next document number, inside the caller's own transaction (`SYS-02`).
+ * (`FIN-02`); a stamp and a valuation for an amount the accountant states in
+ * another currency (`FIN-04`, `FIN-06`, through `FX-05` and `FX-07`) — and it
+ * hears one thing: a currency defined afterwards, which is the only way a
+ * module beneath this one can reach it (§4). Of `SYS` it asks the tenant's
+ * branches, for the zone the first of them counts its days in (`FIN-05`); one
+ * branch, that an entry is booked at a shop that trades; the registers of a
+ * branch, to know the till a command is being run at; and the next document
+ * number, inside the caller's own transaction (`SYS-02`).
  *
- * Its own account role is declared the way every other module declares one,
- * reserved for the purpose the seed opens an account for: `FIN` posts to itself
- * through the same door everybody else uses.
+ * Its own account roles are declared the way every other module declares its
+ * own, reserved for the purposes the seed opens accounts for: `FIN` posts to
+ * itself through the same door everybody else uses.
  *
  * `PostingEngine` is the one contract here that writes into somebody else's
  * transaction rather than its own, and it is split in two so that it can: see
@@ -143,20 +174,15 @@ function permissions(): readonly PermissionDeclaration[] {
  * driver exists and a placeholder migration would burn the name the real one
  * wants.
  */
-export function finModule<Session extends RecordSession>(): ModuleDefinition<Session> {
+export function finModule<Session extends RecordSession>(
+  options: FinOptions,
+): ModuleDefinition<Session> {
   return defineModule<Session>({
     code: 'FIN',
     labelKey: 'module.fin',
     dependsOn: ['SYS', 'SEC', 'FX'],
     permissions: permissions(),
-    accounts: [
-      {
-        role: FIN_ACCOUNT_ROLES.openingBalanceEquity,
-        labelKey: `account-role.${FIN_ACCOUNT_ROLES.openingBalanceEquity}`,
-        normalBalance: 'credit',
-        reserved: 'opening-equity',
-      },
-    ],
+    accounts: accounts(),
     subscribes: [
       // After the commit that defined the currency, in a command of this
       // module's own under the same context — the same tenant, the same
@@ -341,6 +367,7 @@ export function finModule<Session extends RecordSession>(): ModuleDefinition<Ses
         // is decided.
         const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
           context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+        const { attachment } = bookkeeping(context, options.attachments);
 
         return {
           entry: (by: CommandContext, id: JournalEntryId) =>
@@ -351,17 +378,22 @@ export function finModule<Session extends RecordSession>(): ModuleDefinition<Ses
             read(by, (session) => entriesIn(session, by.tenant, listing)),
           reversalOf: (by: CommandContext, id: JournalEntryId) =>
             read(by, (session) => reversalIn(session, by.tenant, id)),
+          attachment,
         } satisfies Journal;
       }),
 
       provideContract(JournalAdministration, (context: ModuleContext<Session>) => {
         const engine = postingEngine(context);
+        const { record, open } = bookkeeping(context, options.attachments);
         const { journalEntry } = FIN_PERMISSIONS;
 
         return {
-          // Ask, then prepare, then post in a transaction of this module's own:
-          // the accountant's reversal is the engine driven from inside this
-          // module, under this module's right, and nothing more.
+          // The accountant's own postings: the engine driven from inside this
+          // module, under this module's rights, and nothing more — see
+          // `bookkeeping.ts` for the order each asks in.
+          record: (by: CommandContext, entry: ManualEntry) => record(by, entry),
+          open: (by: CommandContext, balances: OpeningBalances) => open(by, balances),
+          // Ask, then prepare, then post in a transaction of this module's own.
           reverse: async (by: CommandContext, original: JournalEntryId, terms: ReversalTerms) => {
             if (!(await context.authorise(by, journalEntry.reverse))) {
               return refuse('fin.not-permitted', { right: journalEntry.reverse });
@@ -409,118 +441,6 @@ export function finModule<Session extends RecordSession>(): ModuleDefinition<Ses
       }),
     ],
   });
-}
-
-/**
- * The machine a command is being run at, in the one spelling this module files
- * it under — or null, for a command run at no register.
- *
- * `SYS` stores which machine holds a till through `parseId`, so a UUID is
- * case-insensitive there as the specification says it is. A device id arriving
- * on the context in another case — off a wire, out of `SYN-02`'s replay — would
- * otherwise be a machine that holds no till, and an entry numbered in the
- * branch's series that the till had already numbered in its own. Read once
- * here, as `FX` reads it, so that the till an entry is made at and the machine
- * its number is issued to cannot disagree about which machine that is.
- */
-function machineOf(by: CommandContext): DeviceId | null {
-  const device = by.device as unknown;
-  return typeof device === 'string' && isId(device) ? parseId<'device'>(device) : null;
-}
-
-/**
- * The engine of `FIN-02`, as `PostingEngine` publishes it — built once per
- * contract that drives it, because it holds nothing.
- *
- * `prepare` asks in the order that costs a refused caller the least: the
- * draft's own shape, which costs nothing; then `SYS`, whether the branch
- * trades; then `FX`, what the books are kept in; then `SYS` again, for the
- * till; and only then this module's own read. Every one of those contract calls
- * opens a transaction of the other module's, which is why none of them can
- * happen inside `post` — the caller's transaction is already open there, and
- * one command never holds two.
- */
-function postingEngine<Session extends RecordSession>(
-  context: ModuleContext<Session>,
-): PostingEngine {
-  const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
-    context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
-
-  /**
-   * The till the caller is standing at in this branch, or null: the machine on
-   * the context, if a register of the branch is held by it. It decides which
-   * series numbers the entry (`SYS-02`), and nothing else.
-   */
-  const registerOf = async (by: CommandContext, branch: BranchId): Promise<RegisterId | null> => {
-    const device = machineOf(by);
-    if (device === null) return null;
-    const registers = await context.require(Organisation).registers(by, branch);
-    return registers.find((one) => one.heldBy === device)?.id ?? null;
-  };
-
-  /** What the books are kept in, and every currency an amount may be stated in (`FX-02`). */
-  const booksOf = async (by: CommandContext): Promise<Result<Books, PostingRefusal>> => {
-    const currencies = context.require(Currencies);
-    const functional = await currencies.functional(by);
-    if (functional === null) return refuse('fin.functional-currency-unset');
-    // Every currency the tenant has, in use or not: an amount is still stated
-    // in a currency the shop has since stopped taking.
-    return ok({ functional, currencies: await currencies.currencies(by, { including: 'all' }) });
-  };
-
-  const making = (by: CommandContext, register: RegisterId | null): Making => ({
-    tenant: by.tenant,
-    register,
-    by: by.actor,
-    device: machineOf(by),
-    // The clock is read once, here, so that every entry of one command carries
-    // one moment.
-    at: context.clock.now(),
-  });
-
-  return {
-    prepare: async (by: CommandContext, draft: EntryDraft) => {
-      const judged = draftArriving(draft);
-      if (!judged.ok) return judged;
-
-      // Booked at a shop that trades: a withdrawn branch issues no documents,
-      // so there is nothing for it to post — the answer `FX` gives a stamp.
-      const branch = await context.require(Organisation).branch(by, judged.value.branch);
-      if (branch === null) return refuse('fin.branch-not-found', { branch: judged.value.branch });
-      if (!branch.active) return refuse('fin.branch-inactive', { branch: branch.id });
-
-      const books = await booksOf(by);
-      if (!books.ok) return books;
-      const register = await registerOf(by, branch.id);
-
-      return read(by, (session) =>
-        prepareEntry(
-          session,
-          context.declaredAccounts,
-          books.value,
-          making(by, register),
-          judged.value,
-        ),
-      );
-    },
-
-    prepareReversal: async (by: CommandContext, original: JournalEntryId, terms: ReversalTerms) => {
-      const basis = await read(by, (session) =>
-        reversalArriving(session, by.tenant, original, terms),
-      );
-      if (!basis.ok) return basis;
-      // At the original's branch, which is the only branch a correction of it
-      // can be booked at, and at the till the caller stands at, if any.
-      const register = await registerOf(by, basis.value.original.entry.branch);
-      return ok(reversalOf(basis.value, making(by, register)));
-    },
-
-    post: (uow: UnitOfWork<RecordSession>, prepared: PreparedEntry) =>
-      postEntry(uow, context.require(DocumentNumbering), prepared),
-
-    accept: (uow: UnitOfWork<RecordSession>, arrived: Posted) =>
-      Promise.resolve(acceptEntry(uow.session, uow.context.tenant, arrived, context.clock.now())),
-  };
 }
 
 /**

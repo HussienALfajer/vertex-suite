@@ -1,8 +1,10 @@
 import type { BranchId, DeviceId, RegisterId, TenantId } from '@vertex/contracts';
 import type { CurrencyCode, LocalDate, Result } from '@vertex/kernel';
 import {
+  Dec,
   instant,
   isId,
+  localDateOf,
   manualClock,
   money,
   newId,
@@ -10,8 +12,10 @@ import {
   orThrow,
   parseId,
   refuse,
+  toDecimalString,
   type Id,
   type ManualClock,
+  type Money,
 } from '@vertex/kernel';
 import {
   commandContext,
@@ -30,6 +34,7 @@ import {
   type CommandContext,
   type MemorySession,
   type MemoryStore,
+  type ModuleContext,
   type ModuleDefinition,
   type Registry,
   type SessionDriver,
@@ -38,7 +43,18 @@ import {
 import {
   Currencies,
   CurrencyDefined,
+  FX_PERMISSIONS,
+  RateStamps,
   ROUNDING_ACCOUNT,
+  RoundingRules,
+  type DocumentValue,
+  type PreparedStamp,
+  type RateOverride,
+  type RateRefusal,
+  type RateSide,
+  type RateStamp,
+  type Stamping,
+  type StampedDocument,
   type TenantCurrency,
 } from '@vertex/fx/contract';
 import {
@@ -63,6 +79,7 @@ import {
   PostingEngine,
   PostingExceptionAdministration,
   PostingExceptions,
+  type AttachmentStore,
   type EntryDraft,
   type Posted,
   type PostingRefusal,
@@ -92,10 +109,20 @@ import { finModule } from './index.js';
  * by their **declarations** alone: a role each, reserved or not, so that the
  * mapping of `FIN-01` has something to map. `FIN` never learns what any of them
  * does, which is the point of a role.
+ *
+ * Of `FX` the manual entry and the opening balances ask two more things: a
+ * stamp for an amount in another currency, and what that amount is worth in
+ * the books at the stamped rate (`FX-05`, `FX-07`). The stand-in holds a board
+ * per branch that a test sets, stamps on the side the direction selects, logs
+ * an override under the real module's right, and values by division to the
+ * functional currency's places — which is what the real module does, reduced
+ * to what `FIN` relies on.
  */
 export interface Installed {
   readonly registry: Registry<MemorySession>;
   readonly store: MemoryStore;
+  /** Where the bytes of an attachment go: the host's store, stood in for by a map. */
+  readonly attachments: AttachmentsKept;
   readonly chart: ChartOfAccounts;
   readonly admin: ChartAdministration;
   readonly calendar: FiscalCalendar;
@@ -155,6 +182,23 @@ export interface Installed {
    */
   setFunctional(code: CurrencyCode | null): void;
   /**
+   * `FX`'s `record`, as `FIN` sees it: today's board at a branch for one
+   * currency, in units of the currency per one unit of the functional currency
+   * — `buy` for money the shop receives, `sell` for money it pays out (`FX-04`,
+   * `FX-06`). A currency with no board is `fx.rate-missing`.
+   */
+  setRate(branch: BranchId, currency: CurrencyCode, board: Board): void;
+  /** Every stamp `FX` has committed for the tenant, as the stand-in holds them. */
+  stamps(): readonly RateStamp[];
+  /** Every override `FX` has logged for the tenant. */
+  overrides(): readonly RateOverride[];
+  /**
+   * `SYS` declines the next number it is asked for, once — as the real module
+   * does for a series whose format nobody has configured — which is the one
+   * refusal that reaches the engine inside the transaction that writes.
+   */
+  declineNextNumber(): void;
+  /**
    * A branch, as `SYS` would have opened one. In the order they are opened
    * here, which is the order their identifiers carry.
    */
@@ -193,6 +237,26 @@ export interface AtRegister {
   readonly register: RegisterId;
   readonly device: DeviceId;
   readonly by: CommandContext;
+}
+
+/** A day's two rates for one currency, canonical: units of it per one unit of the functional currency. */
+export interface Board {
+  readonly buy: string;
+  readonly sell: string;
+}
+
+/**
+ * The host's attachment store, stood in for: a map, with the two things a
+ * test needs beyond the port — to see what was kept, and to lose it, which is
+ * what a disk does and what the hash on the entry exists to catch.
+ */
+export interface AttachmentsKept extends AttachmentStore {
+  /** Every key the store holds bytes under. */
+  keys(): readonly string[];
+  /** Loses the bytes under a key, or replaces them: the store's failure, not the module's. */
+  corrupt(key: string, bytes: Uint8Array | null): void;
+  /** Makes the next `put` fail, once. */
+  failNextPut(): void;
 }
 
 /** 12:00 in Damascus, which keeps UTC+3 all year. */
@@ -312,9 +376,15 @@ function issueNumber(
  * branch, and the next document number — inside the caller's transaction, as
  * the real module issues it.
  */
+/** Whether the numbering stand-in declines the next number it is asked for, as the real module does for a series nobody configured. */
+interface Declining {
+  next: boolean;
+}
+
 function organisationStandIn(
   branches: Branches,
   registers: Registers,
+  declining: Declining,
 ): ModuleDefinition<MemorySession> {
   return defineModule<MemorySession>({
     code: 'SYS',
@@ -351,8 +421,13 @@ function organisationStandIn(
         setting: () => unasked('SYS', 'a setting'),
       })),
       provideContract(DocumentNumbering, () => ({
-        next: (uow, scope, document) =>
-          Promise.resolve(issueNumber(registers, uow, scope, document)),
+        next: (uow, scope, document) => {
+          if (declining.next) {
+            declining.next = false;
+            return Promise.resolve(refuse('sys.series-format-invalid', { format: '' }));
+          }
+          return Promise.resolve(issueNumber(registers, uow, scope, document));
+        },
         series: () => unasked('SYS', 'a numbering series'),
         configured: () => unasked('SYS', 'the configured series of a branch'),
         preview: () => unasked('SYS', 'a numbering specimen'),
@@ -384,10 +459,178 @@ function currencyNamed(tenant: TenantId, code: CurrencyCode): TenantCurrency {
 /** What each tenant keeps its books in (`FX-02`), as the stand-in holds it. */
 type Functional = Map<TenantId, CurrencyCode | null>;
 
+/** Today's boards, one per tenant, branch and currency. */
+type Boards = Map<string, Board & { readonly revision: Id<'rate-revision'> }>;
+
+function boardKey(tenant: TenantId, branch: BranchId, currency: CurrencyCode): string {
+  return [tenant, branch, currency].join('|');
+}
+
+/** Where the stand-in files what `FX` would have committed, in the caller's own session. */
+const STAMP_PREFIX = 'standin/stamp/';
+const OVERRIDE_PREFIX = 'standin/override/';
+
+/**
+ * `FX-05` and `FX-06`, reduced to what `FIN` relies on from them.
+ *
+ * The direction judged before anything else and the override's right asked
+ * before the branch is looked at, as the real module orders them; the branch
+ * read in the caller's tenant and refused if withdrawn; the rate for the
+ * branch's own today, or `fx.rate-missing`; the side the direction selects,
+ * and the override — with a written reason, in the canonical form only —
+ * replacing that side's figure and logged with what it replaced.
+ */
+function prepareStampStandIn(
+  context: ModuleContext<MemorySession>,
+  branches: Branches,
+  boards: Boards,
+  functional: Functional,
+): (by: CommandContext, stamping: Stamping) => Promise<Result<PreparedStamp, RateRefusal>> {
+  return async (by, stamping) => {
+    const { direction, override } = stamping as { direction: unknown; override?: unknown };
+    if (direction !== 'received' && direction !== 'paid-out') {
+      return refuse('fx.cash-direction-unknown', { direction: String(direction) });
+    }
+    if (
+      override !== undefined &&
+      !(await context.authorise(by, FX_PERMISSIONS.rate.override, { branch: stamping.branch }))
+    ) {
+      return refuse('fx.not-permitted', { right: FX_PERMISSIONS.rate.override });
+    }
+    const branch = branches.get(stamping.branch);
+    if (branch?.tenant !== by.tenant) {
+      return refuse('fx.branch-not-found', { branch: stamping.branch });
+    }
+    if (!branch.active) return refuse('fx.branch-inactive', { branch: branch.id });
+    const at = context.clock.now();
+    const day = localDateOf(at, branch.timeZone);
+    const board = boards.get(boardKey(by.tenant, branch.id, stamping.currency));
+    if (board === undefined) {
+      return refuse('fx.rate-missing', { branch: branch.id, currency: stamping.currency, day });
+    }
+    const books = functional.get(by.tenant);
+    if (books === undefined || books === null) return refuse('fx.functional-currency-unset');
+
+    const side: RateSide = direction === 'received' ? 'buy' : 'sell';
+    const automatic = side === 'buy' ? board.buy : board.sell;
+    const id = newId<'rate-stamp'>();
+    let applied = automatic;
+    let logged: RateOverride | null = null;
+    if (override !== undefined) {
+      const { form, rate, reason } = (override ?? {}) as {
+        form?: unknown;
+        rate?: unknown;
+        reason?: unknown;
+      };
+      if (typeof reason !== 'string' || !/\p{L}/u.test(reason)) {
+        return refuse('fx.override-reason-required');
+      }
+      if (form !== 'units-per-functional')
+        return refuse('fx.rate-form-unknown', { form: String(form) });
+      if (typeof rate !== 'string' || !/^\d+(\.\d+)?$/.test(rate) || new Dec(rate).lte(0)) {
+        return refuse('fx.rate-invalid', { rate: String(rate) });
+      }
+      applied = rate;
+      logged = Object.freeze({
+        id: newId<'rate-override'>(),
+        tenant: by.tenant,
+        stamp: id,
+        branch: branch.id,
+        currency: stamping.currency,
+        day,
+        side,
+        automatic,
+        applied,
+        quoted: Object.freeze({ form, rate }),
+        reason: reason.trim(),
+        revision: board.revision,
+        by: by.actor,
+        at,
+      });
+    }
+    const stamp: RateStamp = Object.freeze({
+      id,
+      tenant: by.tenant,
+      branch: branch.id,
+      currency: stamping.currency,
+      functional: books,
+      day,
+      direction,
+      side,
+      rate: applied,
+      revision: board.revision,
+      rateDay: day,
+      override: logged?.id ?? null,
+      lastKnown: null,
+      stampedBy: by.actor,
+      stampedAt: at,
+    });
+    return ok(Object.freeze({ stamp, override: logged }));
+  };
+}
+
+/**
+ * `FX-07`'s ledger point, reduced to what `FIN` relies on: every figure
+ * divided by the stamped rate and taken to the functional currency's places,
+ * the residual the difference between the total and the sum of the lines. The
+ * two refusals the real module makes about a document's shape are made here
+ * too, so that what `FIN` hands it is held to what it will take.
+ */
+function valueStandIn(
+  held: Map<TenantId, TenantCurrency[]>,
+): (by: CommandContext, document: StampedDocument) => Promise<Result<DocumentValue, RateRefusal>> {
+  return (by, { stamp, total, lines }) => {
+    if (stamp.tenant !== by.tenant) throw new Error('A stamp of another tenant reached FX.');
+    const mismatched = [total, ...lines].find((amount) => amount.currency !== stamp.currency);
+    if (mismatched !== undefined) {
+      return Promise.resolve(
+        refuse('fx.stamp-currency-mismatch', {
+          stamp: stamp.currency,
+          amount: mismatched.currency,
+        }),
+      );
+    }
+    const summed = lines.reduce((running, line) => running.plus(line.amount), new Dec(0));
+    if (!summed.equals(total.amount)) {
+      return Promise.resolve(
+        refuse('fx.lines-do-not-total', {
+          total: toDecimalString(total),
+          lines: summed.toFixed(),
+          currency: stamp.currency,
+        }),
+      );
+    }
+    const functional = (held.get(by.tenant) ?? []).find((one) => one.code === stamp.functional);
+    if (functional === undefined) {
+      return Promise.resolve(refuse('fx.currency-not-found', { currency: stamp.functional }));
+    }
+    const into = (amount: Money): Money =>
+      money(
+        amount.amount.dividedBy(new Dec(stamp.rate)).toDecimalPlaces(functional.decimals),
+        functional.code,
+      );
+    const valuedTotal = into(total);
+    const valuedLines = lines.map(into);
+    const sumOfLines = valuedLines.reduce((running, line) => running.plus(line.amount), new Dec(0));
+    return Promise.resolve(
+      ok({
+        total: valuedTotal,
+        lines: Object.freeze(valuedLines),
+        residual: {
+          account: ROUNDING_ACCOUNT,
+          point: 'ledger',
+          amount: money(valuedTotal.amount.minus(sumOfLines), functional.code),
+        },
+      }),
+    );
+  };
+}
+
 /**
  * `FX`, stood in for: the currencies of each tenant, the one the books are
- * kept in, the announcement of a new currency, and the one account role the
- * real module declares.
+ * kept in, the announcement of a new currency, the stamping and valuing of an
+ * amount in another currency, and the one account role the real module
+ * declares.
  *
  * Declares the event the real module declares, under its real name, because
  * the registry refuses a subscription to an event no module in the catalogue
@@ -399,6 +642,8 @@ type Functional = Map<TenantId, CurrencyCode | null>;
 function currenciesStandIn(
   held: Map<TenantId, TenantCurrency[]>,
   functional: Functional,
+  branches: Branches,
+  boards: Boards,
 ): ModuleDefinition<MemorySession> {
   return defineModule<MemorySession>({
     code: 'FX',
@@ -428,6 +673,34 @@ function currenciesStandIn(
               null,
           ),
       })),
+      provideContract(RateStamps, (context: ModuleContext<MemorySession>) => ({
+        prepare: prepareStampStandIn(context, branches, boards, functional),
+        // Into the caller's session, as the real module writes: the stamp
+        // commits with the entry, or rolls back with it.
+        stamp: (by, session, prepared) => {
+          if (prepared.stamp.tenant !== by.tenant) throw new Error('A stamp of another tenant.');
+          if (prepared.override !== null) {
+            session.put(
+              `${OVERRIDE_PREFIX}${by.tenant}/${prepared.override.id}`,
+              prepared.override,
+            );
+          }
+          session.put(`${STAMP_PREFIX}${by.tenant}/${prepared.stamp.id}`, prepared.stamp);
+          return prepared.stamp;
+        },
+        stamped: (by, id) =>
+          context.transactor.run(by, (uow) =>
+            Promise.resolve(
+              (uow.session.get(`${STAMP_PREFIX}${by.tenant}/${id}`) as RateStamp | undefined) ??
+                null,
+            ),
+          ),
+        overrides: () => unasked('FX', 'the overrides of a day'),
+      })),
+      provideContract(RoundingRules, () => ({
+        settle: () => unasked('FX', 'to settle an amount'),
+        value: valueStandIn(held),
+      })),
     ],
   });
 }
@@ -455,6 +728,40 @@ export const REVENUE_ROLE = 'sal.revenue';
 /** A role no module in this edition declares. */
 export const UNDECLARED_ROLE = 'pur.landed-cost';
 
+/**
+ * The host's attachment store, stood in for by a map.
+ *
+ * Bytes are copied on the way in and on the way out, as a disk would: what
+ * the module handed over cannot be altered afterwards through the array it
+ * handed over, and what it reads back is not the array the store holds.
+ */
+function attachmentsKept(): AttachmentsKept {
+  const kept = new Map<string, Uint8Array>();
+  let failing = false;
+  return {
+    put(key, bytes) {
+      if (failing) {
+        failing = false;
+        return Promise.reject(new Error('the disk is full'));
+      }
+      kept.set(key, Uint8Array.from(bytes));
+      return Promise.resolve();
+    },
+    get(key) {
+      const found = kept.get(key);
+      return Promise.resolve(found === undefined ? null : Uint8Array.from(found));
+    },
+    keys: () => [...kept.keys()].sort(),
+    corrupt(key, bytes) {
+      if (bytes === null) kept.delete(key);
+      else kept.set(key, Uint8Array.from(bytes));
+    },
+    failNextPut() {
+      failing = true;
+    },
+  };
+}
+
 export function installFin(): Installed {
   let decide: (by: CommandContext, right: string, where?: AuthorisationScope) => boolean = () =>
     true;
@@ -463,11 +770,14 @@ export function installFin(): Installed {
   const functional: Functional = new Map();
   const branches: Branches = new Map();
   const registers: Registers = new Map();
+  const boards: Boards = new Map();
+  const declining: Declining = { next: false };
+  const attachments = attachmentsKept();
   const catalogue = [
-    organisationStandIn(branches, registers),
+    organisationStandIn(branches, registers, declining),
     authorityStandIn(() => decide),
-    currenciesStandIn(held, functional),
-    finModule<MemorySession>(),
+    currenciesStandIn(held, functional, branches, boards),
+    finModule<MemorySession>({ attachments }),
     declaring('STK', [
       {
         role: INVENTORY_ROLE,
@@ -585,9 +895,17 @@ export function installFin(): Installed {
     [...branches.values()].find((one) => one.tenant === of && one.active)?.id ??
     openBranch({ tenant: of });
 
+  /** What the stand-in `FX` has committed for the tenant under a prefix, in key order. */
+  const committedUnder = (prefix: string): readonly unknown[] =>
+    [...store.committed()]
+      .filter(([key]) => key.startsWith(`${prefix}${tenant}/`))
+      .sort(([one], [other]) => (one < other ? -1 : one > other ? 1 : 0))
+      .map(([, value]) => value);
+
   return {
     registry,
     store,
+    attachments,
     chart: registry.require(ChartOfAccounts),
     admin,
     calendar: registry.require(FiscalCalendar),
@@ -625,6 +943,15 @@ export function installFin(): Installed {
     setFunctional(code) {
       functional.set(tenant, code);
     },
+    setRate(branch, currency, board) {
+      const of = branches.get(branch)?.tenant ?? tenant;
+      boards.set(boardKey(of, branch, currency), { ...board, revision: newId<'rate-revision'>() });
+    },
+    stamps: () => committedUnder(STAMP_PREFIX) as readonly RateStamp[],
+    declineNextNumber() {
+      declining.next = true;
+    },
+    overrides: () => committedUnder(OVERRIDE_PREFIX) as readonly RateOverride[],
     openBranch,
     closeBranch(id) {
       const branch = branches.get(id);
