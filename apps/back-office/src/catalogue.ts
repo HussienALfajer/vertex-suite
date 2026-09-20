@@ -222,6 +222,60 @@ export const catalogue = {
     'لا يوجد سعر مقترح جديد لهذا الفرع اليوم — إمّا لم يُنشر شيء بعد، أو تبنّاه هذا الفرع من قبل.',
 
   /**
+   * `FIN-01`'s own refusals, as sentences.
+   *
+   * An account identifier never reaches one of these. `FIN` names the account
+   * it refused over so that a log says which, and this catalogue answers the
+   * person in front of the screen — who is looking at the row already and
+   * would learn nothing from a UUID.
+   */
+  'refusal.fin.account-code-invalid':
+    'رمز الحساب «{code}» غير صالح. الرمز حروف وأرقام إنكليزية ونقاط وشرطات، بلا فراغات، و٣٢ خانة على الأكثر — والأرقام العربية-الهندية لا تصلح، لأن «١١٠١» و«1101» حسابان يُقرآن واحدًا.',
+  'refusal.fin.account-code-taken': 'الرمز «{code}» مستخدم لحساب آخر. اختر رمزًا غيره.',
+  'refusal.fin.account-name-required': 'أدخل اسم الحساب.',
+  'refusal.fin.account-kind-unknown': 'نوع الحساب غير معروف.',
+  'refusal.fin.account-kind-mismatch':
+    'حساب من نوع «{kind, select, asset {أصل} liability {خصم} equity {حق ملكية} income {إيراد} expense {مصروف} other {غير معروف}}» لا يوضع تحت حساب من نوع «{parentKind, select, asset {أصل} liability {خصم} equity {حق ملكية} income {إيراد} expense {مصروف} other {غير معروف}}» — لا قائمة مالية تعرف أين تضع رصيده.',
+  'refusal.fin.account-not-found': 'لم يعد هذا الحساب موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.fin.account-inactive':
+    'الحساب الأب مسحوب من الخدمة. أعِده إلى الخدمة أولًا، أو اختر حسابًا أب غيره.',
+  /**
+   * `FIN-01`'s own words: a reserved account is marked and cannot be deleted.
+   * It also takes no children, because the system posts to it as a leaf — one
+   * refusal for both, since both are the same fact about the same account.
+   */
+  'refusal.fin.account-reserved':
+    'هذا الحساب محجوز للنظام ({reserved})، فلا يُسحب من الخدمة ولا يُوضع تحته حساب. أضِف حسابًا بجانبه ضمن مجموعته.',
+  'refusal.fin.account-has-children':
+    'هذه مجموعة ما زال تحتها حسابات في الخدمة. اسحب ما تحتها أولًا.',
+  'refusal.fin.account-cycle': 'لا يُنقل حساب إلى داخل نفسه ولا إلى داخل ما تحته.',
+
+  /**
+   * `FIN-05`'s own refusals. A period and a year are named by their dates
+   * wherever the screen can say them; where the refusal carries only an
+   * identifier, the sentence says what to do rather than which record.
+   */
+  'refusal.fin.calendar-unseeded':
+    'لا تقويم مالي لهذا المتجر بعد. يُنشأ مع تهيئة المتجر؛ حدّث الصفحة، وراجع من هيّأ النظام إن بقي فارغًا.',
+  'refusal.fin.day-invalid': 'التاريخ «{day}» لا يسمّي يومًا.',
+  'refusal.fin.fiscal-year-not-found': 'لم تعد هذه السنة المالية موجودة. حدّث الصفحة.',
+  'refusal.fin.period-not-found': 'لم تعد هذه الفترة موجودة. حدّث الصفحة.',
+  'refusal.fin.fiscal-year-not-last':
+    'لا يُعاد تعريف إلا السنة الأخيرة: تغيير سنة قبلها يزيح كل سنة بعدها.',
+  'refusal.fin.fiscal-year-posted':
+    'قُيِّدت قيود في هذه السنة، فشكلها لم يعد قابلًا للتغيير — رقمٌ نُقل إلى فترة أخرى بعد أن أُبلغ عنه رقمٌ لا يمكن لأحد مطابقته.',
+  'refusal.fin.period-closed': 'في هذه السنة فترة مقفلة، فلا يُعاد تعريف شكلها.',
+  'refusal.fin.fiscal-year-gap':
+    'السنة المالية تبدأ في {follows} تمامًا: يومٌ بين سنتين لا ينتمي إلى أي فترة، ولا شيء يستطيع أن يقول إن كان مقفلًا.',
+  'refusal.fin.fiscal-year-months-invalid':
+    'طول السنة المالية عدد صحيح من الأشهر بين ١ و{most, number}. المُدخَل: «{months}».',
+  'refusal.fin.months-per-period-invalid':
+    'طول الفترة عدد صحيح من الأشهر يقسم السنة ({months, number} شهرًا) بلا باقٍ. المُدخَل: «{monthsPerPeriod}».',
+  'refusal.fin.reopen-reason-required': 'اكتب سبب إعادة فتح الفترة.',
+  'refusal.fin.not-permitted':
+    'هذا الإجراء يحتاج صلاحية «{right}»، وهي غير ممنوحة لك. راجع مالك المتجر.',
+
+  /**
    * The rights `SYS` declares, named the way an administrator would say them.
    *
    * The key is the permission's own identifier, which is exactly the `labelKey`
@@ -286,6 +340,29 @@ export const catalogue = {
   'permission.fx.suggested-rate.view': 'الاطلاع على السعر المقترح',
   'permission.fx.suggested-rate.create': 'اقتراح سعر لكل الفروع',
   'permission.fx.last-known-rate.confirm': 'التداول بآخر سعر معروف عند انقطاع الاتصال',
+  /**
+   * `FIN`'s rights. The ledger runs invisibly — a shop owner never meets a
+   * debit — so these are named by what a person *does*, never by what the
+   * books do underneath: "إقفال فترة محاسبية", not "قفل الترحيل".
+   */
+  'permission.fin.account.view': 'الاطلاع على دليل الحسابات',
+  'permission.fin.account.create': 'إضافة حساب',
+  'permission.fin.account.edit': 'تعديل الحسابات ونقلها',
+  'permission.fin.account.delete': 'سحب حساب من الخدمة',
+  'permission.fin.account-mapping.edit': 'تحديد الحسابات التي تُرحَّل إليها الحركات',
+  'permission.fin.fiscal-year.view': 'الاطلاع على التقويم المالي',
+  'permission.fin.fiscal-year.create': 'إضافة سنة مالية',
+  'permission.fin.fiscal-year.edit': 'إعادة تعريف السنة المالية',
+  'permission.fin.accounting-period.close': 'إقفال فترة محاسبية',
+  'permission.fin.accounting-period.reopen': 'إعادة فتح فترة مقفلة',
+  'permission.fin.journal-entry.view': 'الاطلاع على قيود اليومية',
+  'permission.fin.journal-entry.create': 'إدخال قيد يدوي',
+  'permission.fin.journal-entry.reverse': 'عكس قيد',
+  'permission.fin.opening-balance.create': 'إدخال الأرصدة الافتتاحية',
+  'permission.fin.posting-exception.view': 'الاطلاع على القيود المعلّقة',
+  'permission.fin.posting-exception.resolve': 'البتّ في القيود المعلّقة',
+  'permission.fin.statement.view': 'الاطلاع على القوائم المالية',
+
   'permission.unknown': 'غير معروفة',
 
   /**
@@ -316,6 +393,13 @@ export const catalogue = {
   'permission.resource.fx.functional-currency': 'عملة الدفاتر',
   'permission.resource.fx.rate': 'أسعار الصرف اليومية',
   'permission.resource.fx.suggested-rate': 'السعر المقترح',
+  'permission.resource.fin.account': 'دليل الحسابات',
+  'permission.resource.fin.account-mapping': 'حسابات الترحيل',
+  'permission.resource.fin.fiscal-year': 'السنوات المالية',
+  'permission.resource.fin.journal-entry': 'قيود اليومية',
+  'permission.resource.fin.opening-balance': 'الأرصدة الافتتاحية',
+  'permission.resource.fin.posting-exception': 'القيود المعلّقة',
+  'permission.resource.fin.statement': 'القوائم المالية',
 
   'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
   'theme.light': 'فاتح',
@@ -337,6 +421,10 @@ export const catalogue = {
   'nav.group.fx': 'العملات',
   'nav.currencies': 'إدارة العملات',
   'nav.rates': 'الأسعار اليومية',
+  /** `FIN`'s own group: the books, and the calendar they are kept in. */
+  'nav.group.fin': 'الدفاتر',
+  'nav.chart': 'دليل الحسابات',
+  'nav.fiscalCalendar': 'التقويم المالي',
 
   'action.close': 'إغلاق',
   'action.cancel': 'إلغاء',
@@ -441,6 +529,14 @@ export const catalogue = {
    * `SYS-09` deactivates and never deletes, so a list that only ever showed
    * what is in use would be a list nobody can restore anything from.
    */
+  /**
+   * What `TreeView` calls its disclosure control. React Aria points the
+   * button at its own row as well, so a page of them reads as "فتح الأصول"
+   * rather than as thirty controls with one name.
+   */
+  'tree.expand': 'فتح',
+  'tree.collapse': 'طيّ',
+
   'listing.includeWithdrawn': 'إظهار المسحوب من الخدمة',
   'listing.noMatch': 'لا شيء يطابق ما بحثت عنه.',
 
@@ -1143,6 +1239,190 @@ export const catalogue = {
   'profile.empty': 'لا توجد شركة بعد',
   'profile.empty.explanation': 'ملف العمل التجاري يخصّ شركة، فابدأ بتسجيل الشركة.',
   'profile.empty.action': 'الذهاب إلى الشركات',
+  /**
+   * The accounts `FIN-01` seeds, through the terminology layer.
+   *
+   * A seeded account carries no name of its own until the tenant renames it
+   * (`Account.name` is null), exactly as `SEC`'s seeded roles do — so the word
+   * on screen comes from here and a tenant may rename the concept once
+   * (`SYS-08`) rather than editing thirty-three rows. A cash account is one
+   * word for every currency; the code beside it says which.
+   */
+  'account.assets': 'الأصول',
+  'account.cash-and-bank': 'النقد والبنوك',
+  'account.cash': 'الصندوق',
+  'account.receivables': 'الذمم المدينة',
+  'account.trade-receivables': 'ذمم العملاء',
+  'account.inventory': 'المخزون',
+  'account.merchandise-inventory': 'مخزون البضاعة',
+  'account.equipment-and-fixtures': 'المعدات والتجهيزات',
+  'account.liabilities': 'الخصوم',
+  'account.payables': 'الذمم الدائنة',
+  'account.trade-payables': 'ذمم الموردين',
+  'account.accrued-expenses': 'مصاريف مستحقة',
+  'account.loans': 'القروض',
+  'account.equity': 'حقوق الملكية',
+  'account.owner-capital': 'رأس مال المالك',
+  'account.opening-balance-equity': 'الحقوق الافتتاحية',
+  'account.owner-drawings': 'مسحوبات المالك',
+  'account.income': 'الإيرادات',
+  'account.sales-revenue': 'إيرادات المبيعات',
+  'account.sales-returns-and-discounts': 'مردودات وخصومات المبيعات',
+  'account.other-income': 'إيرادات أخرى',
+  'account.fx-gain-loss': 'فروقات أسعار الصرف',
+  'account.rounding-differences': 'فروقات التقريب',
+  'account.expenses': 'المصاريف',
+  'account.cost-of-goods-sold': 'تكلفة البضاعة المباعة',
+  'account.inventory-shrinkage': 'العجز في المخزون',
+  'account.salaries-and-wages': 'الرواتب والأجور',
+  'account.rent': 'الإيجار',
+  'account.utilities': 'الكهرباء والماء والاتصالات',
+  'account.transport-and-delivery': 'النقل والتوصيل',
+  'account.bank-charges': 'عمولات ومصاريف بنكية',
+  'account.other-expenses': 'مصاريف أخرى',
+
+  /** The five kinds every statement is computed from (`AccountKind`). */
+  'account.kind.asset': 'أصل',
+  'account.kind.liability': 'خصم',
+  'account.kind.equity': 'حق ملكية',
+  'account.kind.income': 'إيراد',
+  'account.kind.expense': 'مصروف',
+
+  /** The purposes the system posts to (`ReservedAccount`), as a person would say them. */
+  'account.reserved.inventory': 'المخزون',
+  'account.reserved.cogs': 'تكلفة البضاعة المباعة',
+  'account.reserved.receivables': 'ذمم العملاء',
+  'account.reserved.payables': 'ذمم الموردين',
+  'account.reserved.cash': 'النقد',
+  'account.reserved.fx-gain-loss': 'فروقات أسعار الصرف',
+  'account.reserved.shrinkage': 'العجز في المخزون',
+  'account.reserved.rounding': 'فروقات التقريب',
+  'account.reserved.opening-equity': 'الحقوق الافتتاحية',
+
+  'chart.title': 'دليل الحسابات',
+  'chart.description':
+    'الحسابات التي تُبنى عليها كل قائمة مالية، شجرةً تُضيف إليها وتعيد ترتيبها. الحسابات المحجوزة للنظام مميَّزة، ولا تُسحب من الخدمة.',
+  'chart.tree': 'شجرة الحسابات',
+  'chart.search': 'ابحث برمز الحساب أو باسمه',
+  /** The mark `FIN-01` puts on the accounts the system posts to. */
+  'chart.reserved': 'محجوز: {purpose}',
+  'chart.kind': 'النوع: {kind}',
+  'chart.empty': 'لا حسابات بعد',
+  'chart.add': 'إضافة حساب',
+  'chart.new.title': 'حساب جديد',
+  'chart.new.code': 'رمز الحساب',
+  'chart.new.code.description':
+    'لا يتغيّر بعد إنشائه: كل قائمة مالية طُبعت تحمله. أرقام إنكليزية، مثل 5900.',
+  'chart.new.code.required': 'أدخل رمز الحساب.',
+  'chart.new.name': 'اسم الحساب',
+  'chart.new.name.required': 'أدخل اسم الحساب.',
+  'chart.new.kind': 'نوع الحساب',
+  'chart.new.kind.description': 'لا يتغيّر بعد الإنشاء، وهو ما يحدّد في أي قائمة يظهر رصيده.',
+  'chart.new.parent': 'الحساب الأب',
+  'chart.new.parent.root': 'بلا أب — حساب رئيسي',
+  'chart.new.parent.description':
+    'من نوع الحساب نفسه. الحساب الذي تحته حسابات مجموعةٌ لا يُرحَّل إليها.',
+  'chart.new.submit': 'إضافة',
+  'chart.added': 'أُضيف الحساب «{name}».',
+  'chart.rename.action': 'تغيير اسم الحساب',
+  'chart.rename.title': 'تغيير اسم الحساب',
+  'chart.rename.submit': 'حفظ الاسم',
+  'chart.renamed': 'صار اسم الحساب «{name}».',
+  'chart.move.action': 'نقل الحساب',
+  'chart.move.title': 'نقل الحساب',
+  'chart.move.description': 'ينتقل الحساب بكل ما تحته. الوجهة من نوعه نفسه.',
+  'chart.move.submit': 'نقل',
+  'chart.moved': 'نُقل الحساب «{name}».',
+  'chart.withdraw.action': 'سحب الحساب من الخدمة',
+  'chart.withdraw.title': 'سحب الحساب من الخدمة',
+  'chart.withdraw.message':
+    'لا يُحذف الحساب «{name}»: كل سطر قُيِّد عليه يبقى يسمّيه، وكل تقرير قديم يبقى يقرؤه. يخرج من الاختيار فقط، ويمكن إعادته.',
+  'chart.withdrawn': 'سُحب الحساب «{name}» من الخدمة.',
+  'chart.restore.action': 'إعادة الحساب إلى الخدمة',
+  'chart.restore.title': 'إعادة الحساب إلى الخدمة',
+  'chart.restore.message': 'يعود الحساب «{name}» إلى الاختيار وإلى الترحيل.',
+  'chart.restored': 'أُعيد الحساب «{name}» إلى الخدمة.',
+
+  'calendar.title': 'التقويم المالي',
+  'calendar.description':
+    'السنوات المالية وفتراتها. إقفال فترة يمنع أي قيد بتاريخ داخلها — بما في ذلك ما يصل متأخرًا من صندوق كان يعمل دون اتصال، فيُحوَّل إلى قائمة القيود المعلّقة للبتّ فيه.',
+  'calendar.years': 'السنوات المالية',
+  'calendar.year.tab': '{year, number, ::group-off}',
+  'calendar.year.tab.spanning': '{from, number, ::group-off}–{to, number, ::group-off}',
+  'calendar.year.span': 'من {from} إلى {to}',
+  'calendar.year.state.open': 'مفتوحة',
+  'calendar.year.state.closed': 'مقفلة',
+  'calendar.empty': 'لا تقويم مالي بعد',
+  'calendar.empty.explanation':
+    'يُنشأ التقويم المالي مع تهيئة المتجر. حدّث الصفحة، وراجع من هيّأ النظام إن بقي فارغًا.',
+
+  'calendar.periods': 'فترات السنة المالية',
+  'calendar.period.ordinal': 'الفترة',
+  'calendar.period.ordinal.value': '{ordinal, number}',
+  'calendar.period.opensOn': 'من',
+  'calendar.period.closesOn': 'إلى',
+  'calendar.period.state': 'الحالة',
+  'calendar.period.state.open': 'مفتوحة',
+  'calendar.period.state.closed': 'مقفلة',
+  'calendar.period.posted': 'فيها قيود',
+  'calendar.period.closedBy': 'أقفلها {user} في {at}',
+  'calendar.period.closedBySomebody': 'أُقفلت في {at}',
+  'calendar.period.actions': 'الإجراءات',
+
+  'calendar.close.action': 'إقفال الفترة',
+  'calendar.close.title': 'إقفال الفترة',
+  'calendar.close.message':
+    'يُرفض من الآن كل قيد بتاريخ بين {from} و{to}. ما يصل متأخرًا من صندوق كان دون اتصال يُحوَّل إلى القيود المعلّقة بدل أن يُقيَّد.',
+  'calendar.close.submit': 'إقفال',
+  'calendar.closed': 'أُقفلت الفترة {ordinal, number}.',
+
+  'calendar.reopen.action': 'إعادة فتح الفترة',
+  'calendar.reopen.title': 'إعادة فتح فترة مقفلة',
+  'calendar.reopen.description':
+    'يُسمح بهذا لأن البديل أسوأ: قيدٌ مكانه شهر مقفل سيُؤرَّخ في شهر مفتوح، وبيعٌ سُجِّل في غير شهره تشويهٌ لا يراه أحد — أما إعادة الفتح فيراها كل من يقرأ السجل.',
+  'calendar.reopen.reason': 'سبب إعادة الفتح',
+  'calendar.reopen.reason.description': 'يُسجَّل باسمك، ويقرؤه كل من يراجع الدفاتر لاحقًا.',
+  'calendar.reopen.reason.required': 'اكتب سبب إعادة الفتح.',
+  'calendar.reopen.submit': 'إعادة الفتح',
+  'calendar.reopened': 'أُعيد فتح الفترة {ordinal, number}.',
+
+  'calendar.reopenings': 'سجل إعادة الفتح',
+  'calendar.reopenings.empty': 'لم يُعَد فتح أي فترة في هذه السنة.',
+  'calendar.reopening.line': 'الفترة {ordinal, number}: أُقفلت في {closedAt}، وأُعيد فتحها في {at}',
+  /**
+   * The same line for a period the year no longer has. Redefining a year
+   * replaces its periods, and one that was reopened may be redefined away —
+   * the act stays in the log, and says plainly that the period it names is
+   * gone rather than naming an ordinal nobody can find.
+   */
+  'calendar.reopening.line.redefined':
+    'فترة من تعريف سابق للسنة: أُقفلت في {closedAt}، وأُعيد فتحها في {at}',
+  'calendar.reopening.by': 'أعادها {user}',
+
+  'calendar.append.action': 'إضافة سنة مالية',
+  'calendar.append.title': 'إضافة السنة المالية التالية',
+  'calendar.append.description':
+    'تبدأ في {from} — اليوم التالي لآخر يوم يصل إليه التقويم، لأن يومًا بين سنتين لا ينتمي إلى أي فترة.',
+  'calendar.append.submit': 'إضافة',
+  'calendar.appended': 'أُضيفت السنة المالية {label}.',
+
+  'calendar.redefine.action': 'إعادة تعريف السنة',
+  'calendar.redefine.title': 'إعادة تعريف السنة المالية',
+  'calendar.redefine.description':
+    'للمتجر الذي تبدأ سنته في نيسان، وللسنة التي أُضيفت بشكل خاطئ. لا يجوز بعد أول قيد فيها ولا بعد إقفال أي من فتراتها.',
+  'calendar.redefine.opensOn': 'يوم بداية السنة',
+  'calendar.redefine.opensOn.required': 'أدخل يوم بداية السنة.',
+  'calendar.redefine.submit': 'حفظ التعريف',
+  'calendar.redefined': 'أُعيد تعريف السنة المالية {label}.',
+
+  'calendar.shape.months': 'طول السنة',
+  'calendar.shape.months.value': '{months, number} شهرًا',
+  'calendar.shape.months.description': 'اثنا عشر شهرًا، إلا لمتجر ينقل نهاية سنته.',
+  'calendar.shape.monthsPerPeriod': 'طول الفترة',
+  'calendar.shape.monthsPerPeriod.value':
+    '{months, plural, =1 {شهرية — كل شهر} =3 {ربعية — كل ثلاثة أشهر} =6 {نصف سنوية — كل ستة أشهر} =12 {سنوية — فترة واحدة} two {كل شهرين} few {كل # أشهر} many {كل # شهرًا} other {كل # شهر}}',
+  'calendar.shape.monthsPerPeriod.description': 'عدد أشهر يقسم السنة بلا باقٍ.',
+  'calendar.shape.periods': 'ينتج عن ذلك {periods, number} فترة.',
 } as const;
 
 export type MessageKey = keyof typeof catalogue;
@@ -1180,6 +1460,21 @@ export function nameOfPermission(translator: Translator, right: string): string 
 }
 
 /**
+ * The purpose an account is reserved for, as a person would say it.
+ *
+ * Through a key of its own rather than through an ICU `select` inside the
+ * refusal, and that is not a preference: `ReservedAccount` spells two of its
+ * nine with hyphens (`fx-gain-loss`, `opening-equity`), and an ICU selector is
+ * an identifier — a branch named with a hyphen is not something the parser can
+ * read, so **the whole message throws** rather than choosing the wrong branch.
+ * It did, and nothing said so until every message in this file was parsed.
+ */
+export function nameOfReservedAccount(translator: Translator, reserved: string): string {
+  const key = `account.reserved.${reserved}`;
+  return translator.has(key) ? translator.format(key) : translator.format('data.unknown');
+}
+
+/**
  * Whether the catalogue can answer for a refusal.
  *
  * A refusal this screen has never been told about is a real possibility — the
@@ -1195,9 +1490,15 @@ export function messageForRefusal(translator: Translator, refused: Refusal): str
   // when the refusal is that no such right exists, and the identifier is all
   // there is to say.
   const named = typeof right === 'string' && refused.code !== 'sec.right-undeclared';
+  // The same for the purpose an account is reserved for, and for the same
+  // reason: `inventory` is what the ledger calls it, not what a shopkeeper does.
+  const reserved = refused.values['reserved'];
   return translator.format(key, {
     ...formattable(refused.values),
     ...(named ? { right: nameOfPermission(translator, right) } : {}),
+    ...(typeof reserved === 'string'
+      ? { reserved: nameOfReservedAccount(translator, reserved) }
+      : {}),
   });
 }
 

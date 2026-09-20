@@ -95,11 +95,24 @@ export {
 
 export { Money, type MoneyProps } from './display/Money.js';
 export { Quantity, type QuantityProps } from './display/Quantity.js';
-export { DateTime, type DateTimeProps } from './display/DateTime.js';
+export {
+  DateTime,
+  type DateTimeProps,
+  type DayProps,
+  type MomentProps,
+} from './display/DateTime.js';
 export { CurrencyRate, type CurrencyRateProps } from './display/CurrencyRate.js';
 export { UnitLabel, type UnitLabelProps } from './display/UnitLabel.js';
 export { Code, type CodeProps } from './display/Code.js';
-export { decimalPlacesOf, formatExact, type FormattedFigure } from './display/format.js';
+export {
+  decimalPlacesOf,
+  formatDay,
+  formatExact,
+  formatMoment,
+  type FormattedFigure,
+  type MomentFormat,
+  type MomentPrecision,
+} from './display/format.js';
 
 export { Button, IconButton, type ButtonProps, type IconButtonProps } from './components/Button.js';
 export { TextInput, type TextInputProps } from './components/TextInput.js';
@@ -111,6 +124,7 @@ export { Badge, type BadgeProps, type BadgeTone } from './components/Badge.js';
 export { type Tone } from './components/styles.js';
 
 export { Select, type SelectOption, type SelectProps } from './components/Select.js';
+export { DateInput, type DateInputProps } from './components/DateInput.js';
 export {
   FormatBuilder,
   type FormatBuilderMark,
@@ -137,6 +151,8 @@ export {
   type TableRowActionsProps,
 } from './components/DataTable.js';
 export { EmptyState, type EmptyStateProps } from './components/EmptyState.js';
+export { TreeView, type TreeNode, type TreeViewProps } from './components/TreeView.js';
+export { Tabs, type TabDefinition, type TabsProps } from './components/Tabs.js';
 export { Banner, type BannerProps, type BannerTone } from './components/Banner.js';
 export {
   ToastRegion,

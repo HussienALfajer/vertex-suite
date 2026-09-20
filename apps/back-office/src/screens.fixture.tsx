@@ -97,7 +97,7 @@ export async function enrolUser(shop: OpenShop, person: NewPerson): Promise<void
 }
 
 /**
- * Picks an option out of a `Select`.
+ * The control that opens a `Select`.
  *
  * Found through the trigger's **label element** rather than through its
  * accessible name, because React Aria composes that name as the current value
@@ -108,21 +108,44 @@ export async function enrolUser(shop: OpenShop, person: NewPerson): Promise<void
  * `within` narrows the search to one part of the page — a dialog, whose
  * branch field shares its label with the chooser on the screen behind it.
  */
-export async function chooseOption(
-  shop: OpenShop,
-  label: string,
-  option: string,
-  within: ParentNode = globalThis.document,
-): Promise<void> {
+export function selectNamed(label: string, within: ParentNode = globalThis.document): HTMLElement {
   const trigger = [...within.querySelectorAll('button[aria-labelledby]')].find((candidate) =>
     (candidate.getAttribute('aria-labelledby') ?? '')
       .split(/\s+/)
       .some((id) => globalThis.document.getElementById(id)?.textContent.trim() === label),
   );
   if (trigger === undefined) throw new Error(`No select is labelled "${label}".`);
+  return trigger as HTMLElement;
+}
 
-  await shop.person.click(trigger);
+/** Picks an option out of a `Select`. */
+export async function chooseOption(
+  shop: OpenShop,
+  label: string,
+  option: string,
+  within: ParentNode = globalThis.document,
+): Promise<void> {
+  await shop.person.click(selectNamed(label, within));
   await shop.person.click(await screen.findByRole('option', { name: option }));
+}
+
+/**
+ * Opens a `Select` and reads what it offers.
+ *
+ * For the tests about a chooser that has been **narrowed** — where what is not
+ * on the list is the claim, and a refusal made unreachable is worth more than a
+ * refusal explained.
+ */
+export async function optionsOf(
+  shop: OpenShop,
+  label: string,
+  within: ParentNode = globalThis.document,
+): Promise<readonly string[]> {
+  await shop.person.click(selectNamed(label, within));
+  const listbox = await screen.findByRole('listbox');
+  return [...listbox.querySelectorAll('[role="option"]')].map((option) =>
+    option.textContent.trim(),
+  );
 }
 
 /** Moves to another screen from the frame's own navigation. */

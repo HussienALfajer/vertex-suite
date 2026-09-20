@@ -598,6 +598,60 @@ export function RestoreIcon(): ReactNode {
   );
 }
 
+/**
+ * A book closing on its own page: the month's postings ended (`FIN-05`).
+ *
+ * A padlock was the obvious mark and is the wrong one — a closed period is not
+ * a security state, and a shop that reads it as one will look for the person
+ * who locked them out rather than for the accountant who finished the month.
+ */
+export function CloseYearIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <path d="M10 5.5v10" strokeLinecap="round" />
+      <path d="M10 5.5C8.5 4.2 6.5 3.8 4 4v9.5c2.5-.2 4.5.2 6 1.5" strokeLinejoin="round" />
+      <path d="M10 5.5c1.5-1.3 3.5-1.7 6-1.5v6" strokeLinejoin="round" />
+      <path d="M12.5 15.5l2 2 3.5-4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** The same book, with the arrow that turns an act back — the one act that is logged. */
+export function ReopenYearIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <path d="M10 5.5v10" strokeLinecap="round" />
+      <path d="M10 5.5C8.5 4.2 6.5 3.8 4 4v9.5c2.5-.2 4.5.2 6 1.5" strokeLinejoin="round" />
+      <path d="M10 5.5c1.5-1.3 3.5-1.7 6-1.5v4" strokeLinejoin="round" />
+      <path
+        d="M17.5 16a3 3 0 10-1-2.3M16.5 11.5v2.2h-2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * A node lifted out of one branch and set under another: what moving an
+ * account in a tree is (`FIN-01`).
+ *
+ * It depicts a hierarchy rather than a direction — the four-headed cross that
+ * usually means "move" is a **drag** handle, and there is no drag here (§11.1:
+ * a pointer-only control is a defect) — so §9 leaves it unmirrored.
+ */
+export function MoveIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <circle cx="5" cy="4.5" r="1.75" />
+      <circle cx="15" cy="10" r="1.75" />
+      <circle cx="5" cy="15.5" r="1.75" />
+      <path d="M5 6.25v7.5M6.75 4.5h3.75a2.75 2.75 0 012.75 2.75v1.1" strokeLinecap="round" />
+      <path d="M13.25 11.65v1.1a2.75 2.75 0 01-2.75 2.75H6.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** A list inside a frame: where a row leads, without pointing anywhere. */
 export function OpenListIcon(): ReactNode {
   return (

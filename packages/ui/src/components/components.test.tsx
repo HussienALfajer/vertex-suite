@@ -18,6 +18,7 @@ import { Page, PageHeader } from './Page.js';
 import { Panel } from './Panel.js';
 import { SearchInput } from './SearchInput.js';
 import { ToastRegion, useToast } from './Toast.js';
+import { Tabs } from './Tabs.js';
 import { TextInput } from './TextInput.js';
 
 afterEach(cleanup);
@@ -599,5 +600,59 @@ describe('<SearchInput>', () => {
     wrap(<SearchInput label="بحث" />);
     expect(screen.getByRole('searchbox').getAttribute('aria-label')).toBeNull();
     expect(screen.getByRole('searchbox', { name: 'بحث' })).toBeDefined();
+  });
+});
+
+describe('<Tabs>', () => {
+  const YEARS = [
+    { id: '2025', label: '٢٠٢٥', content: <p>فترات ٢٠٢٥</p> },
+    { id: '2026', label: '٢٠٢٦', content: <p>فترات ٢٠٢٦</p> },
+    { id: '2027', label: '٢٠٢٧', content: <p>فترات ٢٠٢٧</p> },
+  ];
+
+  const YEARS_LABEL = 'السنوات المالية';
+
+  it('shows one panel at a time, and only that one is in the page', () => {
+    wrap(<Tabs label={YEARS_LABEL} tabs={YEARS} defaultSelectedKey="2026" />);
+
+    expect(screen.getByText('فترات ٢٠٢٦')).toBeDefined();
+    // Hidden-but-present would put the controls of every year into the tab
+    // order of a page that is showing one.
+    expect(screen.queryByText('فترات ٢٠٢٥')).toBeNull();
+  });
+
+  it('is one tab stop for the strip, with the arrows choosing inside it — §11.1', async () => {
+    const person = userEvent.setup();
+    wrap(<Tabs label={YEARS_LABEL} tabs={YEARS} defaultSelectedKey="2025" />);
+
+    await person.tab();
+    expect(document.activeElement?.textContent).toBe('٢٠٢٥');
+
+    // `←` runs **with** the text where the document is right to left, which
+    // React Aria reads off the locale rather than being told (§9). Going the
+    // other way from the first tab wraps round to the last, which is what
+    // keeps a strip of ten years reachable without counting presses.
+    await person.keyboard('{ArrowLeft}');
+    expect(screen.getByText('فترات ٢٠٢٦')).toBeDefined();
+
+    await person.keyboard('{ArrowRight}');
+    await person.keyboard('{ArrowRight}');
+    expect(screen.getByText('فترات ٢٠٢٧')).toBeDefined();
+  });
+
+  it('says what the strip chooses between, for somebody listening', () => {
+    wrap(<Tabs label={YEARS_LABEL} tabs={YEARS} defaultSelectedKey="2026" />);
+
+    expect(screen.getByRole('tablist', { name: YEARS_LABEL })).toBeDefined();
+  });
+
+  it('marks the tab that is on by more than its colour — §4.6', () => {
+    wrap(<Tabs label={YEARS_LABEL} tabs={YEARS} defaultSelectedKey="2026" />);
+
+    // A rule under it and heavier ink, not a shade of grey: colour alone would
+    // be the only cue for a reader who cannot separate the two.
+    const on = screen.getByRole('tab', { selected: true });
+    expect(on.className).toContain('data-[selected]:border-b-2');
+    expect(on.className).toContain('data-[selected]:font-body-semibold');
   });
 });

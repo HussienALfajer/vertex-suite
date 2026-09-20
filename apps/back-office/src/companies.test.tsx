@@ -32,15 +32,10 @@ function shopWhere(
   change: (system: SystemOfRecord) => SystemOfRecord['organisation'],
 ): SystemOfRecord {
   const real = developmentSystem({ people: PEOPLE });
-  return {
-    signIn: real.signIn.bind(real),
-    changeOwnPassword: real.changeOwnPassword.bind(real),
-    signOut: real.signOut.bind(real),
-    organisation: change(real),
-    users: real.users,
-    currencies: real.currencies,
-    rates: real.rates,
-  };
+  // Spread rather than member by member: every port but the one under test is
+  // the real system's, and the list of them is not this test's business — it
+  // once had to be edited in four files the day the port grew.
+  return { ...real, organisation: change(real) };
 }
 
 describe('Companies — SYS-09', () => {
