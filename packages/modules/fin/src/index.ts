@@ -4,6 +4,7 @@ import {
   defineModule,
   provideContract,
   subscribeTo,
+  untilCommitted,
   type CommandContext,
   type ModuleContext,
   type ModuleDefinition,
@@ -97,11 +98,21 @@ export function finModule<Session extends RecordSession>(): ModuleDefinition<Ses
       // module's own under the same context — the same tenant, the same
       // correlation — so that the account and the currency it is for can be
       // read as one act by anyone asking later what happened.
+      //
+      // Run until it commits. On a shop's first morning the currencies are
+      // seeded while the chart is, and a currency announced in that window
+      // races the seed for the same records: whichever commits second is
+      // refused. The seed's caller runs the seed again; nothing would ever
+      // run this again, and a currency the ledger never heard of is a till
+      // that takes money the books have nowhere to put. Opening the account
+      // is idempotent, so a second attempt costs nothing but the attempt.
       subscribeTo(CurrencyDefined, (event, context: ModuleContext<Session>) =>
-        context.transactor.run(event.context, (uow) => {
-          ensureCashAccount(uow.session, event.context.tenant, event.payload.currency.code);
-          return Promise.resolve();
-        }),
+        untilCommitted(() =>
+          context.transactor.run(event.context, (uow) => {
+            ensureCashAccount(uow.session, event.context.tenant, event.payload.currency.code);
+            return Promise.resolve();
+          }),
+        ),
       ),
     ],
     provides: [

@@ -511,6 +511,18 @@ describe('Chart of accounts — FIN-01', () => {
     );
   });
 
+  it('opens the account even when its first attempt loses a race, as it can on a shop’s first morning', async () => {
+    taken(await fin.admin.seed(fin.system));
+
+    // The subscriber's transaction is refused once — the store changed under
+    // it — and nothing but the subscriber itself would ever run it again.
+    await fin.defineCurrency('AED', { raced: true });
+
+    const cash = reserved(await fin.chart.accounts(fin.by), 'cash');
+    expect(cash.map((one) => one.currency)).toEqual(['EUR', 'SYP', 'TRY', 'USD', 'AED']);
+    expect(cash.filter((one) => one.currency === 'AED')).toHaveLength(1);
+  });
+
   it('leaves a currency announced before the chart exists to the seed', async () => {
     // FX seeded first, FIN after — the order an edition activates them in.
     await fin.defineCurrency('AED');

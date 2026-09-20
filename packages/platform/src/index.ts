@@ -79,6 +79,7 @@ export {
   type Transactor,
   type TransactorOptions,
   type UnitOfWork,
+  untilCommitted,
 } from './unit-of-work.js';
 
 export {

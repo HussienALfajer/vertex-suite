@@ -249,6 +249,37 @@ export function createTransactor<Session>(
 }
 
 /**
+ * Runs a command again when the store refused it for having lost a race, a
+ * bounded number of times.
+ *
+ * `SerialisationConflictError` is neither a refusal nor a defect: nothing was
+ * written, and the same command run again decides on the current state
+ * (`SessionDriver`). What it needs is to be run again, and the one thing that
+ * has to be true of the command is the thing every command in this system is
+ * already held to — that it reads and then writes, so a second run sees what
+ * the first did not. A subscriber opening an account for a currency that was
+ * announced while the chart was being seeded is exactly such a command, and
+ * one that nothing else would ever run again.
+ *
+ * Bounded, because a command that loses every race is a command that is
+ * being raced by something that never stops, and that is worth hearing about
+ * rather than hiding behind an unbounded loop. Any other failure is thrown at
+ * once: a refusal is a value and a defect is not made better by a second try.
+ */
+export async function untilCommitted<T>(attempt: () => Promise<T>, attempts = 5): Promise<T> {
+  if (!Number.isInteger(attempts) || attempts < 1) {
+    throw new RangeError('A command is attempted at least once.');
+  }
+  for (let remaining = attempts; ; remaining -= 1) {
+    try {
+      return await attempt();
+    } catch (cause) {
+      if (remaining <= 1 || !(cause instanceof SerialisationConflictError)) throw cause;
+    }
+  }
+}
+
+/**
  * A transactional store held in memory.
  *
  * Not a toy: it is what a module's own tests run against before any driver

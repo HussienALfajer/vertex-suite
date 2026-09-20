@@ -8,8 +8,8 @@ import {
   createTransactor,
   defineModule,
   provideContract,
-  SerialisationConflictError,
   systemContext,
+  untilCommitted,
   type Authoriser,
   type CommandContext,
   type MemorySession,
@@ -290,22 +290,12 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     device as NonNullable<Register['heldBy']>;
 
   /**
-   * A seed's step, run again when it lost a race. `SerialisationConflictError`
-   * is not a refusal and not a defect — the command would succeed if run
-   * again (`@vertex/platform`). The demo's seed and the currencies' seed start
-   * from the same first render and commit through the same store, so either
-   * can be the one that finds the store changed under it. A handful of
-   * attempts is plenty for a race against one other seed.
+   * A seed's step, run again when it lost a race. The demo's seed and the
+   * currencies' seed start from the same first render and commit through the
+   * same store, so either can be the one that finds the store changed under
+   * it; the platform's bounded retry is what runs it again.
    */
-  async function retrying<T>(attempt: () => Promise<T>): Promise<T> {
-    for (let attempts = 5; ; attempts--) {
-      try {
-        return await attempt();
-      } catch (cause) {
-        if (attempts <= 1 || !(cause instanceof SerialisationConflictError)) throw cause;
-      }
-    }
-  }
+  const retrying = <T>(attempt: () => Promise<T>): Promise<T> => untilCommitted(attempt);
 
   const demo = options.demo === true;
 

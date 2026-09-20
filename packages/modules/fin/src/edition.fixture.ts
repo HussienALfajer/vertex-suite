@@ -20,6 +20,7 @@ import {
   type MemoryStore,
   type ModuleDefinition,
   type Registry,
+  type SessionDriver,
 } from '@vertex/platform';
 import {
   Currencies,
@@ -82,8 +83,16 @@ export interface Installed {
    * `FX`'s `define` or `seed`, as `FIN` sees it: a currency exists, and the
    * event that says so is delivered after the commit, exactly as the real
    * module delivers it through the unit of work.
+   *
+   * `raced` makes the command that hears the event lose a race, once: another
+   * command commits a change to the store between the subscriber's transaction
+   * beginning and its commit, which is what a chart seed running on the same
+   * first morning does — and what the serialising store then refuses.
    */
-  defineCurrency(code: CurrencyCode, options?: { readonly tenant?: Id<'tenant'> }): Promise<void>;
+  defineCurrency(
+    code: CurrencyCode,
+    options?: { readonly tenant?: Id<'tenant'>; readonly raced?: boolean },
+  ): Promise<void>;
   /** `FX`'s `disable`, as `FIN` sees it: the currency is still there, and no longer taken. */
   withdrawCurrency(code: CurrencyCode): void;
   /** `FX` for a tenant that has no currencies at all. */
@@ -257,8 +266,27 @@ export function installFin(): Installed {
     },
   });
   const store = createMemoryStore();
+
+  // How many of the transactions that begin next are made to lose: another
+  // transaction commits a fresh key between their `begin` and their commit,
+  // so a transaction that scans the store is refused at its commit.
+  let racesToLose = 0;
+  const driver: SessionDriver<MemorySession> = {
+    async begin(context) {
+      const session = await store.driver.begin(context);
+      if (racesToLose > 0) {
+        racesToLose -= 1;
+        const other = await store.driver.begin(context);
+        other.put(`fixture/race/${String(racesToLose)}`, { lost: true });
+        await store.driver.commit(other);
+      }
+      return session;
+    },
+    commit: (session) => store.driver.commit(session),
+    rollback: (session) => store.driver.rollback(session),
+  };
   const transactor = createTransactor({
-    driver: store.driver,
+    driver,
     bus,
     clock,
     onEffectFailure: (failure) => {
@@ -319,6 +347,9 @@ export function installFin(): Installed {
       // command of its own after it.
       await transactor.run(systemContext(of), (uow) => {
         uow.publish(CurrencyDefined, { currency });
+        // Armed inside this transaction, so that the next one to begin — the
+        // subscriber's, after this commit — is the one that loses.
+        if (options.raced === true) racesToLose = 1;
         return Promise.resolve();
       });
     },
