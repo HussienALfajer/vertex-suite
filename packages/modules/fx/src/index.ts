@@ -35,6 +35,7 @@ import {
   RateStamps,
   ROUNDING_ACCOUNT,
   RoundingRules,
+  type BranchDay,
   type CurrencyRefusal,
   type CurrencyRevision,
   type Listing,
@@ -69,7 +70,13 @@ import {
   suggestRate,
   type Recording,
 } from './rates.js';
-import { presentAtMid, presentAtStamp, settleAmount, valueDocument } from './rounding.js';
+import {
+  presentAllAtMid,
+  presentAtMid,
+  presentAtStamp,
+  settleAmount,
+  valueDocument,
+} from './rounding.js';
 import { directionOf, overridesOn, prepareStamp, stampIn, writeStamp } from './stamps.js';
 
 export * from './contract.js';
@@ -294,23 +301,42 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
         const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
           context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
 
+        /**
+         * Where and when a figure is being read: the branch whose board is
+         * asked, on its own day.
+         *
+         * Reading, not trading: a withdrawn branch's figures are its history,
+         * and history stays readable (`SYS-09`) — the same answer
+         * `ExchangeRates.board` gives for the same reason.
+         */
+        const asking = async (
+          by: CommandContext,
+          id: BranchId,
+        ): Promise<Result<BranchDay, RateRefusal>> => {
+          const here = await today(by, id, 'reading');
+          if (!here.ok) return here;
+          return ok({ branch: id, day: here.value.day, device: machineOf(by) });
+        };
+
         return {
           present: async (by: CommandContext, id: BranchId, amount: Money, into: CurrencyCode) => {
-            // Reading, not trading: a withdrawn branch's figures are its
-            // history, and history stays readable (`SYS-09`) — the same answer
-            // `ExchangeRates.board` gives for the same reason.
-            const here = await today(by, id, 'reading');
+            const here = await asking(by, id);
             if (!here.ok) return here;
-            const { day } = here.value;
-
             return read(by, (session) =>
-              presentAtMid(
-                session,
-                by.tenant,
-                { branch: id, day, device: machineOf(by) },
-                amount,
-                into,
-              ),
+              presentAtMid(session, by.tenant, here.value, amount, into),
+            );
+          },
+
+          presentAll: async (
+            by: CommandContext,
+            id: BranchId,
+            amounts: readonly Money[],
+            into: CurrencyCode,
+          ) => {
+            const here = await asking(by, id);
+            if (!here.ok) return here;
+            return read(by, (session) =>
+              presentAllAtMid(session, by.tenant, here.value, amounts, into),
             );
           },
 

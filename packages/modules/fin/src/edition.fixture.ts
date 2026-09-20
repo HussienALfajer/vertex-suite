@@ -44,11 +44,14 @@ import {
   Currencies,
   CurrencyDefined,
   FX_PERMISSIONS,
+  Presentation,
+  RATE_DECIMALS,
   RateStamps,
   ROUNDING_ACCOUNT,
   RoundingRules,
   type DocumentValue,
   type PreparedStamp,
+  type PresentedAll,
   type RateOverride,
   type RateRefusal,
   type RateSide,
@@ -79,6 +82,7 @@ import {
   PostingEngine,
   PostingExceptionAdministration,
   PostingExceptions,
+  Statements,
   type AttachmentStore,
   type EntryDraft,
   type Posted,
@@ -132,6 +136,7 @@ export interface Installed {
   readonly journalAdmin: JournalAdministration;
   readonly exceptions: PostingExceptions;
   readonly exceptionsAdmin: PostingExceptionAdministration;
+  readonly statements: Statements;
   /** The shop's time. Noon in Damascus on 20 September 2026, which is 09:00 UTC. */
   readonly clock: ManualClock;
   readonly tenant: Id<'tenant'>;
@@ -627,6 +632,90 @@ function valueStandIn(
 }
 
 /**
+ * `FX-03`, reduced to what `FIN-07` relies on from it: a page of figures shown
+ * at one rate, that rate being the exact middle of the branch's board today.
+ *
+ * The branch is read in the caller's tenant and a withdrawn one still answers
+ * — reading is not trading, and a closed shop's figures are its history
+ * (`SYS-09`). Every figure on the page is held to one currency, as the real
+ * module holds it, because a statement translated at one rate is a statement
+ * in one unit.
+ */
+function presentAllStandIn(
+  context: ModuleContext<MemorySession>,
+  branches: Branches,
+  boards: Boards,
+  held: Map<TenantId, TenantCurrency[]>,
+  functional: Functional,
+): (
+  by: CommandContext,
+  branch: BranchId,
+  amounts: readonly Money[],
+  into: CurrencyCode,
+) => Promise<Result<PresentedAll, RateRefusal>> {
+  return (by, id, amounts, into) => {
+    const first = amounts[0];
+    if (first === undefined) return Promise.resolve(ok({ amounts: [], rate: null }));
+    for (const amount of amounts) {
+      if (amount.currency !== first.currency) {
+        throw new Error('One rate converts one currency.');
+      }
+    }
+    const currencies = held.get(by.tenant) ?? [];
+    const target = currencies.find((one) => one.code === into);
+    if (target === undefined)
+      return Promise.resolve(refuse('fx.currency-not-found', { currency: into }));
+    if (!target.enabled) return Promise.resolve(refuse('fx.currency-disabled', { currency: into }));
+    const books = functional.get(by.tenant);
+    if (books === undefined || books === null) {
+      return Promise.resolve(refuse('fx.functional-currency-unset'));
+    }
+    if (first.currency !== books) {
+      return Promise.resolve(
+        refuse('fx.cross-rate-unsupported', { from: first.currency, into, functional: books }),
+      );
+    }
+    if (into === books) {
+      return Promise.resolve(ok({ amounts: [...amounts], rate: null }));
+    }
+
+    const branch = branches.get(id);
+    if (branch?.tenant !== by.tenant) {
+      return Promise.resolve(refuse('fx.branch-not-found', { branch: id }));
+    }
+    const day = localDateOf(context.clock.now(), branch.timeZone);
+    const board = boards.get(boardKey(by.tenant, branch.id, into));
+    if (board === undefined) {
+      return Promise.resolve(refuse('fx.rate-missing', { branch: branch.id, currency: into, day }));
+    }
+    // The exact middle of the board, carried to the places a rate is kept and
+    // applied to every figure: the real module's `presentAtMid`, reduced.
+    const rate = new Dec(board.buy)
+      .plus(new Dec(board.sell))
+      .dividedBy(2)
+      .toDecimalPlaces(RATE_DECIMALS, Dec.ROUND_HALF_EVEN)
+      .toFixed();
+    return Promise.resolve(
+      ok({
+        amounts: amounts.map((amount) =>
+          money(amount.amount.times(new Dec(rate)).toDecimalPlaces(target.decimals), into),
+        ),
+        rate: Object.freeze({
+          currency: into,
+          functional: books,
+          rate,
+          basis: 'mid' as const,
+          side: null,
+          day,
+          revision: board.revision,
+          lastKnown: null,
+        }),
+      }),
+    );
+  };
+}
+
+/**
  * `FX`, stood in for: the currencies of each tenant, the one the books are
  * kept in, the announcement of a new currency, the stamping and valuing of an
  * amount in another currency, and the one account role the real module
@@ -700,6 +789,13 @@ function currenciesStandIn(
       provideContract(RoundingRules, () => ({
         settle: () => unasked('FX', 'to settle an amount'),
         value: valueStandIn(held),
+      })),
+      provideContract(Presentation, (context: ModuleContext<MemorySession>) => ({
+        // `FIN-07` reads a page of figures and never one: a statement shows
+        // one rate, so it asks for one.
+        present: () => unasked('FX', 'to show one figure in another currency'),
+        presentStamped: () => unasked('FX', 'to show a figure at a document’s own rate'),
+        presentAll: presentAllStandIn(context, branches, boards, held, functional),
       })),
     ],
   });
@@ -915,6 +1011,7 @@ export function installFin(): Installed {
     journalAdmin: registry.require(JournalAdministration),
     exceptions: registry.require(PostingExceptions),
     exceptionsAdmin: registry.require(PostingExceptionAdministration),
+    statements: registry.require(Statements),
     clock,
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),

@@ -999,6 +999,20 @@ export interface Presented {
 }
 
 /**
+ * A page of figures in the currency somebody asked to read them in, and the
+ * one rate every one of them got there by.
+ *
+ * `amounts` comes back in the order it went in and the same length, so a
+ * caller that assembled the page can put the figures back where it took them
+ * from. `rate` is null on the same terms as `Presented`'s, and for an empty
+ * page — nothing was converted, so no rate was read.
+ */
+export interface PresentedAll {
+  readonly amounts: readonly Money[];
+  readonly rate: PresentationRate | null;
+}
+
+/**
  * Showing a figure in another currency (`FX-03`).
  *
  * Presentation and nothing else: what comes out is for a screen, a report or a
@@ -1025,6 +1039,37 @@ export interface Presentation {
     amount: Money,
     into: CurrencyCode,
   ): Rated<Presented>;
+
+  /**
+   * Shows a page of figures at today's rate in this branch, reading that rate
+   * **once**.
+   *
+   * A statement is not a figure: it is a page of them, and `FX-03` shows one
+   * rate beside the page rather than one beside every line. Converting them one
+   * at a time would read the board once per figure — and would leave nothing
+   * saying that the figure and the total above it went through the same rate.
+   * Here they did, structurally, because there is only one.
+   *
+   * That is also what carries a statement's own arithmetic across the
+   * conversion. Two figures equal in the books convert to two equal figures, so
+   * every identity the ledger guarantees — debits against credits, assets
+   * against what funds them — holds in the currency it is read in exactly as it
+   * holds in the currency it is kept in. What does not survive is addition: a
+   * column of converted figures can differ from its converted total by the
+   * rounding of each, which is a property of reading one unit in another and
+   * not of the books.
+   *
+   * Every figure must be in one currency, which is the currency the rate is
+   * read for. A page in two currencies is one rate applied to two units, and
+   * raises rather than refusing: whoever assembled the page holds every figure
+   * on it, so that is a defect in the assembling and not a fact about the shop.
+   */
+  presentAll(
+    by: CommandContext,
+    branch: BranchId,
+    amounts: readonly Money[],
+    into: CurrencyCode,
+  ): Rated<PresentedAll>;
 
   /**
    * Shows a document's figure at the document's own rate.
