@@ -23,7 +23,7 @@ const ROOT = process.cwd();
  * here at the moment you believe it is done — `pnpm check:coverage` then tells
  * you immediately whether that is true.
  */
-export const DELIVERED = ['U01', 'U02', 'U03', 'U04', 'U05'];
+export const DELIVERED = ['U01', 'U02', 'U03', 'U04', 'U05', 'U06'];
 
 export const MODULES = [
   'SYS',

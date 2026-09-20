@@ -1599,7 +1599,7 @@ export const catalogue = {
   'journal.reverse.reason.description':
     'إلزامي: تصحيح لا يستطيع أحد تفسيره بعد شهر هو خطأ يضطر المدقّق إلى افتراضه.',
   'journal.reverse.reason.required': 'اكتب سبب العكس.',
-  'journal.reverse.submit': 'عكس القيد',
+  'journal.reverse.submit': 'إنشاء القيد العكسي',
   'journal.reversed': 'أُنشئ القيد العكسي {number}.',
 
   'manualEntry.title': 'قيد يدوي',
