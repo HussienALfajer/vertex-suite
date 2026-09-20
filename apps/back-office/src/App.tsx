@@ -6,6 +6,7 @@ import { CalendarProvider } from './calendar.js';
 import { createTranslator } from './catalogue.js';
 import { ChartProvider } from './chart.js';
 import { CurrenciesProvider } from './currencies.js';
+import { LedgerProvider } from './ledger.js';
 import { OrganisationProvider } from './organisation.js';
 import { RatesProvider } from './rates.js';
 import { navigate } from './routing.js';
@@ -86,7 +87,9 @@ function Screen({
           <RatesProvider system={system}>
             <ChartProvider system={system}>
               <CalendarProvider system={system}>
-                <Shell themeSwitch={themeSwitch} />
+                <LedgerProvider system={system}>
+                  <Shell themeSwitch={themeSwitch} />
+                </LedgerProvider>
               </CalendarProvider>
             </ChartProvider>
           </RatesProvider>

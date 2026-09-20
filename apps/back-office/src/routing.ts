@@ -36,6 +36,11 @@ const ROUTES = [
   'rates',
   'chart',
   'fiscal-calendar',
+  'journal',
+  'manual-entry',
+  'opening-balances',
+  'posting-exceptions',
+  'statements',
 ] as const;
 
 export type RouteName = (typeof ROUTES)[number];

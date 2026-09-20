@@ -21,6 +21,11 @@ import {
   ChartOfAccounts,
   FiscalCalendar,
   FiscalCalendarAdministration,
+  Journal,
+  JournalAdministration,
+  PostingExceptionAdministration,
+  PostingExceptions,
+  Statements,
   finModule,
   type AttachmentStore,
 } from '@vertex/fin';
@@ -55,9 +60,12 @@ import type {
   ChartOfRecord,
   CurrenciesOfRecord,
   DeclaredRight,
+  JournalOfRecord,
   OrganisationOfRecord,
+  PostingExceptionsOfRecord,
   RatesOfRecord,
   SignInAttempt,
+  StatementsOfRecord,
   SystemOfRecord,
   UsersOfRecord,
 } from './system.js';
@@ -234,9 +242,10 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
    * where files live is a fact about the installation, not about the ledger
    * (`AttachmentStore`) — so it is answered before the module composes rather
    * than when a screen first needs it. A `Map` is the honest answer for a
-   * browser: `FIN-04`'s manual entry is `U06.7`'s screen, and until it exists
-   * nothing here puts a byte in. Copied on the way in and on the way out, so
-   * a caller cannot reach back into what it handed over.
+   * browser: the evidence an accountant attaches to a manual entry (`FIN-04`)
+   * lives as long as the tab does, which is exactly as long as the shop this
+   * file stands in for does. Copied on the way in and on the way out, so a
+   * caller cannot reach back into what it handed over.
    */
   const attachmentBytes = new Map<string, Uint8Array>();
   const attachments: AttachmentStore = {
@@ -299,6 +308,11 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const chartAdmin = registry.require(ChartAdministration);
   const calendarRead = registry.require(FiscalCalendar);
   const calendarAdmin = registry.require(FiscalCalendarAdministration);
+  const journalRead = registry.require(Journal);
+  const journalAdmin = registry.require(JournalAdministration);
+  const exceptionsRead = registry.require(PostingExceptions);
+  const exceptionsAdmin = registry.require(PostingExceptionAdministration);
+  const statementsRead = registry.require(Statements);
 
   /**
    * Who is asking, which is the transport's business and not a screen's.
@@ -686,6 +700,79 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     reopen: async (period, reason) => {
       await ensureLedgerSeeded();
       return calendarAdmin.reopen(by(), period, reason);
+    },
+  };
+
+  /**
+   * The journal, the exceptions queue and the statements, over the real `FIN`.
+   *
+   * Each waits on the same seed the chart and the calendar wait on, for the
+   * same reason: an entry is posted into an accounting period and onto an
+   * account, and a screen that asked before either existed would be told the
+   * books have no calendar rather than shown the shop's.
+   *
+   * There is nothing stood in for here. A manual entry made through this port
+   * is posted by the engine that posts a sale, refused by the calendar that
+   * refuses one, and numbered by the `SYS` series that numbers one.
+   */
+  const journal: JournalOfRecord = {
+    entries: async (listing) => {
+      await ensureLedgerSeeded();
+      return journalRead.entries(by(), listing);
+    },
+    entry: async (id) => {
+      await ensureLedgerSeeded();
+      return journalRead.entry(by(), id);
+    },
+    reversalOf: async (id) => {
+      await ensureLedgerSeeded();
+      return journalRead.reversalOf(by(), id);
+    },
+    attachment: async (entry, ordinal) => {
+      await ensureLedgerSeeded();
+      return journalRead.attachment(by(), entry, ordinal);
+    },
+    record: async (entry) => {
+      await ensureLedgerSeeded();
+      return journalAdmin.record(by(), entry);
+    },
+    open: async (balances) => {
+      await ensureLedgerSeeded();
+      return journalAdmin.open(by(), balances);
+    },
+    reverse: async (original, terms) => {
+      await ensureLedgerSeeded();
+      return journalAdmin.reverse(by(), original, terms);
+    },
+  };
+
+  const postingExceptions: PostingExceptionsOfRecord = {
+    exceptions: async (listing) => {
+      await ensureLedgerSeeded();
+      return exceptionsRead.exceptions(by(), listing);
+    },
+    post: async (id, decision) => {
+      await ensureLedgerSeeded();
+      return exceptionsAdmin.post(by(), id, decision);
+    },
+  };
+
+  const statements: StatementsOfRecord = {
+    trialBalance: async (request) => {
+      await ensureLedgerSeeded();
+      return statementsRead.trialBalance(by(), request);
+    },
+    incomeStatement: async (request) => {
+      await ensureLedgerSeeded();
+      return statementsRead.incomeStatement(by(), request);
+    },
+    balanceSheet: async (request) => {
+      await ensureLedgerSeeded();
+      return statementsRead.balanceSheet(by(), request);
+    },
+    generalLedger: async (request) => {
+      await ensureLedgerSeeded();
+      return statementsRead.generalLedger(by(), request);
     },
   };
 
@@ -1147,5 +1234,8 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     rates,
     chart,
     calendar,
+    journal,
+    postingExceptions,
+    statements,
   };
 }

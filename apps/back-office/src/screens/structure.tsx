@@ -587,6 +587,21 @@ export function WithdrawIcon(): ReactNode {
   );
 }
 
+/**
+ * A cross: taking a row off a form that has not been submitted.
+ *
+ * Deliberately not `WithdrawIcon`. That one means a record leaving service
+ * while every line ever posted to it stays; this means a line nobody has
+ * written yet ceasing to be typed. Two different acts must not share a picture.
+ */
+export function RemoveIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={iconClasses} strokeWidth="1.5">
+      <path d="M6 6l8 8M14 6l-8 8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** The same box, opening again. */
 export function RestoreIcon(): ReactNode {
   return (
