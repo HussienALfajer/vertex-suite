@@ -749,7 +749,7 @@ describe('Who may shape the chart', () => {
     const declared = new Map(FIN_PERMISSION_SEEDS.map((one) => [one.id, one]));
     const { account, accountMapping } = FIN_PERMISSIONS;
 
-    expect([...declared.keys()]).toEqual([
+    expect([...declared.keys()].filter((id) => /^fin\.account(-mapping)?\./.test(id))).toEqual([
       'fin.account.view',
       'fin.account.create',
       'fin.account.edit',

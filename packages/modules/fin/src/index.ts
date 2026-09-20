@@ -1,5 +1,13 @@
 import type { PermissionId } from '@vertex/contracts';
-import { ok, refuse, type CurrencyCode, type Result } from '@vertex/kernel';
+import {
+  compareIds,
+  localDateOf,
+  ok,
+  refuse,
+  type CurrencyCode,
+  type LocalDate,
+  type Result,
+} from '@vertex/kernel';
 import {
   defineModule,
   provideContract,
@@ -11,7 +19,19 @@ import {
   type PermissionDeclaration,
 } from '@vertex/platform';
 import { Currencies, CurrencyDefined } from '@vertex/fx/contract';
+import { DEFAULT_TIME_ZONE, Organisation } from '@vertex/sys/contract';
 
+import {
+  appendYear,
+  closePeriod,
+  postingPeriodOn,
+  redefineYear,
+  reopenPeriod,
+  reopeningsIn,
+  seedCalendar,
+  yearsIn,
+  type Keeping,
+} from './calendar.js';
 import {
   accountIn,
   accountsIn,
@@ -32,14 +52,22 @@ import {
   FIN_ACCOUNT_ROLES,
   FIN_PERMISSION_SEEDS,
   FIN_PERMISSIONS,
+  FiscalCalendar,
+  FiscalCalendarAdministration,
   type AccountId,
+  type AccountingPeriodId,
+  type CalendarRefusal,
   type ChartRefusal,
+  type FiscalYearId,
   type Listing,
   type NewAccount,
   type RecordSession,
+  type YearDefinition,
+  type YearShape,
 } from './contract.js';
 
 export * from './contract.js';
+export { yearState } from './calendar.js';
 export { compareCodes, normalBalanceOf } from './chart.js';
 export { SEEDED_ACCOUNTS, type SeededAccount } from './seeds.js';
 
@@ -66,10 +94,11 @@ function permissions(): readonly PermissionDeclaration[] {
  * It depends on `SYS`, `SEC` and `FX`, as `modules.md` §3 says. Of `FX` it asks
  * one thing so far — the tenant's currencies, to open a cash account for each
  * (`FIN-01`) — and it hears one thing: a currency defined afterwards, which is
- * the only way a module beneath this one can reach it (§4). `SYS` is not yet
- * asked anything; the branch, its day and the document number arrive with the
- * posting engine, and a dependency declared before it is used is the map's
- * statement rather than this file's.
+ * the only way a module beneath this one can reach it (§4). Of `SYS` it asks
+ * one thing: the tenant's branches, for the zone the first of them counts its
+ * days in, because a fiscal calendar has to start on a day and every day in
+ * this product is somewhere's (`FIN-05`). The document number arrives with the
+ * posting engine.
  *
  * Its own account role is declared the way every other module declares one,
  * reserved for the purpose the seed opens an account for: `FIN` posts to itself
@@ -199,6 +228,103 @@ export function finModule<Session extends RecordSession>(): ModuleDefinition<Ses
             ),
         } satisfies ChartAdministration;
       }),
+
+      provideContract(FiscalCalendar, (context: ModuleContext<Session>) => {
+        // Unguarded: see `FiscalCalendar` in the contract for where a person's
+        // sight is decided.
+        const read = <T>(by: CommandContext, work: (session: Session) => T): Promise<T> =>
+          context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+
+        return {
+          years: (by: CommandContext) => read(by, (session) => yearsIn(session, by.tenant)),
+          postingPeriodOn: (by: CommandContext, day: LocalDate) =>
+            read(by, (session) => postingPeriodOn(session, by.tenant, day)),
+          reopenings: (by: CommandContext, period?: AccountingPeriodId) =>
+            read(by, (session) => reopeningsIn(session, by.tenant, period)),
+        } satisfies FiscalCalendar;
+      }),
+
+      provideContract(FiscalCalendarAdministration, (context: ModuleContext<Session>) => {
+        // Ask, then act, always at the tenant-wide place — for the reasons
+        // `ChartAdministration` gives above, and because a calendar, unlike a
+        // chart, is one per tenant by the arithmetic of `FIN-05` rather than
+        // merely by arrangement: a month closed at one branch and open at
+        // another is one set of books with two answers.
+        const guarded = async <T>(
+          by: CommandContext,
+          right: PermissionId,
+          work: (session: Session) => Result<T, CalendarRefusal>,
+        ): Promise<Result<T, CalendarRefusal>> => {
+          if (!(await context.authorise(by, right))) {
+            return refuse('fin.not-permitted', { right });
+          }
+          return context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+        };
+
+        /** Who is keeping the books, and the one moment this command reads. */
+        const keeping = (by: CommandContext): Keeping => ({
+          by: by.actor,
+          at: context.clock.now(),
+        });
+
+        const { fiscalYear, accountingPeriod } = FIN_PERMISSIONS;
+
+        return {
+          seed: async (by: CommandContext) => {
+            // The right first, then `SYS`, then this module's own transaction:
+            // somebody refused learns nothing, and one command never holds two
+            // transactions open at once.
+            if (!(await context.authorise(by, fiscalYear.create))) {
+              return refuse('fin.not-permitted', { right: fiscalYear.create });
+            }
+            const today = await tenantToday(context, by);
+            return context.transactor.run(by, (uow) =>
+              Promise.resolve(ok(seedCalendar(uow.session, by.tenant, today))),
+            );
+          },
+          append: (by: CommandContext, shape?: YearShape) =>
+            guarded(by, fiscalYear.create, (session) => appendYear(session, by.tenant, shape)),
+          redefine: (by: CommandContext, year: FiscalYearId, definition: YearDefinition) =>
+            guarded(by, fiscalYear.edit, (session) =>
+              redefineYear(session, by.tenant, year, definition),
+            ),
+          close: (by: CommandContext, period: AccountingPeriodId) =>
+            guarded(by, accountingPeriod.close, (session) =>
+              closePeriod(session, by.tenant, period, keeping(by)),
+            ),
+          reopen: (by: CommandContext, period: AccountingPeriodId, reason: string) =>
+            guarded(by, accountingPeriod.reopen, (session) =>
+              reopenPeriod(session, by.tenant, period, reason, keeping(by)),
+            ),
+        } satisfies FiscalCalendarAdministration;
+      }),
     ],
   });
+}
+
+/**
+ * The day it is for the tenant, counted where the tenant trades.
+ *
+ * Every day in this product is somewhere's day (`SYS`'s `Branch.timeZone`), and
+ * a fiscal calendar is the tenant's rather than any one branch's — so the zone
+ * is taken from the branch the tenant **opened first**, which is a fact that
+ * does not move as branches open and close. Withdrawn branches count: the shop
+ * that started in Damascus counts its years there whether or not that first
+ * shop is still trading.
+ *
+ * A tenant with no branch at all is counted in the zone a branch is opened in
+ * by default. It happens exactly once, when the calendar is installed before
+ * the first branch is opened, and it decides which calendar year the seed
+ * installs — a question with one answer for all but a few hours of the year,
+ * and one the accountant settles for good with `redefine`.
+ */
+async function tenantToday<Session>(
+  context: ModuleContext<Session>,
+  by: CommandContext,
+): Promise<LocalDate> {
+  const branches = await context.require(Organisation).branches(by, { including: 'all' });
+  // Identifiers are UUIDv7 and carry the moment they were made, so the
+  // smallest is the first branch the tenant opened.
+  const first = [...branches].sort((one, other) => compareIds(one.id, other.id))[0];
+  return localDateOf(context.clock.now(), first?.timeZone ?? DEFAULT_TIME_ZONE);
 }

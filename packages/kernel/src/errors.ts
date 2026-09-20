@@ -56,3 +56,14 @@ export class InvalidInstantError extends KernelError {}
  * machine's time-zone data is older than the machine that accepted it.
  */
 export class InvalidTimeZoneError extends KernelError {}
+
+/**
+ * A value could not be read as a calendar day, or a day was computed outside
+ * the years one is written for.
+ *
+ * A defect rather than a refusal, for the reason `InvalidTimeZoneError` is: a
+ * day a person typed is read with `localDate`, which answers null and lets the
+ * module refuse in its own words. Reaching here means a day was constructed
+ * from figures that name none.
+ */
+export class InvalidDayError extends KernelError {}

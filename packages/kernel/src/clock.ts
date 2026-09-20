@@ -1,4 +1,4 @@
-import { InvalidInstantError, InvalidTimeZoneError } from './errors.js';
+import { InvalidDayError, InvalidInstantError, InvalidTimeZoneError } from './errors.js';
 
 /**
  * Time, as a value, and the clock that produces it.
@@ -249,4 +249,153 @@ export function localDateOf(at: Instant, timeZone: string): LocalDate {
   const part = (type: Intl.DateTimeFormatPartTypes): string =>
     parts.find((one) => one.type === type)?.value ?? '';
   return `${part('year').padStart(4, '0')}-${part('month')}-${part('day')}` as LocalDate;
+}
+
+/**
+ * A day as it is written, and the only spelling this system accepts: four
+ * digits, two and two, zero-padded.
+ */
+const WRITTEN_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Midnight UTC on a day named by figures, with the figures allowed to run
+ * over: month thirteen is January of the next year, and day zero is the last
+ * of the month before. That roll-over is what the arithmetic below is built
+ * out of, and what the parsing above detects by round-tripping through it.
+ *
+ * Built by `setUTCFullYear` rather than by `Date.UTC`, which reads a year below
+ * one hundred as nineteen hundred and that — so the ninth year of the era would
+ * silently become 1909, in a product whose days are compared as text.
+ */
+function midnightAt(year: number, month: number, day: number): Date {
+  const moment = new Date(0);
+  moment.setUTCFullYear(year, month - 1, day);
+  moment.setUTCHours(0, 0, 0, 0);
+  return moment;
+}
+
+/** The day a moment falls on in UTC, or null when it is not one this can write. */
+function dayAt(moment: Date): LocalDate | null {
+  const year = moment.getUTCFullYear();
+  if (Number.isNaN(year) || year < FIRST_YEAR || year > LAST_YEAR) return null;
+  const month = moment.getUTCMonth() + 1;
+  const day = moment.getUTCDate();
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(
+    2,
+    '0',
+  )}` as LocalDate;
+}
+
+function orRaise(day: LocalDate | null, what: string): LocalDate {
+  if (day === null) {
+    throw new InvalidDayError(`${what} is outside the years a calendar day is written for.`);
+  }
+  return day;
+}
+
+/**
+ * The day a text names, or null if it names none.
+ *
+ * Null rather than a throw, for the reason `timeZoneNamed` gives: a day arrives
+ * from a person typing it, from a wire, or out of `SYN-02`'s replay, and the
+ * module that asked is the one that owns the refusal. Exactly one spelling is
+ * accepted — `2026-03-14`, and not `2026-3-14`, a slash, or a trailing space —
+ * because a day is a key that records are filed under and compared by, and two
+ * spellings of one day are two days.
+ *
+ * `2026-02-30` is written correctly and names no day; so is `2026-13-01`. Both
+ * are rejected, by writing the day back out and requiring it to be the text
+ * that came in.
+ */
+export function localDate(text: string): LocalDate | null {
+  const given = text as unknown;
+  if (typeof given !== 'string' || !WRITTEN_DAY.test(given)) return null;
+  const [year, month, day] = given.split('-');
+  return dayAt(midnightAt(Number(year), Number(month), Number(day))) === given
+    ? (given as LocalDate)
+    : null;
+}
+
+/**
+ * The day these figures name.
+ *
+ * Throws where `localDate` answers null, because the figures were computed
+ * rather than typed: a caller asking for the thirtieth of February has a defect
+ * in the arithmetic that produced it, and rolling silently to the second of
+ * March would hide it in a report nobody reconciles for a month.
+ */
+export function localDateFrom(year: number, month: number, day: number): LocalDate {
+  const named = `${String(year)}-${String(month)}-${String(day)}`;
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    throw new InvalidDayError(`A calendar day is whole figures; received ${named}.`);
+  }
+  const written = orRaise(dayAt(midnightAt(year, month, day)), named);
+  const parts = partsOfDay(written);
+  if (parts.year !== year || parts.month !== month || parts.day !== day) {
+    throw new InvalidDayError(`${named} names no day; it would be ${written}.`);
+  }
+  return written;
+}
+
+/** The three figures a calendar day is written from. */
+export interface DayParts {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+}
+
+/**
+ * The figures a day is written from.
+ *
+ * Read from the text rather than through a `Date`, which is what makes it exact
+ * for every year: the brand says the value came from one of the constructors
+ * above, and each of those wrote it.
+ */
+export function partsOfDay(day: LocalDate): DayParts {
+  const written = WRITTEN_DAY.exec(day);
+  if (written === null) {
+    throw new InvalidDayError(`"${day}" was not written as a calendar day.`);
+  }
+  const [, year, month, date] = written;
+  return Object.freeze({ year: Number(year), month: Number(month), day: Number(date) });
+}
+
+/** The day a whole number of days after this one. Negative counts backwards. */
+export function addDays(day: LocalDate, days: number): LocalDate {
+  if (!Number.isInteger(days)) {
+    throw new InvalidDayError(`A day moves by whole days; received ${String(days)}.`);
+  }
+  const parts = partsOfDay(day);
+  return orRaise(
+    dayAt(midnightAt(parts.year, parts.month, parts.day + days)),
+    `${day} plus ${String(days)} day(s)`,
+  );
+}
+
+/**
+ * The day a whole number of months after this one, **clamped** to the end of
+ * the month it lands in: the thirty-first of January plus one month is the
+ * twenty-eighth of February, and plus two is the thirty-first of March.
+ *
+ * Clamping is the only total answer, and the clamp is why a range of months is
+ * always computed from the day it started at and never by stepping one month at
+ * a time. Stepping drifts — January the thirty-first stepped twice is the
+ * twenty-eighth of March, a whole month short — and a fiscal year whose periods
+ * drift is a set of books with three days belonging to nothing.
+ */
+export function addMonths(day: LocalDate, months: number): LocalDate {
+  if (!Number.isInteger(months)) {
+    throw new InvalidDayError(`A day moves by whole months; received ${String(months)}.`);
+  }
+  const parts = partsOfDay(day);
+  const target = midnightAt(parts.year, parts.month + months, 1);
+  const year = target.getUTCFullYear();
+  const month = target.getUTCMonth() + 1;
+  // Day zero of the month after is the last day of this one, February in a
+  // leap year included.
+  const last = midnightAt(year, month + 1, 0).getUTCDate();
+  return orRaise(
+    dayAt(midnightAt(year, month, Math.min(parts.day, last))),
+    `${day} plus ${String(months)} month(s)`,
+  );
 }
