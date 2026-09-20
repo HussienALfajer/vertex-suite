@@ -122,6 +122,25 @@ describe('A register that cannot reach the store node — FX-04', () => {
     expect(fx.store.committed()).toEqual(before);
   });
 
+  it('knows the machine however its identifier is spelt, as SYS knows which till it holds', async () => {
+    // A UUID is case-insensitive by specification, and `SYS` stores the machine
+    // holding a till through `parseId`. A context carrying the same machine in
+    // upper case once found no register to confirm at — and a confirmation it
+    // did give would have been filed under a key the lower-cased one never read.
+    const { till, atTill } = await aRegisterCutOffOvernight();
+    const shouted = fx.at(
+      till.device.toUpperCase() as typeof till.device,
+      atTill.actor ?? undefined,
+    );
+
+    const confirmed = taken(await fx.rateAdmin.confirmLastKnown(shouted, aleppo));
+    expect(confirmed.device).toBe(till.device);
+    expect(confirmed.register).toBe(till.register);
+
+    expect(taken(await fx.rates.current(atTill, aleppo, 'SYP')).lastKnown).toEqual(confirmed);
+    expect(taken(await fx.rates.current(shouted, aleppo, 'SYP')).lastKnown).toEqual(confirmed);
+  });
+
   it('covers only the currencies missing today’s rate', async () => {
     const { pounds, atTill } = await aRegisterCutOffOvernight();
     taken(await fx.rateAdmin.record(fx.by, aleppo, 'EUR', EUROS));

@@ -44,7 +44,7 @@ function named(value: string): string | null {
  * computed, not declared: every right the edition has, so that a module
  * shipping next year is covered by a decision taken now.
  */
-export function seededRights(
+function seededRights(
   declared: readonly PermissionDeclaration[],
   role: SeededRole,
 ): readonly PermissionId[] {

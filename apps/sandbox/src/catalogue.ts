@@ -7,7 +7,7 @@ import { Translator } from '@vertex/i18n';
  * user-facing literal in code — including in a sandbox, since a sandbox that
  * breaks the rule is a sandbox that teaches the wrong habit.
  */
-export const catalogue = {
+const catalogue = {
   'a11y.skipToContent': 'تخطَّ إلى المحتوى',
 
   'unit.KG': 'كغ',
@@ -111,7 +111,7 @@ export const catalogue = {
   'toggle.track': 'تتبّع الصلاحية',
 } as const;
 
-export const terms = {
+const terms = {
   item: 'صنف',
   branch: 'فرع',
 } as const;

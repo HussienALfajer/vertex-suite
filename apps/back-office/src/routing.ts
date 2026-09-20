@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
  * revocation could not reach.
  */
 
-export const ROUTES = [
+const ROUTES = [
   'companies',
   'business-profile',
   'branches',
@@ -68,7 +68,7 @@ export function hrefOf(name: RouteName, subject?: string | null): string {
 }
 
 /** Reads a route out of a location, falling back rather than refusing. */
-export function routeOf(pathname: string, search: string): Route {
+function routeOf(pathname: string, search: string): Route {
   const first = pathname.split('/').find((part) => part !== '');
   const name = ROUTES.find((one) => one === first) ?? HOME;
   return { name, subject: new URLSearchParams(search).get(SUBJECT) };

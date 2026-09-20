@@ -1,7 +1,9 @@
-import type { BranchId, PermissionId } from '@vertex/contracts';
+import type { BranchId, DeviceId, PermissionId } from '@vertex/contracts';
 import {
+  isId,
   localDateOf,
   ok,
+  parseId,
   refuse,
   type CurrencyCode,
   type Instant,
@@ -97,6 +99,23 @@ function visible(
   listing: Listing | undefined,
 ): readonly TenantCurrency[] {
   return listing?.including === 'all' ? currencies : currencies.filter((one) => one.enabled);
+}
+
+/**
+ * The machine a command is being run at, in the one spelling this module files
+ * it under — or null, for a command run at no register.
+ *
+ * `SYS` stores which machine holds a till through `parseId`, so a UUID is
+ * case-insensitive there as the specification says it is. A device id arriving
+ * on the context in another case — off a wire, out of `SYN-02`'s replay — would
+ * otherwise be a machine that holds no till and a confirmation filed under a
+ * key nothing reads back. Read once here, the way `numbering.ts` reads it, so
+ * that the register a confirmation is given at and the key it is kept under
+ * cannot disagree about which machine that is.
+ */
+function machineOf(by: CommandContext): DeviceId | null {
+  const device = by.device as unknown;
+  return typeof device === 'string' && isId(device) ? parseId<'device'>(device) : null;
 }
 
 /**
@@ -213,7 +232,8 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
             const here = await today(by, id, 'reading');
             if (!here.ok) return here;
             const { day } = here.value;
-            return read(by, (session) => rateInForce(session, by.tenant, id, day, code, by.device));
+            const device = machineOf(by);
+            return read(by, (session) => rateInForce(session, by.tenant, id, day, code, device));
           },
           revisions: (by: CommandContext, id: BranchId, code: CurrencyCode, day: LocalDate) =>
             read(by, (session) => revisionsOn(session, by.tenant, id, code, day)),
@@ -253,7 +273,7 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
               presentAtMid(
                 session,
                 by.tenant,
-                { branch: id, day, device: by.device },
+                { branch: id, day, device: machineOf(by) },
                 amount,
                 into,
               ),
@@ -306,6 +326,7 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
             const here = await today(by, stamping.branch, 'trading');
             if (!here.ok) return here;
             const { at, day } = here.value;
+            const device = machineOf(by);
 
             return read(by, (session) => {
               const inForce = rateInForce(
@@ -314,7 +335,7 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
                 stamping.branch,
                 day,
                 stamping.currency,
-                by.device,
+                device,
               );
               // Including `fx.rate-missing`, and including it when an override
               // was typed: an override replaces the rate that would have
@@ -412,7 +433,7 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
 
               // Standing at a register of this branch: a machine the shop has
               // assigned to one of its tills, and that till still in use.
-              const device = by.device;
+              const device = machineOf(by);
               const standingAt =
                 device === null
                   ? undefined

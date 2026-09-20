@@ -40,7 +40,7 @@ import { assignmentsIn, rolesIn, userIn } from './records.js';
  * means "anywhere", is how somebody who runs one shop comes to edit the tax
  * number printed on every receipt in the group.
  */
-export function admits(confinement: Confinement, where: Where | undefined): boolean {
+function admits(confinement: Confinement, where: Where | undefined): boolean {
   if (confinement.kind === 'tenant') return true;
 
   const branch = where?.branch;
@@ -158,11 +158,7 @@ export function grantsOf(session: RecordSession, tenant: TenantId, user: UserId)
  * enrolled in this tenant holds nothing for the same reason — an assignment
  * naming them is a row about a person who does not work here.
  */
-export function liveGrants(
-  session: RecordSession,
-  tenant: TenantId,
-  user: UserId,
-): readonly Grant[] {
+function liveGrants(session: RecordSession, tenant: TenantId, user: UserId): readonly Grant[] {
   const here = userIn(session, tenant, user);
   if (!here?.active) return [];
   return grants(session, tenant, user, true);
@@ -258,7 +254,7 @@ function removed(assignment: Assignment, removing: Removing): boolean {
  * staff anybody, or hire. `SEC-09` and `SYS-09` both say the way back is never
  * the vendor, so there was no way back at all.
  */
-export function stillHeldByAnybody(
+function stillHeldByAnybody(
   session: RecordSession,
   tenant: TenantId,
   right: PermissionId,

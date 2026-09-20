@@ -334,6 +334,44 @@ describe('Organisation structure — SYS-09', () => {
     ).toBe('sys.company-inactive');
   });
 
+  it('will not put a location or a till back into use below a live branch of a withdrawn company', async () => {
+    // Opening one there is refused above; putting one back is the same growth
+    // by another door, and it was the door left open.
+    const company = await aCompany();
+    const branch = taken(
+      await sys.admin.branches.open(sys.by, { company: company.id, name: 'Aleppo' }),
+    );
+    const location = taken(
+      await sys.admin.locations.open(sys.by, {
+        branch: branch.id,
+        name: 'Room',
+        kind: 'store-room',
+      }),
+    );
+    const register = taken(
+      await sys.admin.registers.open(sys.by, { branch: branch.id, name: 'Till', prefix: 'AL1' }),
+    );
+    taken(await sys.admin.locations.deactivate(sys.by, location.id));
+    taken(await sys.admin.registers.deactivate(sys.by, register.id));
+    taken(await sys.admin.companies.deactivate(sys.by, company.id));
+
+    expect(refusalOf(await sys.admin.locations.reactivate(sys.by, location.id))).toBe(
+      'sys.company-inactive',
+    );
+    expect(refusalOf(await sys.admin.registers.reactivate(sys.by, register.id))).toBe(
+      'sys.company-inactive',
+    );
+
+    // Nothing moved: both are exactly as withdrawn as they were.
+    expect((await sys.read.location(sys.by, location.id))?.active).toBe(false);
+    expect((await sys.read.register(sys.by, register.id))?.active).toBe(false);
+
+    // And the company coming back is what lets them come back.
+    taken(await sys.admin.companies.reactivate(sys.by, company.id));
+    expect(taken(await sys.admin.locations.reactivate(sys.by, location.id)).active).toBe(true);
+    expect(taken(await sys.admin.registers.reactivate(sys.by, register.id)).active).toBe(true);
+  });
+
   it('refuses a stock location of a kind it does not know', async () => {
     // A kind arrives from outside, where the type does not reach, and a van
     // spelled differently got round the rule that a van has no fixed place.

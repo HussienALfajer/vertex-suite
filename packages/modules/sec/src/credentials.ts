@@ -70,8 +70,8 @@ function memoryFor(cost: number, blockSize: number): number {
  * megabyte pasted into the field is hashed in full, inside a transaction, on
  * the machine every till in the shop depends on.
  */
-export const MINIMUM_PASSWORD_LENGTH = 8;
-export const MAXIMUM_PASSWORD_LENGTH = 1024;
+const MINIMUM_PASSWORD_LENGTH = 8;
+const MAXIMUM_PASSWORD_LENGTH = 1024;
 
 /** What is wrong with a password as a password, before anything is hashed. */
 export function passwordLengthProblem(

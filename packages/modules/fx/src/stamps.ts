@@ -65,7 +65,7 @@ export function directionOf(stamping: Stamping): Stamped<CashDirection> {
  * at the wrong side of the spread and says nothing. See
  * `fx.cash-direction-unknown`.
  */
-export function sideFor(direction: CashDirection): RateSide {
+function sideFor(direction: CashDirection): RateSide {
   return direction === 'received' ? 'buy' : 'sell';
 }
 

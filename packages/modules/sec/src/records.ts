@@ -44,7 +44,7 @@ function keyFor(collection: Collection, tenant: TenantId, parts: readonly string
   return ['sec', collection, ...[tenant, ...parts].map(encodeURIComponent)].join('/');
 }
 
-export function readRecord<C extends Collection>(
+function readRecord<C extends Collection>(
   session: RecordSession,
   collection: C,
   tenant: TenantId,
@@ -69,7 +69,7 @@ export function writeRecord<C extends Collection>(
   return record;
 }
 
-export function scanRecords<C extends Collection>(
+function scanRecords<C extends Collection>(
   session: RecordSession,
   collection: C,
   tenant: TenantId,

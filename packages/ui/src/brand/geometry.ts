@@ -32,7 +32,7 @@
 export const MARK_BOX = 128;
 
 /** The cube's edge, in the units of the box. Everything else follows. */
-export const EDGE = 60;
+const EDGE = 60;
 
 const CX = MARK_BOX / 2;
 const CY = MARK_BOX / 2;
