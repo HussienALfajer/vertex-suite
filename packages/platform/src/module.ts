@@ -1,4 +1,10 @@
-import { isSeededRole, OWNER, type SeededRole } from '@vertex/contracts';
+import {
+  isReservedAccount,
+  isSeededRole,
+  OWNER,
+  type ReservedAccount,
+  type SeededRole,
+} from '@vertex/contracts';
 import type { Clock } from '@vertex/kernel';
 
 import type { AuthorisationScope } from './authorise.js';
@@ -127,7 +133,25 @@ export interface PermissionDeclaration {
 export interface AccountRoleDeclaration {
   readonly role: string;
   readonly labelKey: string;
+  /**
+   * Which side the account normally carries its balance on: debit for an
+   * asset or an expense, credit for a liability, equity or income. FIN refuses
+   * to map a role onto an account of the other side, because the mistake is
+   * silent otherwise — inventory routed into an income account posts
+   * perfectly well and reports a shop that earns what it buys.
+   */
   readonly normalBalance: 'debit' | 'credit';
+  /**
+   * The system-reserved purpose this role expects (FIN-01), or absent for a
+   * role the tenant's accountant maps by hand.
+   *
+   * A role declared with a purpose is resolved by FIN to the account it seeded
+   * for that purpose, with nobody asked and nothing to configure. That is the
+   * whole of how STK's inventory, CNT's shrinkage and FX's rounding residual
+   * reach accounts a tenant cannot delete, without FIN learning any of those
+   * modules exist and without any of them importing FIN.
+   */
+  readonly reserved?: ReservedAccount;
 }
 
 export interface SettingDeclaration {
@@ -199,6 +223,17 @@ export interface ModuleContext<Session = unknown> extends ContractResolver {
    */
   authorise(by: CommandContext, right: string, where?: AuthorisationScope): Promise<boolean>;
   switchEnabled(key: string): boolean;
+  /**
+   * Every account role the modules of **this edition** declare, and FIN is why
+   * it is here — for the reason `declaredPermissions` is below.
+   *
+   * FIN maps a role to a tenant's account (FIN-01), and it can only map, or
+   * refuse to map, a role some module has actually declared: a mapping for a
+   * role nobody posts to is a row that does nothing, and a role a module posts
+   * to that FIN cannot see is a posting refused with nothing to say which
+   * module wanted it. Names and their declared shape, never behaviour.
+   */
+  readonly declaredAccounts: readonly AccountRoleDeclaration[];
   /**
    * Every right the modules of **this edition** declare, and SEC is why it is
    * here.
@@ -352,6 +387,24 @@ function requireSeededRoles(code: ModuleCode, permission: PermissionDeclaration)
   }
 }
 
+/**
+ * A purpose the shared vocabulary does not name is a role that would resolve to
+ * nothing, on every machine, with the symptom arriving as a posting refused
+ * months later in a shop that configured nothing wrong. The type already says
+ * so; this is for the declaration that did not compile against it.
+ */
+function requireReservedPurpose(code: ModuleCode, account: AccountRoleDeclaration): void {
+  const { reserved } = account as { readonly reserved?: unknown };
+  if (reserved === undefined) return;
+  if (typeof reserved !== 'string' || !isReservedAccount(reserved)) {
+    const named = typeof reserved === 'string' ? reserved : typeof reserved;
+    throw new ModuleDeclarationError(
+      `${code} reserves the account role "${account.role}" for "${named}", which is not one ` +
+        'of the purposes FIN-01 reserves an account for.',
+    );
+  }
+}
+
 function requireCodes(
   code: ModuleCode,
   what: string,
@@ -417,7 +470,10 @@ export function defineModule<Session = unknown>(
     requireNamespaced(code, 'permission', permission.id, names);
     requireSeededRoles(code, permission);
   }
-  for (const account of accounts) requireNamespaced(code, 'account role', account.role, names);
+  for (const account of accounts) {
+    requireNamespaced(code, 'account role', account.role, names);
+    requireReservedPurpose(code, account);
+  }
   for (const setting of settings) requireNamespaced(code, 'setting', setting.key, names);
   for (const item of switches) requireNamespaced(code, 'feature switch', item.key, names);
   for (const event of publishes) requireNamespaced(code, 'event', event.type.name, names);

@@ -1,0 +1,38 @@
+{
+  "name": "@vertex/fin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "FIN — the chart of accounts, the immutable double-entry ledger and the posting engine beneath every business event.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "default": "./dist/contract.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vertex/contracts": "workspace:*",
+    "@vertex/fx": "workspace:*",
+    "@vertex/kernel": "workspace:*",
+    "@vertex/platform": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "6.0.2",
+    "vitest": "4.1.11"
+  }
+}

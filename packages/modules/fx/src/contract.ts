@@ -21,7 +21,7 @@ import type {
   Result,
   RoundingMode,
 } from '@vertex/kernel';
-import { contractKey, type CommandContext } from '@vertex/platform';
+import { contractKey, eventType, type CommandContext } from '@vertex/platform';
 
 /**
  * What `FX` lets the rest of the system see.
@@ -242,6 +242,31 @@ export interface CurrencyAdministration {
 }
 
 export const Currencies = contractKey<Currencies>('fx.currencies');
+
+/**
+ * A currency came into existence for this tenant: defined by the owner, or
+ * installed by the seed (`FX-01`).
+ *
+ * The first event this module publishes, and it exists for one subscriber.
+ * `FIN-01` keeps a cash account **per currency**, and `FIN` cannot be asked to
+ * open one from here: `FIN` depends on `FX` (`modules.md` §3), so the only way
+ * a currency can reach the ledger is the one §4 permits — a lower module states
+ * what happened and a higher one hears it. Without this, every currency the
+ * owner added after the first morning would be a currency the till can take
+ * and the books have nowhere to put.
+ *
+ * It carries the record rather than the code, so a subscriber has what it needs
+ * without reading this module back — and an event that arrives after the
+ * transaction committed (`EventBus.dispatch`) is describing something that is
+ * already true. A currency revised, withdrawn or restored is announced by
+ * nothing: an account, once open, stays open, because the amounts it holds
+ * do not stop existing when the shop stops taking the currency.
+ */
+export interface CurrencyDefined {
+  readonly currency: TenantCurrency;
+}
+
+export const CurrencyDefined = eventType<CurrencyDefined>('fx.currency-defined');
 
 export const CurrencyAdministration = contractKey<CurrencyAdministration>(
   'fx.currency-administration',

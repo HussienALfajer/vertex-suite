@@ -337,6 +337,40 @@ describe('what the host asks the registry', () => {
     expect(registry.require(Seeder).seen()).toEqual(['sys.branch.manage', 'sec.role.edit']);
   });
 
+  it('hands a module the same account roles it reports to the host', () => {
+    const Mapper = contractKey<{ seen(): readonly string[] }>('fin.mapper');
+    const mapping = defineModule<MemorySession>({
+      code: 'FIN',
+      labelKey: 'module.fin',
+      dependsOn: ['SYS', 'SEC', 'FX'],
+      accounts: [
+        {
+          role: 'fin.opening-balance-equity',
+          labelKey: 'account-role.fin.opening-balance-equity',
+          normalBalance: 'credit',
+          reserved: 'opening-equity',
+        },
+      ],
+      provides: [
+        provideContract(Mapper, (context) => ({
+          seen: () => context.declaredAccounts.map((one) => one.role),
+        })),
+      ],
+    });
+
+    const { registry } = bring(
+      catalogue.map((one) => (one.code === 'FIN' ? mapping : one)),
+      { modules: [...CORE] },
+    );
+
+    // FIN-01 maps every declared role to a tenant's account and refuses to map
+    // one nobody declared, so a module seeing a different list from the one a
+    // host reports is a mapping screen with rows that do nothing.
+    expect(registry.require(Mapper).seen()).toEqual(registry.accounts.map((one) => one.role));
+    expect(registry.require(Mapper).seen()).toEqual(['fin.opening-balance-equity']);
+    expect(Object.isFrozen(registry.accounts)).toBe(true);
+  });
+
   it('plans migrations per store, in the order the modules activate', () => {
     const { registry } = bring(catalogue, { modules: [...CORE] });
     expect(registry.migrationPlan('store-node').map((one) => one.id)).toEqual([
@@ -424,6 +458,7 @@ describe('what a module is handed', () => {
     expect(Object.keys(handed ?? {}).sort()).toEqual([
       'authorise',
       'clock',
+      'declaredAccounts',
       'declaredPermissions',
       'require',
       'resolve',

@@ -7,6 +7,7 @@ import { createEventBus, eventType, type DomainEvent, type HandlerFailure } from
 import {
   createMemoryStore,
   createTransactor,
+  untilCommitted,
   type EffectFailure,
   type MemorySession,
   type SessionDriver,
@@ -296,6 +297,72 @@ describe('a unit of work that has ended', () => {
     expect(() => {
       kept?.onRollback(() => undefined);
     }).toThrow(/has finished/u);
+  });
+});
+
+describe('a command run until it commits', () => {
+  it('runs again after losing a race, and answers with the attempt that won', async () => {
+    let attempts = 0;
+    const outcome = await untilCommitted(() => {
+      attempts += 1;
+      return attempts < 3
+        ? Promise.reject(new SerialisationConflictError('lost'))
+        : Promise.resolve(`won on ${String(attempts)}`);
+    });
+    expect(outcome).toBe('won on 3');
+    expect(attempts).toBe(3);
+  });
+
+  it('gives up after the last attempt, with the conflict it lost', async () => {
+    let attempts = 0;
+    await expect(
+      untilCommitted(() => {
+        attempts += 1;
+        return Promise.reject(new SerialisationConflictError('lost'));
+      }, 3),
+    ).rejects.toBeInstanceOf(SerialisationConflictError);
+    expect(attempts).toBe(3);
+  });
+
+  it('throws anything that is not a lost race at once: a second try makes no defect better', async () => {
+    let attempts = 0;
+    await expect(
+      untilCommitted(() => {
+        attempts += 1;
+        return Promise.reject(new TypeError('a defect'));
+      }),
+    ).rejects.toBeInstanceOf(TypeError);
+    expect(attempts).toBe(1);
+  });
+
+  it('is attempted at least once', async () => {
+    await expect(untilCommitted(() => Promise.resolve(1), 0)).rejects.toBeInstanceOf(RangeError);
+    await expect(untilCommitted(() => Promise.resolve(1), 1.5)).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it('wins a real race against the memory store on the second attempt', async () => {
+    const { store, transactor } = harness();
+    let attempts = 0;
+
+    await untilCommitted(() =>
+      transactor.run(context, async (uow) => {
+        attempts += 1;
+        // Scanning is what makes a later commit a conflict, and it is what a
+        // command that keeps a uniqueness invariant does.
+        uow.session.keys();
+        if (attempts === 1) {
+          // Another command commits a fresh key while this one is running.
+          const other = await store.driver.begin(context);
+          other.put('other', 1);
+          await store.driver.commit(other);
+        }
+        uow.session.put('mine', attempts);
+      }),
+    );
+
+    expect(attempts).toBe(2);
+    expect(store.committed().get('mine')).toBe(2);
+    expect(store.committed().get('other')).toBe(1);
   });
 });
 

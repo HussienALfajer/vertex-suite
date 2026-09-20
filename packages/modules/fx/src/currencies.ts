@@ -297,6 +297,20 @@ export function fixFunctional(session: RecordSession, tenant: TenantId, at: Inst
 }
 
 /**
+ * What seeding did: the tenant's currencies afterwards, and the ones this run
+ * installed.
+ *
+ * The second list is what the module announces (`CurrencyDefined`), and it is
+ * kept apart from the first so that a replayed seed — the interrupted first-run
+ * installation `SYN-02` runs again — announces nothing, rather than telling the
+ * ledger four times over about currencies it already has accounts for.
+ */
+export interface Seeded {
+  readonly currencies: readonly TenantCurrency[];
+  readonly added: readonly TenantCurrency[];
+}
+
+/**
  * Installs the seeded currencies and the default functional currency, adding
  * only what is missing (see `CurrencyAdministration.seed`).
  *
@@ -307,15 +321,13 @@ export function fixFunctional(session: RecordSession, tenant: TenantId, at: Inst
  * into use would overrule an owner's decision. So seeding stops and says so, and
  * the owner either puts the dollar back or chooses another currency first.
  */
-export function seedCurrencies(
-  session: RecordSession,
-  tenant: TenantId,
-): Outcome<readonly TenantCurrency[]> {
+export function seedCurrencies(session: RecordSession, tenant: TenantId): Outcome<Seeded> {
   const chosen = functionalCodeIn(session, tenant);
   if (chosen === null && currencyIn(session, tenant, SEEDED_FUNCTIONAL)?.enabled === false) {
     return refuse('fx.currency-disabled', { code: SEEDED_FUNCTIONAL });
   }
 
+  const added: TenantCurrency[] = [];
   for (const definition of SEEDED_CURRENCIES) {
     if (currencyIn(session, tenant, definition.code) !== null) continue;
     const currency = settled(tenant, definition, true);
@@ -327,7 +339,7 @@ export function seedCurrencies(
         `The seeded currency ${definition.code} is refused as ${currency.error.code}.`,
       );
     }
-    writeRecord(session, 'currency', tenant, [definition.code], currency.value);
+    added.push(writeRecord(session, 'currency', tenant, [definition.code], currency.value));
   }
 
   if (chosen === null) {
@@ -337,5 +349,6 @@ export function seedCurrencies(
       fixedAt: null,
     });
   }
-  return ok(currenciesIn(session, tenant));
+  // In code order, as the list is, so the ledger hears them in the order it lists them.
+  return ok({ currencies: currenciesIn(session, tenant), added: added.sort(byCode) });
 }

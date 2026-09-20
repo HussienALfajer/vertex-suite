@@ -19,18 +19,21 @@ import {
   type ModuleContext,
   type ModuleDefinition,
   type PermissionDeclaration,
+  type UnitOfWork,
 } from '@vertex/platform';
 import { Organisation, type Branch } from '@vertex/sys/contract';
 
 import {
   Currencies,
   CurrencyAdministration,
+  CurrencyDefined,
   ExchangeRates,
   FX_PERMISSION_SEEDS,
   FX_PERMISSIONS,
   Presentation,
   RateAdministration,
   RateStamps,
+  ROUNDING_ACCOUNT,
   RoundingRules,
   type CurrencyRefusal,
   type CurrencyRevision,
@@ -136,9 +139,16 @@ function machineOf(by: CommandContext): DeviceId | null {
  * the contract for why a document and the rate it was priced at cannot be
  * allowed to commit separately.
  *
- * No migrations and no events, as in `SYS` and `SEC`: there is no schema until a
- * driver exists and a placeholder migration would burn the name the real one
- * wants, and nothing yet listens for a currency changing.
+ * No migrations, as in `SYS` and `SEC`: there is no schema until a driver
+ * exists and a placeholder migration would burn the name the real one wants.
+ *
+ * One event, and it is the first any module publishes: a currency defined.
+ * `FIN-01` keeps a cash account per currency, and `FIN` sits above this module,
+ * so this is the only way a new currency can reach the ledger (`modules.md`
+ * §4). One account role, for the same neighbour: the residual of `FX-07` is
+ * posted somewhere, and that somewhere is declared here, reserved for the
+ * purpose `FIN` seeds an account for, rather than named by whichever caller
+ * happens to be settling an amount.
  */
 export function fxModule<Session extends RecordSession>(): ModuleDefinition<Session> {
   return defineModule<Session>({
@@ -146,6 +156,18 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
     labelKey: 'module.fx',
     dependsOn: ['SYS'],
     permissions: permissions(),
+    accounts: [
+      {
+        role: ROUNDING_ACCOUNT,
+        labelKey: `account-role.${ROUNDING_ACCOUNT}`,
+        // A residual is signed and lands on either side; the account is an
+        // income-kind one because what rounding takes off a receipt is the
+        // shop's, and what it gives away is the shop's cost.
+        normalBalance: 'credit',
+        reserved: 'rounding',
+      },
+    ],
+    publishes: [{ type: CurrencyDefined, labelKey: `event.${CurrencyDefined.name}` }],
     provides: [
       provideContract(Currencies, (context: ModuleContext<Session>) => {
         // Unguarded: see `Currencies` in the contract for where a person's
@@ -178,37 +200,49 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
         const guarded = async <T>(
           by: CommandContext,
           right: PermissionId,
-          work: (session: Session) => Result<T, CurrencyRefusal>,
+          work: (uow: UnitOfWork<Session>) => Result<T, CurrencyRefusal>,
         ): Promise<Result<T, CurrencyRefusal>> => {
           if (!(await context.authorise(by, right))) {
             return refuse('fx.not-permitted', { right });
           }
-          return context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
+          return context.transactor.run(by, (uow) => Promise.resolve(work(uow)));
         };
 
         const { currency, functionalCurrency } = FX_PERMISSIONS;
 
         return {
           seed: (by: CommandContext) =>
-            guarded(by, currency.create, (session) => seedCurrencies(session, by.tenant)),
+            guarded(by, currency.create, (uow) => {
+              const seeded = seedCurrencies(uow.session, by.tenant);
+              if (!seeded.ok) return seeded;
+              // Announced through the unit of work, so a seed that rolls back
+              // announces nothing — and only what this run installed, so a
+              // replayed seed announces nothing either.
+              for (const added of seeded.value.added) {
+                uow.publish(CurrencyDefined, { currency: added });
+              }
+              return ok(seeded.value.currencies);
+            }),
           define: (by: CommandContext, input: NewCurrency) =>
-            guarded(by, currency.create, (session) =>
-              defineTenantCurrency(session, by.tenant, input),
-            ),
+            guarded(by, currency.create, (uow) => {
+              const defined = defineTenantCurrency(uow.session, by.tenant, input);
+              if (defined.ok) uow.publish(CurrencyDefined, { currency: defined.value });
+              return defined;
+            }),
           revise: (by: CommandContext, code: CurrencyCode, changes: CurrencyRevision) =>
-            guarded(by, currency.edit, (session) =>
+            guarded(by, currency.edit, ({ session }) =>
               reviseCurrency(session, by.tenant, code, changes),
             ),
           disable: (by: CommandContext, code: CurrencyCode) =>
-            guarded(by, currency.withdraw, (session) =>
+            guarded(by, currency.withdraw, ({ session }) =>
               setCurrencyEnabled(session, by.tenant, code, false),
             ),
           enable: (by: CommandContext, code: CurrencyCode) =>
-            guarded(by, currency.withdraw, (session) =>
+            guarded(by, currency.withdraw, ({ session }) =>
               setCurrencyEnabled(session, by.tenant, code, true),
             ),
           makeFunctional: (by: CommandContext, code: CurrencyCode) =>
-            guarded(by, functionalCurrency.edit, (session) =>
+            guarded(by, functionalCurrency.edit, ({ session }) =>
               makeFunctional(session, by.tenant, code),
             ),
         } satisfies CurrencyAdministration;

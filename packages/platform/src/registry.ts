@@ -184,6 +184,11 @@ export function createRegistry<Session>(options: RegistryOptions<Session>): Regi
   const declaredPermissions: readonly PermissionDeclaration[] = Object.freeze(
     inActivationOrder.flatMap((one) => [...one.permissions]),
   );
+  // The same arrangement for account roles, and for the same reason: what FIN
+  // maps and what a host lists as needing a mapping is one list.
+  const declaredAccounts: readonly AccountRoleDeclaration[] = Object.freeze(
+    inActivationOrder.flatMap((one) => [...one.accounts]),
+  );
 
   /**
    * The system is not a person and holds every right, which is the same rule
@@ -209,6 +214,7 @@ export function createRegistry<Session>(options: RegistryOptions<Session>): Regi
   const context: ModuleContext<Session> = {
     clock,
     transactor,
+    declaredAccounts,
     declaredPermissions,
     authorise,
     resolve,
@@ -239,7 +245,7 @@ export function createRegistry<Session>(options: RegistryOptions<Session>): Regi
       return byCode.get(code) ?? null;
     },
     permissions: declaredPermissions,
-    accounts: Object.freeze(inActivationOrder.flatMap((one) => [...one.accounts])),
+    accounts: declaredAccounts,
     settings: Object.freeze(inActivationOrder.flatMap((one) => [...one.settings])),
     migrationPlan(target: 'store-node' | 'terminal'): readonly MigrationDeclaration<Session>[] {
       return Object.freeze(
