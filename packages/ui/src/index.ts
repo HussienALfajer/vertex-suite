@@ -124,7 +124,15 @@ export { Badge, type BadgeProps, type BadgeTone } from './components/Badge.js';
 export { type Tone } from './components/styles.js';
 
 export { Select, type SelectOption, type SelectProps } from './components/Select.js';
+export { Combobox, type ComboboxOption, type ComboboxProps } from './components/Combobox.js';
 export { DateInput, type DateInputProps } from './components/DateInput.js';
+export { MoneyInput, type MoneyInputProps } from './components/MoneyInput.js';
+export {
+  AttachmentInput,
+  type AttachmentInputProps,
+  type ChosenFile,
+  type RejectedFile,
+} from './components/AttachmentInput.js';
 export {
   FormatBuilder,
   type FormatBuilderMark,

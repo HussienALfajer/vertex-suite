@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
-import { addDays, partsOfDay, toDate, type Instant, type LocalDate } from '@vertex/kernel';
+import { addDays, partsOfDay, type LocalDate } from '@vertex/kernel';
 import type {
   AccountingPeriod,
   FiscalYear,
@@ -18,7 +18,6 @@ import {
   Dialog,
   EmptyState,
   formatDay,
-  formatMoment,
   PageHeader,
   Panel,
   Select,
@@ -36,8 +35,9 @@ import {
 } from '@vertex/ui';
 
 import { useCalendar } from '../calendar.js';
-import { useDeliveryMessage, useTenantZone } from '../organisation.js';
+import { useDeliveryMessage } from '../organisation.js';
 import { useUsers } from '../users.js';
+import { useMomentWriter } from './books.js';
 import { CloseYearIcon, ReopenYearIcon } from './structure.js';
 
 /**
@@ -427,30 +427,6 @@ function PeriodState({ period }: { readonly period: AccountingPeriod }): ReactNo
 function nameOfUser(users: ReturnType<typeof useUsers>['users'], id: string | null): string | null {
   if (id === null) return null;
   return users.find((user) => user.id === id)?.name ?? null;
-}
-
-/**
- * Writes a moment for the sentences on this screen, in the tenant's own zone.
- *
- * `Instant` is a count of milliseconds, so a message that interpolated one
- * would print the count — which is how this screen once read. It goes through
- * `formatMoment` and not through `<DateTime>` for §12's own reason: these are
- * moments **inside** a sentence, and ICU interpolates text, so a message broken
- * into fragments around an element would have had its word order decided here
- * rather than by whoever translates it.
- *
- * The zone is the tenant's rather than any branch's, because closing a period
- * closes it for the whole shop (`FIN-05`) — see `useTenantZone`. `formatMoment`
- * names it in the text, so a reader elsewhere is not left guessing whose
- * afternoon this was.
- */
-function useMomentWriter(): (at: Instant) => string {
-  const { formattingLocale } = useVertex();
-  const timeZone = useTenantZone();
-  return useCallback(
-    (at: Instant) => formatMoment(toDate(at), { locale: formattingLocale, timeZone }),
-    [formattingLocale, timeZone],
-  );
 }
 
 /**

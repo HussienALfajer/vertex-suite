@@ -32,6 +32,7 @@ import {
 import { useChart } from '../chart.js';
 import { useDeliveryMessage } from '../organisation.js';
 import type { ChartOfRecord } from '../system.js';
+import { flatten, nameOfAccount } from './books.js';
 import { MoveIcon, RenameIcon, RestoreIcon, StatusBadge, WithdrawIcon } from './structure.js';
 
 /** What a person has opened or closed, and the search they did it under. */
@@ -317,24 +318,6 @@ export function Chart(): ReactNode {
 }
 
 /**
- * An account's own name: what the tenant typed, or the terminology layer's word
- * for a seeded one nobody has renamed (`design-system.md` §12).
- *
- * The same arrangement `roleLabel` uses for `SEC-01`'s seven seeded roles, and
- * for the same reason: a seeded record carries no sentence of its own, so that
- * a tenant renames a concept once rather than editing thirty-three rows.
- */
-export function nameOfAccount(
-  translator: ReturnType<typeof useTranslator>,
-  account: Account,
-): string {
-  if (account.name !== null) return account.name;
-  if (account.seeded === null) return translator.format('data.unknown');
-  const key = `account.${account.seeded}`;
-  return translator.has(key) ? translator.format(key) : translator.format('data.unknown');
-}
-
-/**
  * One row: the code, the name, and what is true of the account.
  *
  * The code is a `Code` and therefore an `ltr` island (§9) — it is machine text
@@ -409,11 +392,6 @@ function groupsIn(nodes: readonly TreeNode<Account>[]): readonly string[] {
   return nodes.flatMap((node) =>
     node.children.length === 0 ? [] : [node.value.id, ...groupsIn(node.children)],
   );
-}
-
-/** Every account in the tree, depth first, which is the order it is read in. */
-function flatten(nodes: readonly AccountNode[]): readonly Account[] {
-  return nodes.flatMap((node) => [node.account, ...flatten(node.children)]);
 }
 
 /** One account, by the identifier a chooser handed back. */

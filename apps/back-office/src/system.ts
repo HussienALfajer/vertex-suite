@@ -27,13 +27,34 @@ import type {
   AccountNode,
   AccountingPeriod,
   AccountingPeriodId,
+  AttachedFile,
+  BalanceSheet,
   CalendarRefusal,
   ChartRefusal,
+  ExceptionDecision,
+  ExceptionListing,
   FiscalYear,
   FiscalYearId,
+  GeneralLedger,
+  IncomeStatement,
+  JournalEntry,
+  JournalEntryId,
+  JournalListing,
+  LedgerRequest,
   Listing as AccountListing,
+  ManualEntry,
   NewAccount,
+  OpeningBalances,
   PeriodReopening,
+  Posted,
+  PostingException,
+  PostingExceptionId,
+  PostingRefusal,
+  Reversal,
+  ReversalTerms,
+  StatementRefusal,
+  StatementRequest,
+  TrialBalance,
   YearDefinition,
   YearShape,
 } from '@vertex/fin/contract';
@@ -405,6 +426,94 @@ export interface CalendarOfRecord {
   reopen(period: AccountingPeriodId, reason: string): Kept<AccountingPeriod>;
 }
 
+/**
+ * The engine refuses in its own vocabulary, and it is kept apart from the
+ * chart's and the calendar's for the reason `Numbered` is kept apart from
+ * `Outcome`: a screen renders a refusal by its code, and a union of every code
+ * in `FIN` would let a screen claim to handle one its command cannot return.
+ *
+ * `PostingRefusal` is already wide — it carries the chart's codes, the
+ * calendar's and `FX`'s, because a posting is refused by whichever of them
+ * says no first — and that width is the contract's own rather than this port's.
+ */
+type Booked<T> = Promise<Result<T, PostingRefusal>>;
+
+/**
+ * `FIN-02`, `FIN-03`, `FIN-04` and `FIN-06` as the ledger screens use them.
+ *
+ * `Journal` and `JournalAdministration` with the `CommandContext` taken out,
+ * as every port above. One port rather than two, because the journal screen
+ * reads an entry and reverses it in one act and the two would be the same
+ * transport either way.
+ *
+ * **There is no `post` and no `accept`.** `PostingEngine` writes into somebody
+ * else's transaction, and a transaction does not cross a process boundary: an
+ * entry is posted by the module that owns the event, on the machine that owns
+ * the store. What a person does to the journal is the three things
+ * `JournalAdministration` offers and no fourth — and there is no edit and no
+ * delete anywhere beneath this interface, because `FIN-03` has none.
+ *
+ * `entryFor` is not here: a screen looks entries up by what it is reading, and
+ * by a business event only when a module asks on its own behalf.
+ */
+export interface JournalOfRecord {
+  /** Entries in day order, then in the order they were recorded (`FIN-02`). */
+  entries(listing?: JournalListing): Promise<readonly JournalEntry[]>;
+  /** One entry with its lines and its attachments, or null. */
+  entry(id: JournalEntryId): Promise<Posted | null>;
+  /** The entry that reversed this one, or null while it stands (`FIN-03`). */
+  reversalOf(id: JournalEntryId): Promise<Reversal | null>;
+  /**
+   * One attachment with its bytes (`FIN-04`), by its place among the entry's.
+   *
+   * The bytes cross the boundary because the evidence for a posting is a file
+   * somebody has to be able to open, and the store node has verified them
+   * against the hash the entry records before handing them over.
+   */
+  attachment(entry: JournalEntryId, ordinal: number): Promise<AttachedFile | null>;
+  /** The accountant's own adjusting entry (`FIN-04`). */
+  record(entry: ManualEntry): Booked<Posted>;
+  /** The books opened, as one dated entry (`FIN-06`). */
+  open(balances: OpeningBalances): Booked<Posted>;
+  /** The one correction there is (`FIN-03`): a reversing entry naming the original. */
+  reverse(original: JournalEntryId, terms: ReversalTerms): Booked<Posted>;
+}
+
+/**
+ * `FIN-05`'s exceptions queue as the screen that empties it uses it.
+ *
+ * `PostingExceptions` and `PostingExceptionAdministration`, minus the
+ * `CommandContext` and minus `exception`: the screen lists what is waiting and
+ * decides on it from that list, so a read of one by identifier has no caller.
+ *
+ * There is no dismissal here because the contract has none — `FIN-02` allows
+ * no event without its entry, so an event that should never have happened is
+ * posted and then reversed, where both acts can be read.
+ */
+export interface PostingExceptionsOfRecord {
+  exceptions(listing?: ExceptionListing): Promise<readonly PostingException[]>;
+  /** As dated, or on another day against a written reason. */
+  post(id: PostingExceptionId, decision?: ExceptionDecision): Booked<Posted>;
+}
+
+/** Reading the books refuses in its own vocabulary too, and for the same reason. */
+type Stated<T> = Promise<Result<T, StatementRefusal>>;
+
+/**
+ * `FIN-07` as the statements screen uses it: `Statements` with the
+ * `CommandContext` taken out, and nothing else changed.
+ *
+ * Each of the four is its own call rather than one call with a kind, because
+ * that is what the contract offers and because two of them do not take the
+ * same request — a general ledger is the one statement asked for by account.
+ */
+export interface StatementsOfRecord {
+  trialBalance(request: StatementRequest): Stated<TrialBalance>;
+  incomeStatement(request: StatementRequest): Stated<IncomeStatement>;
+  balanceSheet(request: StatementRequest): Stated<BalanceSheet>;
+  generalLedger(request: LedgerRequest): Stated<GeneralLedger>;
+}
+
 export interface SystemOfRecord {
   /**
    * A password verified against a sign-in, and nothing more.
@@ -443,4 +552,7 @@ export interface SystemOfRecord {
   readonly rates: RatesOfRecord;
   readonly chart: ChartOfRecord;
   readonly calendar: CalendarOfRecord;
+  readonly journal: JournalOfRecord;
+  readonly postingExceptions: PostingExceptionsOfRecord;
+  readonly statements: StatementsOfRecord;
 }

@@ -8,6 +8,11 @@ import { hrefOf, useRoute, type RouteName } from './routing.js';
 import { BusinessProfile } from './screens/BusinessProfile.js';
 import { Chart } from './screens/Chart.js';
 import { FiscalCalendar } from './screens/FiscalCalendar.js';
+import { Journal } from './screens/Journal.js';
+import { ManualEntry } from './screens/ManualEntry.js';
+import { OpeningBalances } from './screens/OpeningBalances.js';
+import { PostingExceptions } from './screens/PostingExceptions.js';
+import { Statements } from './screens/Statements.js';
 import { Branches } from './screens/Branches.js';
 import { Companies } from './screens/Companies.js';
 import { Currencies } from './screens/Currencies.js';
@@ -118,6 +123,41 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
       icon: <FiscalCalendarIcon />,
       group: translator.format('nav.group.fin'),
     },
+    {
+      id: 'journal',
+      label: translator.format('nav.journal'),
+      href: hrefOf('journal'),
+      icon: <JournalIcon />,
+      group: translator.format('nav.group.fin'),
+    },
+    {
+      id: 'manual-entry',
+      label: translator.format('nav.manualEntry'),
+      href: hrefOf('manual-entry'),
+      icon: <ManualEntryIcon />,
+      group: translator.format('nav.group.fin'),
+    },
+    {
+      id: 'opening-balances',
+      label: translator.format('nav.openingBalances'),
+      href: hrefOf('opening-balances'),
+      icon: <OpeningBalancesIcon />,
+      group: translator.format('nav.group.fin'),
+    },
+    {
+      id: 'posting-exceptions',
+      label: translator.format('nav.postingExceptions'),
+      href: hrefOf('posting-exceptions'),
+      icon: <ExceptionsIcon />,
+      group: translator.format('nav.group.fin'),
+    },
+    {
+      id: 'statements',
+      label: translator.format('nav.statements'),
+      href: hrefOf('statements'),
+      icon: <StatementsIcon />,
+      group: translator.format('nav.group.fin'),
+    },
   ];
 
   return (
@@ -198,6 +238,16 @@ function Screen({ name }: { readonly name: RouteName }): ReactNode {
       return <Chart />;
     case 'fiscal-calendar':
       return <FiscalCalendar />;
+    case 'journal':
+      return <Journal />;
+    case 'manual-entry':
+      return <ManualEntry />;
+    case 'opening-balances':
+      return <OpeningBalances />;
+    case 'posting-exceptions':
+      return <PostingExceptions />;
+    case 'statements':
+      return <Statements />;
   }
 }
 
@@ -289,6 +339,66 @@ function FiscalCalendarIcon(): ReactNode {
       <rect x="2.5" y="4" width="15" height="13" rx="1.5" />
       <path d="M2.5 8h15M7 2.5v3M13 2.5v3" strokeLinecap="round" />
       <path d="M10 8v9M2.5 12.5h7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A bound book with a rule down the middle: the journal, read and never edited. */
+function JournalIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <path
+        d="M3.5 4.5A1.5 1.5 0 015 3h10a1.5 1.5 0 011.5 1.5v12H5a1.5 1.5 0 01-1.5-1.5z"
+        strokeLinejoin="round"
+      />
+      <path d="M3.5 15A1.5 1.5 0 015 13.5h11.5M10 3v10.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A nib writing on a page: the entry an accountant makes by hand. */
+function ManualEntryIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <path
+        d="M11 3.5H5A1.5 1.5 0 003.5 5v10A1.5 1.5 0 005 16.5h10A1.5 1.5 0 0016.5 15V9"
+        strokeLinecap="round"
+      />
+      <path d="M13.5 2.5l4 4L11 13H7v-4z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A door opening onto a figure: the books opened, once, on a day somebody chose. */
+function OpeningBalancesIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <path d="M4 17V3.5h7.5L16 6v11" strokeLinejoin="round" />
+      <path d="M11.5 3.5V6H16M2.5 17h15" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 10.5h6M7 13.5h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A page held back with a mark on it: what arrived and is waiting to be decided. */
+function ExceptionsIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <path d="M4 16.5V3.5h8L16 7v9.5z" strokeLinejoin="round" />
+      <path d="M12 3.5V7h4" strokeLinejoin="round" />
+      <path d="M10 9.5v3" strokeLinecap="round" />
+      <circle cx="10" cy="14.5" r=".6" className="fill-current" />
+    </svg>
+  );
+}
+
+/** Two columns on a sheet: the statement, which is figures in a shape. */
+function StatementsIcon(): ReactNode {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={icon} strokeWidth="1.5">
+      <rect x="3" y="3" width="14" height="14" rx="1.5" />
+      <path d="M3 7h14M10 7v10" strokeLinecap="round" />
+      <path d="M5.5 10h2M12.5 10h2M5.5 13h2M12.5 13h2" strokeLinecap="round" />
     </svg>
   );
 }

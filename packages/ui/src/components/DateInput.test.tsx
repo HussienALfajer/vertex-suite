@@ -160,4 +160,26 @@ describe('<DateInput>', () => {
     expect(document.activeElement?.getAttribute('role')).toBe('spinbutton');
     expect(document.activeElement).toBe(segments()[0]);
   });
+
+  it('is focused and typed into without the environment fighting it over the selection', async () => {
+    // React Aria collapses the selection onto a focused part on every
+    // `selectionchange`, and happy-dom announced one for every collapse — a
+    // loop that ended in a `RangeError` caught by the environment and printed
+    // to stderr, in every test that touched this field, while every one of
+    // them passed. `tools/happy-dom-selection.mjs` is what stops it, and this
+    // is what says so if it stops being loaded.
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const rendered = field();
+      await nudge(rendered, 0);
+      await rendered.user.keyboard('2027');
+
+      const overflowed = reported.mock.calls.filter((call) =>
+        call.some((argument) => argument instanceof RangeError),
+      );
+      expect(overflowed).toEqual([]);
+    } finally {
+      reported.mockRestore();
+    }
+  });
 });

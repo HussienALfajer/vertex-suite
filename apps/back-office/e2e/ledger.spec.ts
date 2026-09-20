@@ -4,14 +4,16 @@ import { catalogue } from '../src/catalogue.js';
 import { gotoThemed } from './theme.js';
 
 /**
- * `FIN-01`'s chart of accounts and `FIN-05`'s fiscal calendar, in a real
- * browser.
+ * The ledger screens of `FIN`, in a real browser.
  *
- * Every rule these two screens enforce is already proven against the real
- * `FIN` in `chart.test.tsx` and `fiscal-calendar.test.tsx`. What a real browser
- * adds, and the only thing this file is for, is the part a document
- * implementation cannot answer for — the three controls this pull request
- * built (`design-system.md` §15):
+ * Every rule these screens enforce is already proven against the real `FIN` in
+ * `chart.test.tsx`, `fiscal-calendar.test.tsx`, `manual-entry.test.tsx`,
+ * `journal.test.tsx`, `opening-balances.test.tsx`, `statements.test.tsx` and
+ * `posting-exceptions.test.tsx`. What a real browser adds, and the only thing
+ * this file is for, is the part a document implementation cannot answer for —
+ * measured layout, real focus, and a platform file chooser — which is why each
+ * journey here is about one of the six controls these units built
+ * (`design-system.md` §15):
  *
  * - **`TreeView`**: one tab stop for a chart of thirty accounts, with the
  *   arrows moving inside it and `←`/`→` opening and closing a branch the way
@@ -20,10 +22,17 @@ import { gotoThemed } from './theme.js';
  * - **`DateInput`**: three segments typed a part at a time, laid out in the
  *   reader's own direction, which is layout and therefore only true where
  *   there is layout.
+ * - **`Combobox`**: a list narrowed by typing and taken from the keyboard
+ *   alone, on a control whose chevron is deliberately not a tab stop.
+ * - **`MoneyInput`**: a figure laid out left to right inside a page that runs
+ *   right to left, refusing a keystroke the books could not hold.
+ * - **`AttachmentInput`**: a file chosen through a platform chooser.
  *
  * No company or branch is registered first: `FIN` is tenant-wide, and the
- * chart and the calendar are installed with the shop (`SYS-03`), so both are
- * on screen the moment somebody signs in.
+ * chart and the calendar are installed with the shop (`SYS-03`), so the
+ * screens are on the moment somebody signs in. Nothing here posts an entry —
+ * that needs a branch, and it is proven where the whole journey is already
+ * driven end to end.
  */
 
 async function signIn(page: Page): Promise<void> {
@@ -168,4 +177,127 @@ test('a day is typed a part at a time, in the reader’s own direction', async (
   await parts.first().focus();
   await page.keyboard.type('15');
   await expect(parts.nth(1)).toBeFocused();
+});
+
+/**
+ * The three controls this pull request built (`design-system.md` §15), in the
+ * one place their claims can actually be settled.
+ *
+ * Everything each of them decides is already proven against the real `FIN` in
+ * `manual-entry.test.tsx`, `journal.test.tsx` and the components' own tests.
+ * What a real browser adds is what a document implementation cannot answer
+ * for: measured layout, real focus, and a platform file chooser.
+ */
+
+test('an account is found by typing, and taken from the keyboard alone', async ({ page }) => {
+  await signIn(page);
+  await page.getByRole('link', { name: catalogue['nav.manualEntry'] }).click();
+
+  const account = page.getByRole('combobox').first();
+  await account.focus();
+  await page.keyboard.type('5400');
+
+  // The list narrows to what was typed, and the arrow keys walk it: the
+  // register has no pointer, and a chooser that needed one would be a control
+  // half this product cannot use (§11.1).
+  await expect(page.getByRole('option', { name: /5400/ })).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+
+  await expect(account).toHaveValue(/5400/);
+});
+
+test('the list opens from the field itself, not only from the control beside it', async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByRole('link', { name: catalogue['nav.manualEntry'] }).click();
+
+  // React Aria keeps the chevron out of the tab order, which is right only
+  // because the keyboard already has a route to the same list. Asserted before
+  // the list is opened: an open popover takes the page behind it out of the
+  // accessibility tree, chevron and all. Named by what it says rather than by
+  // its whole accessible name, which React Aria composes from the control's
+  // own label and the field's.
+  await expect(
+    page.getByRole('button', { name: new RegExp(catalogue['combobox.showOptions']) }).first(),
+  ).toHaveAttribute('tabindex', '-1');
+
+  const account = page.getByRole('combobox').first();
+  await account.focus();
+  await page.keyboard.press('ArrowDown');
+
+  await expect(page.getByRole('option').first()).toBeVisible();
+});
+
+test('an amount runs left to right inside a page that runs right to left', async ({ page }) => {
+  await signIn(page);
+  await page.getByRole('link', { name: catalogue['nav.manualEntry'] }).click();
+
+  const amount = page.getByLabel(catalogue['manualEntry.line.amount']).first();
+  await amount.fill('');
+  await page.keyboard.type('1234.5');
+
+  // Computed direction, which is the one claim about this field no document
+  // implementation can settle: a figure is machine text in the middle of a
+  // sentence nobody reads that way (§9, §12).
+  await expect(amount).toHaveCSS('direction', 'ltr');
+  await expect(amount).toHaveValue('1234.5');
+
+  // And a keystroke that would leave something the books cannot hold never
+  // lands: the shop keeps its books in dollars, at four places.
+  await page.keyboard.type('6789');
+  await expect(amount).toHaveValue('1234.5678');
+  await page.keyboard.type('a');
+  await expect(amount).toHaveValue('1234.5678');
+});
+
+test('a file is attached through the control a keyboard reaches', async ({ page }) => {
+  await signIn(page);
+  await page.getByRole('link', { name: catalogue['nav.manualEntry'] }).click();
+
+  // The chooser a platform opens is what the button is for; the bytes are read
+  // when the file is chosen, so what the form holds is the evidence and not a
+  // handle onto a disk.
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'invoice.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.7 1 0 obj'),
+  });
+
+  await expect(page.getByText('invoice.pdf')).toBeVisible();
+  await expect(page.getByRole('button', { name: /invoice\.pdf/ })).toBeVisible();
+});
+
+test('the journal is filtered between two days, each typed a part at a time', async ({ page }) => {
+  await signIn(page);
+  await page.getByRole('link', { name: catalogue['nav.journal'] }).click();
+
+  // Two date fields side by side, six segments, and each field typed into on
+  // its own — the arrangement `DateInput` is laid out in only where there is
+  // layout.
+  const parts = page.getByRole('spinbutton');
+  await expect(parts).toHaveCount(6);
+
+  await parts.first().focus();
+  await page.keyboard.type('15');
+  await expect(parts.nth(1)).toBeFocused();
+
+  await parts.nth(3).focus();
+  await page.keyboard.type('20');
+  await expect(parts.nth(4)).toBeFocused();
+});
+
+test('the four statements are one request, read four ways', async ({ page }) => {
+  await signIn(page);
+  await page.getByRole('link', { name: catalogue['nav.statements'] }).click();
+
+  // One panel mounted at a time, which is what keeps four walks of the journal
+  // off a screen that shows one page.
+  const tabs = page.getByRole('tab');
+  await expect(tabs).toHaveCount(4);
+  await expect(page.getByRole('tabpanel')).toHaveCount(1);
+
+  await tabs.nth(3).click();
+  await expect(page.getByRole('combobox', { name: catalogue['statements.account'] })).toBeVisible();
 });

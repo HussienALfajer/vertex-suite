@@ -7,6 +7,9 @@ export default defineConfig({
     // not mind one — it runs in Node either way, which is what lets it host the
     // real `SEC` that no browser could.
     environment: 'happy-dom',
+    // happy-dom announces a selection that has not moved, and React Aria's date
+    // segments move it on every announcement — see the file for the loop.
+    setupFiles: ['../../tools/happy-dom-selection.mjs'],
     /**
      * Longer than the default five seconds, because nothing here is a unit.
      *

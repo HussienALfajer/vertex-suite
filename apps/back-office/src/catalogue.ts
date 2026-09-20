@@ -345,6 +345,91 @@ export const catalogue = {
    * debit — so these are named by what a person *does*, never by what the
    * books do underneath: "إقفال فترة محاسبية", not "قفل الترحيل".
    */
+  /**
+   * `FIN-02`–`FIN-07`'s own refusals, as sentences.
+   *
+   * A refusal about one line points at it, and `{where}` is what it points
+   * with: the line, counted from one, for a manual entry; the **figure** for
+   * an opening balance, since the accountant entering one never saw a line
+   * (`Place` in `@vertex/fin`); the attachment, by its place in the list, for
+   * one about the evidence. One placeholder, resolved by `placeOf` **before**
+   * the message is formatted, because ICU has no optional argument — a message
+   * that named `{line}` would throw for a figure, and a `select` on
+   * `customer-debts` would not parse at all (`catalogue.test.ts`).
+   */
+  'refusal.place.line': 'السطر {line, number}',
+  'refusal.place.till': 'صندوق {currency}',
+  'refusal.place.attachment': 'المرفق {attachment, number}',
+  'refusal.place.attachments': 'المرفقات',
+  'refusal.fin.entry-id-invalid': 'رقم القيد غير صالح. حدّث الصفحة وأعد المحاولة.',
+  'refusal.fin.source-kind-invalid': 'نوع المستند غير صالح.',
+  'refusal.fin.source-document-required': 'المستند الذي يقابل هذا القيد غير محدّد.',
+  'refusal.fin.branch-not-found': 'لم يعد هذا الفرع موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.fin.branch-inactive': 'الفرع مسحوب من الخدمة، ولا تصدر عنه مستندات. اختر فرعًا يعمل.',
+  'refusal.fin.description-invalid': 'البيان غير صالح.',
+  'refusal.fin.description-required': 'اكتب بيان القيد. القيد اليدوي لا يُرحَّل بلا بيان.',
+  'refusal.fin.entry-empty': 'القيد بلا سطور. أضف سطرًا واحدًا على الأقل.',
+  'refusal.fin.entry-unbalanced':
+    'الطرفان غير متساويين بعملة الدفاتر: المدين {debits} والدائن {credits} ({currency}). لا تسامح في الفرق.',
+  'refusal.fin.functional-currency-unset':
+    'لم تُحدَّد عملة الدفاتر بعد، فلا شيء يتوازن. حدّدها من شاشة العملات.',
+  'refusal.fin.chart-unseeded': 'لم يُنصَّب دليل الحسابات بعد لهذا المتجر.',
+  'refusal.fin.currency-required': 'هذا الحساب يُمسك بعملة، فلا بد من تحديدها.',
+  'refusal.fin.account-is-group': 'لا يُرحَّل إلى حساب له حسابات تحته. اختر حسابًا فرعيًا.',
+  'refusal.fin.account-for-currency-missing': 'لا حساب نقدية للعملة {currency} في هذا الدليل.',
+  'refusal.fin.account-normal-balance-mismatch':
+    'طبيعة رصيد الحساب لا توافق ما يُرحَّل إليه هنا. اختر حسابًا آخر.',
+  'refusal.fin.account-role-undeclared': 'لا وحدة في هذا الإصدار تُرحّل إلى «{role}».',
+  'refusal.fin.account-role-reserved': 'هذا الدور محجوز لحساب النظام، ولا يُربط بحساب آخر.',
+  'refusal.fin.account-role-unmapped': 'لم يُربط الدور «{role}» بحساب بعد. اربطه ثم أعد المحاولة.',
+  'refusal.fin.account-controlled':
+    '{where}: لا يُكتب بخط اليد على حساب يمسكه النظام من مستنداته ({reserved}). ما يحرّكه مستند — جرد، حركة صندوق، إشعار — أو القيد الافتتاحي.',
+  'refusal.fin.line-side-unknown': '{where}: الجهة غير معروفة.',
+  'refusal.fin.line-amount-invalid': '{where}: المبلغ غير صالح، أو ليس أكثر من صفر.',
+  'refusal.fin.line-amount-too-precise':
+    '{where}: المبلغ {amount} بمنازل أكثر مما تُمسك به العملة {currency} ({decimals, number}). لا يُقرَّب هنا.',
+  'refusal.fin.line-currency-unknown': '{where}: العملة {currency} ليست من عملات المتجر.',
+  'refusal.fin.line-currency-not-functional': '{where}: المبلغ ليس بعملة الدفاتر {functional}.',
+  'refusal.fin.line-original-invalid': '{where}: المبلغ بعملة المستند غير صالح.',
+  'refusal.fin.line-original-is-functional':
+    '{where}: المبلغ بعملة المستند هو المبلغ نفسه، مكرَّرًا.',
+  'refusal.fin.line-original-required':
+    '{where}: هذا الحساب يُمسك بعملة، فلا بد من المبلغ بتلك العملة.',
+  'refusal.fin.line-currency-mismatch':
+    '{where}: الحساب يُمسك بعملة {account}، والمبلغ المذكور بعملة {original}.',
+  'refusal.fin.line-stamp-required': '{where}: لا شيء يقول بأي سعر صرف قُوِّم المبلغ.',
+  'refusal.fin.line-stamp-invalid': '{where}: مرجع سعر الصرف غير صالح.',
+  'refusal.fin.line-memo-invalid': '{where}: الملاحظة غير صالحة.',
+  'refusal.fin.line-override-on-functional':
+    '{where}: لا سعر صرف يقوّم مبلغًا هو أصلًا بعملة الدفاتر.',
+  'refusal.fin.line-amount-valueless':
+    '{where}: المبلغ بسعر اليوم أقل من أصغر منزلة تُمسك بها الدفاتر، فلا يساوي شيئًا فيها.',
+  // The one refusal `FIN` makes about the list of attachments as well as about
+  // one of them, so its place is the list when no file is named.
+  'refusal.fin.attachment-invalid': '{where}: ما وصل ليس ملفًا صالحًا — بلا اسم، أو بلا محتوى.',
+  'refusal.fin.attachment-type-unsupported':
+    '{where}: من نوع غير مقبول ({mediaType}). يُقبل PDF والصور فقط.',
+  'refusal.fin.attachment-content-mismatch':
+    '{where}: محتوى الملف لا يطابق نوعه المعلن ({mediaType}).',
+  'refusal.fin.attachment-too-large':
+    '{where}: حجمه {size, number} بايت، وهو أكبر من الحد المسموح {limit, number}.',
+  'refusal.fin.opening-balances-empty': 'لا رصيد افتتاحي مُدخَل. أدخل رقمًا واحدًا على الأقل.',
+  'refusal.fin.opening-till-repeated':
+    'الصندوق: أُدخلت العملة {currency} مرتين. لكل عملة صندوق واحد، وجمع الرقمين يُخفي عدًّا مكرَّرًا.',
+  'refusal.fin.numbering-refused':
+    'تعذّر إعطاء القيد رقمًا ({reason}). راجع إعداد الترقيم لهذا الفرع.',
+  'refusal.fin.entry-not-found': 'لم يعد هذا القيد موجودًا. حدّث الصفحة لترى الحالة الأحدث.',
+  'refusal.fin.entry-already-reversed':
+    'عُكس هذا القيد من قبل. تصحيح تصحيحٍ يكون بعكس القيد العكسي.',
+  'refusal.fin.reversal-before-original':
+    'لا يسبق القيد العكسي ({day}) تاريخ القيد الأصلي ({original}).',
+  'refusal.fin.reversal-reason-required': 'اكتب سبب العكس.',
+  'refusal.fin.exception-not-found': 'لم يعد هذا القيد المعلّق موجودًا. حدّث الصفحة.',
+  'refusal.fin.redate-reason-required': 'لتغيير تاريخ قيد معلّق لا بد من سبب مكتوب.',
+  'refusal.fin.day-outside-calendar':
+    'التاريخ {day} خارج السنوات المالية المعرَّفة. أضف السنة من التقويم المالي.',
+  'refusal.fin.span-inverted': 'نهاية المدة تسبق بدايتها، فلا تغطي يومًا واحدًا.',
+
   'permission.fin.account.view': 'الاطلاع على دليل الحسابات',
   'permission.fin.account.create': 'إضافة حساب',
   'permission.fin.account.edit': 'تعديل الحسابات ونقلها',
@@ -425,6 +510,11 @@ export const catalogue = {
   'nav.group.fin': 'الدفاتر',
   'nav.chart': 'دليل الحسابات',
   'nav.fiscalCalendar': 'التقويم المالي',
+  'nav.journal': 'دفتر اليومية',
+  'nav.manualEntry': 'قيد يدوي',
+  'nav.openingBalances': 'الأرصدة الافتتاحية',
+  'nav.postingExceptions': 'القيود المعلّقة',
+  'nav.statements': 'القوائم المالية',
 
   'action.close': 'إغلاق',
   'action.cancel': 'إلغاء',
@@ -1423,6 +1513,277 @@ export const catalogue = {
     '{months, plural, =1 {شهرية — كل شهر} =3 {ربعية — كل ثلاثة أشهر} =6 {نصف سنوية — كل ستة أشهر} =12 {سنوية — فترة واحدة} two {كل شهرين} few {كل # أشهر} many {كل # شهرًا} other {كل # شهر}}',
   'calendar.shape.monthsPerPeriod.description': 'عدد أشهر يقسم السنة بلا باقٍ.',
   'calendar.shape.periods': 'ينتج عن ذلك {periods, number} فترة.',
+  /**
+   * The two sides of the books, which every ledger screen writes: a column
+   * header, a badge on a line, the word beside a balance. One key each, so
+   * that a tenant renaming them renames them everywhere at once.
+   */
+  'entry.side.debit': 'مدين',
+  'entry.side.credit': 'دائن',
+
+  /**
+   * What an entry is called when nobody wrote it a description: the event it
+   * records.
+   *
+   * Only the three kinds `FIN` posts on its own account are here. Every other
+   * kind belongs to a module that has not arrived yet — `pos.sale`,
+   * `pur.goods-receipt` — and gains a word in this file with the screens of
+   * the module that posts it; until then the journal shows the kind as the
+   * machine text it is, which is honest rather than invented.
+   */
+  'entry.kind.fin.manual-entry': 'قيد يدوي',
+  'entry.kind.fin.opening-balance': 'قيد افتتاحي',
+  'entry.kind.fin.reversal': 'قيد عكسي',
+
+  /** The design system's own furniture, worded here like `password.show` above. */
+  'combobox.showOptions': 'إظهار الخيارات',
+  'attachment.choose': 'إرفاق ملف',
+  'attachment.remove': 'إزالة المرفق {name}',
+
+  /**
+   * `FX-06`'s override, as the two screens that state an amount in another
+   * currency offer it: a rate typed over the day's, with a reason that is
+   * logged and read by whoever reviews the books.
+   */
+  'override.use': 'سعر صرف خاص بدل سعر اليوم',
+  'override.form': 'صيغة السعر',
+  'override.rate': 'السعر',
+  'override.rate.required': 'أدخل السعر.',
+  'override.reason': 'سبب السعر الخاص',
+  'override.reason.description': 'يُسجَّل باسمك، ويقرؤه كل من يراجع الدفاتر لاحقًا.',
+  'override.reason.required': 'اكتب سبب استخدام سعر خاص.',
+
+  'journal.title': 'دفتر اليومية',
+  'journal.description':
+    'كل قيد هنا كتبته حركة في المتجر. لا يُعدَّل قيد ولا يُحذف؛ يُصحَّح بقيد عكسي يشير إليه.',
+  'journal.record': 'قيد يدوي',
+  'journal.table': 'قيود اليومية',
+  'journal.empty': 'لا قيود في هذا النطاق',
+  'journal.column.number': 'رقم القيد',
+  'journal.column.day': 'التاريخ',
+  'journal.column.branch': 'الفرع',
+  'journal.column.description': 'البيان',
+  'journal.column.total': 'المجموع',
+  'journal.column.actions': 'الإجراءات',
+  'journal.filter.branch': 'الفرع',
+  'journal.filter.branch.all': 'كل الفروع',
+  'journal.filter.from': 'من تاريخ',
+  'journal.filter.to': 'إلى تاريخ',
+  'journal.badge.reversing': 'قيد عكسي',
+  'journal.badge.fromQueue': 'من القيود المعلّقة',
+  'journal.open.action': 'فتح القيد',
+  'journal.close': 'إغلاق',
+  'journal.notFound': 'لم يعد هذا القيد موجودًا',
+  'journal.notFound.explanation':
+    'قد يكون العنوان يحمل رقمًا غير صحيح، أو قيدًا من متجر آخر. عُد إلى القائمة واختر قيدًا منها.',
+  'journal.fact.day': 'التاريخ',
+  'journal.fact.branch': 'الفرع',
+  'journal.fact.source': 'المستند',
+  'journal.fact.total': 'المجموع',
+  'journal.fact.register': 'الصندوق',
+  'journal.fact.description': 'البيان',
+  'journal.lines': 'سطور القيد',
+  'journal.lines.empty': 'لا سطور في هذا القيد',
+  'journal.line.ordinal': 'السطر',
+  'journal.line.ordinal.value': '{ordinal, number}',
+  'journal.line.account': 'الحساب',
+  'journal.line.original': 'بعملة المستند',
+  'journal.attachments': 'المرفقات',
+  'journal.attachment.open': 'فتح',
+  'journal.attachment.missing': 'تعذّر جلب هذا المرفق من مكان حفظ الملفات. راجع مسؤول النظام.',
+  'journal.reversed.title': 'عُكس هذا القيد',
+  'journal.reversed.explanation':
+    'يبقى القيد كما هو، ويقابله قيد عكسي بالسطور والمبالغ وأسعار الصرف نفسها على الجهة الأخرى.',
+  'journal.reverse.action': 'عكس القيد',
+  'journal.reverse.title': 'عكس القيد',
+  'journal.reverse.description':
+    'يُنشأ قيد جديد بالسطور نفسها على الجهة المقابلة، بالمبالغ وأسعار الصرف نفسها: العكس يُلغي بما قُوِّم به أصلًا، وإلا فليس عكسًا. لا يُمسّ القيد الأصلي.',
+  'journal.reverse.day': 'تاريخ القيد العكسي',
+  'journal.reverse.day.description': 'لا يسبق تاريخ القيد الأصلي، ويقع في فترة محاسبية مفتوحة.',
+  'journal.reverse.day.required': 'أدخل تاريخ القيد العكسي.',
+  'journal.reverse.reason': 'سبب العكس',
+  'journal.reverse.reason.description':
+    'إلزامي: تصحيح لا يستطيع أحد تفسيره بعد شهر هو خطأ يضطر المدقّق إلى افتراضه.',
+  'journal.reverse.reason.required': 'اكتب سبب العكس.',
+  'journal.reverse.submit': 'إنشاء القيد العكسي',
+  'journal.reversed': 'أُنشئ القيد العكسي {number}.',
+
+  'manualEntry.title': 'قيد يدوي',
+  'manualEntry.description':
+    'قيد تسوية يكتبه المحاسب بيده. البيان إلزامي، والطرفان يتساويان تمامًا بعملة الدفاتر.',
+  'manualEntry.toJournal': 'دفتر اليومية',
+  'manualEntry.submit': 'ترحيل القيد',
+  'manualEntry.heading': 'ترويسة القيد',
+  'manualEntry.branch': 'الفرع',
+  'manualEntry.branch.description': 'كل قيد يُقيَّد في فرع، ومن تسلسله يأخذ رقمه.',
+  'manualEntry.branch.required': 'اختر الفرع.',
+  'manualEntry.day': 'تاريخ القيد',
+  'manualEntry.day.description': 'يقع في فترة محاسبية مفتوحة، وإلا رُفض الترحيل.',
+  'manualEntry.day.required': 'أدخل تاريخ القيد.',
+  'manualEntry.words': 'البيان',
+  'manualEntry.words.description':
+    'إلزامي: رقم بلا كلمة بجانبه هو رقم يضطر المدقّق إلى افتراض أنه خطأ.',
+  'manualEntry.words.required': 'اكتب بيان القيد.',
+  'manualEntry.lines': 'السطور',
+  'manualEntry.lines.required': 'أضف سطرًا واحدًا على الأقل.',
+  'manualEntry.line.add': 'إضافة سطر',
+  'manualEntry.line.ordinal': 'السطر {ordinal, number}',
+  'manualEntry.line.remove': 'حذف السطر {ordinal, number}',
+  'manualEntry.line.account': 'الحساب',
+  'manualEntry.line.account.none': 'لا حساب بهذا الرمز أو الاسم',
+  'manualEntry.line.account.required': 'اختر الحساب.',
+  'manualEntry.line.side': 'الجهة',
+  'manualEntry.line.currency': 'العملة',
+  'manualEntry.line.amount': 'المبلغ',
+  'manualEntry.line.amount.required': 'أدخل المبلغ.',
+  'manualEntry.line.memo': 'ملاحظة السطر',
+  'manualEntry.totals.debits': 'المدين',
+  'manualEntry.totals.credits': 'الدائن',
+  'manualEntry.totals.balanced': 'متوازن',
+  'manualEntry.totals.difference': 'الفرق',
+  'manualEntry.evidence': 'المستندات',
+  'manualEntry.attachments': 'المرفقات',
+  'manualEntry.attachments.description':
+    'ملف PDF أو صورة، لا يتجاوز عشرة ميغابايت للملف الواحد. المرفق دليلٌ على القيد، ويبقى معه كما يبقى القيد.',
+  'manualEntry.attachment.rejected.type':
+    'لم يُرفق «{name}»: نوعه غير مقبول. يُقبل PDF والصور فقط.',
+  'manualEntry.attachment.rejected.size': 'لم يُرفق «{name}»: حجمه يتجاوز عشرة ميغابايت.',
+  'manualEntry.posted': 'رُحّل القيد {number}.',
+  'manualEntry.posted.title': 'رُحّل القيد',
+  'manualEntry.posted.explanation': 'حمل القيد الرقم {number}، والنموذج جاهز لقيد جديد.',
+  'manualEntry.posted.open': 'فتح القيد في اليومية',
+
+  'opening.title': 'الأرصدة الافتتاحية',
+  'opening.description':
+    'ما في المتجر يوم تُفتَح دفاتره: البضاعة، والصناديق، وما على العملاء وما للموردين. يُرحَّل قيدًا افتتاحيًا واحدًا بتاريخ ذلك اليوم.',
+  'opening.toJournal': 'دفتر اليومية',
+  'opening.submit': 'ترحيل القيد الافتتاحي',
+  'opening.heading': 'ترويسة القيد',
+  'opening.branch': 'الفرع',
+  'opening.branch.description': 'الصناديق تتبع فرعًا، ومتجر بفرعين يُفتح لكل فرع منهما.',
+  'opening.branch.required': 'اختر الفرع.',
+  'opening.day': 'يوم فتح الدفاتر',
+  'opening.day.description': 'تاريخ القيد الافتتاحي، ويقع في فترة محاسبية مفتوحة.',
+  'opening.day.required': 'أدخل يوم فتح الدفاتر.',
+  'opening.words': 'البيان',
+  'opening.words.description': 'اختياري: يوصف القيد بنوعه وتاريخه إن تُرك فارغًا.',
+  'opening.figures.required': 'أدخل رقمًا واحدًا على الأقل. ما لا يملكه المتجر يُترك فارغًا.',
+  'opening.whatTheShopHas': 'ما للمتجر',
+  'opening.whatTheShopOwes': 'ما على المتجر',
+  'opening.figure.currency': 'العملة',
+  'opening.inventory': 'البضاعة الموجودة',
+  'opening.inventory.description': 'قيمة المخزون على الرفوف وفي المستودع يوم فتح الدفاتر.',
+  'opening.customerDebts': 'ما على العملاء',
+  'opening.customerDebts.description': 'مجموع ما يدين به العملاء للمتجر يوم فتح الدفاتر.',
+  'opening.supplierDebts': 'ما للموردين',
+  'opening.supplierDebts.description': 'مجموع ما يدين به المتجر لمورديه يوم فتح الدفاتر.',
+  'opening.tills': 'الصناديق',
+  'opening.tills.none': 'لا صندوق مُدخَل. أضف صندوقًا لكل عملة في المتجر.',
+  'opening.till': 'ما في الصندوق',
+  'opening.till.description': 'يُعدّ الصندوق بعملته نفسها: لكل عملة صندوق واحد.',
+  'opening.till.add': 'إضافة صندوق',
+  'opening.till.remove': 'حذف صندوق {currency}',
+  'opening.posted': 'رُحّل القيد الافتتاحي {number}.',
+  'opening.posted.title': 'فُتحت الدفاتر',
+  'opening.posted.explanation':
+    'حمل القيد الافتتاحي الرقم {number}. ما بقي من فرق بين ما للمتجر وما عليه صار في حساب الحقوق الافتتاحية.',
+  'opening.posted.open': 'فتح القيد في اليومية',
+
+  /**
+   * Which of the four figures a refusal about an opening balance points at
+   * (`placeOf`), in place of a line number the accountant never saw.
+   *
+   * Their own keys, resolved before the message is formatted, because `FIN`
+   * spells two of them with a hyphen — `customer-debts` — and an ICU `select`
+   * selector is an identifier, so a branch by that name makes the whole
+   * message unparseable. The same arrangement `account.reserved.*` uses, for
+   * exactly the same reason (`catalogue.test.ts`). The till is the one not
+   * read from here: it is named by its currency (`refusal.place.till`).
+   */
+  'opening.figure.inventory': 'البضاعة',
+  'opening.figure.till': 'الصندوق',
+  'opening.figure.customer-debts': 'ما على العملاء',
+  'opening.figure.supplier-debts': 'ما للموردين',
+
+  'exceptions.title': 'القيود المعلّقة',
+  'exceptions.description': 'قيود وصلت بعد إقفال فترتها، وتنتظر قرارًا.',
+  'exceptions.explanation':
+    'كل قيد هنا بيعٌ أو حركةٌ وقعت فعلًا، سُجّلت في صندوق يعمل دون اتصال ووصلت بعد إقفال شهرها. لا يُرفض ولا يُهمل: إمّا يُرحَّل بتاريخه بعد إعادة فتح الفترة، وإمّا بيوم آخر في فترة مفتوحة مع سبب مكتوب.',
+  'exceptions.includeResolved': 'إظهار ما بُتَّ فيه',
+  'exceptions.table': 'القيود المعلّقة',
+  'exceptions.empty': 'لا قيود تنتظر قرارًا',
+  'exceptions.empty.all': 'لم يُعلَّق أي قيد بعد',
+  'exceptions.column.number': 'رقم القيد',
+  'exceptions.column.day': 'تاريخ القيد',
+  'exceptions.column.arrivedAt': 'وصل في',
+  'exceptions.column.branch': 'الفرع',
+  'exceptions.column.why': 'البيان وسبب التعليق',
+  'exceptions.column.total': 'المجموع',
+  'exceptions.column.state': 'الحالة',
+  'exceptions.column.actions': 'الإجراءات',
+  'exceptions.state.waiting': 'ينتظر قرارًا',
+  'exceptions.state.posted': 'رُحّل',
+  'exceptions.state.postedOn': 'بُتَّ فيه في {at}',
+  'exceptions.decide.action': 'البتّ في القيد',
+  'exceptions.open.action': 'فتح القيد في اليومية',
+  'exceptions.decide.title': 'البتّ في قيد معلّق',
+  'exceptions.decide.description':
+    'يُرحَّل القيد كما هو مؤرَّخ، أو بيوم آخر يقع في فترة مفتوحة مع سبب مكتوب. لا وجود لخيار ثالث: ما وقع يُرحَّل، وما لم يكن ينبغي أن يقع يُرحَّل ثم يُعكس.',
+  'exceptions.decide.asDated':
+    'يُرحَّل بتاريخه الأصلي. إن كانت فترته ما تزال مقفلة فسيُرفض، وعندها أعِد فتح الفترة من التقويم المالي أو اختر يومًا آخر.',
+  'exceptions.decide.redate': 'ترحيله بيوم آخر',
+  'exceptions.decide.day': 'اليوم البديل',
+  'exceptions.decide.day.description': 'يقع في فترة محاسبية مفتوحة.',
+  'exceptions.decide.day.required': 'أدخل اليوم البديل.',
+  'exceptions.decide.reason': 'سبب تغيير التاريخ',
+  'exceptions.decide.reason.description': 'إلزامي، ويُقرأ مع القيد عند أي مراجعة لاحقة.',
+  'exceptions.decide.reason.required': 'اكتب سبب تغيير التاريخ.',
+  'exceptions.decide.submit': 'ترحيل',
+  'exceptions.posted': 'رُحّل القيد {number}.',
+
+  'statements.title': 'القوائم المالية',
+  'statements.description':
+    'ميزان المراجعة، وقائمة الدخل، والميزانية، وتفصيل الأستاذ العام — لأي مدة، وبأي عملة يقرؤها صاحب المتجر.',
+  'statements.tabs': 'القوائم',
+  'statements.trialBalance': 'ميزان المراجعة',
+  'statements.incomeStatement': 'قائمة الدخل',
+  'statements.balanceSheet': 'الميزانية',
+  'statements.generalLedger': 'الأستاذ العام',
+  'statements.from': 'من تاريخ',
+  'statements.to': 'إلى تاريخ',
+  'statements.branch': 'الفرع',
+  'statements.branch.all': 'كل الفروع',
+  'statements.presentation': 'عملة العرض',
+  'statements.presentation.description': 'تُقرأ الأرقام بها، ولا يتغيّر شيء في الدفاتر.',
+  'statements.board': 'لوحة الأسعار',
+  'statements.board.default': 'تلقائيًا',
+  'statements.needSpan': 'حدّد المدة أولًا.',
+  'statements.empty': 'لا أرقام في هذه المدة',
+  'statements.scope.allBranches': 'كل الفروع',
+  'statements.scope.currency': 'بعملة',
+  'statements.scope.rate': 'بسعر {currency} لكل 1 {functional}',
+  'statements.column.account': 'الحساب',
+  'statements.column.opening': 'رصيد أول المدة',
+  'statements.column.closing': 'رصيد آخر المدة',
+  'statements.column.entry': 'رقم القيد',
+  'statements.column.day': 'التاريخ',
+  'statements.column.description': 'البيان',
+  'statements.column.running': 'الرصيد بعد الحركة',
+  'statements.totals.opening': 'أول المدة',
+  'statements.totals.movements': 'حركة المدة',
+  'statements.totals.closing': 'آخر المدة',
+  'statements.totals.assets': 'مجموع الأصول',
+  'statements.totals.liabilitiesAndEquity': 'مجموع الخصوم وحقوق الملكية',
+  'statements.result': 'نتيجة المدة',
+  'statements.broughtForward': 'نتائج ما قبل المدة',
+  'statements.opening': 'رصيد أول المدة',
+  'statements.closing': 'رصيد آخر المدة',
+  'statements.postings': 'حركات الحساب',
+  'statements.postings.none': 'لا حركات في هذه المدة',
+  'statements.account': 'حساب بعينه',
+  'statements.account.all': 'كل الحسابات',
+  'statements.account.none': 'لا حساب بهذا الرمز أو الاسم',
+  'statements.account.description': 'اتركه فارغًا ليفصّل الأستاذ كل حساب له رصيد أو حركة.',
 } as const;
 
 export type MessageKey = keyof typeof catalogue;
@@ -1493,13 +1854,52 @@ export function messageForRefusal(translator: Translator, refused: Refusal): str
   // The same for the purpose an account is reserved for, and for the same
   // reason: `inventory` is what the ledger calls it, not what a shopkeeper does.
   const reserved = refused.values['reserved'];
+  // And for where the refusal points, which is a sentence of its own.
+  const where = placeOf(translator, refused);
   return translator.format(key, {
     ...formattable(refused.values),
     ...(named ? { right: nameOfPermission(translator, right) } : {}),
     ...(typeof reserved === 'string'
       ? { reserved: nameOfReservedAccount(translator, reserved) }
       : {}),
+    ...(where === null ? {} : { where }),
   });
+}
+
+/**
+ * Where a refusal points, in a person's words — or null for one about the
+ * entry as a whole.
+ *
+ * `FIN` marks a refusal about one line with `line`, counted from one, and one
+ * about an opening figure with `figure` as well, because the accountant
+ * entering opening balances never saw a line (`Place` in `@vertex/fin`); one
+ * about the evidence carries `attachment`, the file's place in the list, and
+ * the refusal that the list is not a list carries nothing at all. ICU has no
+ * optional argument, so the message cannot choose between these: it names
+ * `{where}`, and this chooses.
+ *
+ * The figure goes through a key of its own rather than an ICU `select`, for
+ * `nameOfReservedAccount`'s reason: `FIN` spells it `customer-debts`, a hyphen
+ * is not an identifier, and a `select` on one makes the whole message
+ * unparseable. A till is named by its currency — `FIN-01` keeps one per
+ * currency, and "the till" would not say which.
+ */
+function placeOf(translator: Translator, refused: Refusal): string | null {
+  const { figure, currency, line, attachment } = refused.values;
+  if (typeof figure === 'string') {
+    if (figure === 'till' && typeof currency === 'string') {
+      return translator.format('refusal.place.till', { currency });
+    }
+    const key = `opening.figure.${figure}`;
+    return translator.has(key) ? translator.format(key) : figure;
+  }
+  if (typeof line === 'number') return translator.format('refusal.place.line', { line });
+  if (typeof attachment === 'number') {
+    return translator.format('refusal.place.attachment', { attachment });
+  }
+  return refused.code.startsWith('fin.attachment-')
+    ? translator.format('refusal.place.attachments')
+    : null;
 }
 
 export function createTranslator(locale = 'ar'): Translator {
