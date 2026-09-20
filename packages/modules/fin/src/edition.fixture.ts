@@ -1,6 +1,18 @@
-import type { BranchId, TenantId } from '@vertex/contracts';
+import type { BranchId, DeviceId, RegisterId, TenantId } from '@vertex/contracts';
 import type { CurrencyCode, LocalDate, Result } from '@vertex/kernel';
-import { instant, manualClock, newId, orThrow, type Id, type ManualClock } from '@vertex/kernel';
+import {
+  instant,
+  isId,
+  manualClock,
+  money,
+  newId,
+  ok,
+  orThrow,
+  parseId,
+  refuse,
+  type Id,
+  type ManualClock,
+} from '@vertex/kernel';
 import {
   commandContext,
   composeEdition,
@@ -21,6 +33,7 @@ import {
   type ModuleDefinition,
   type Registry,
   type SessionDriver,
+  type UnitOfWork,
 } from '@vertex/platform';
 import {
   Currencies,
@@ -28,16 +41,31 @@ import {
   ROUNDING_ACCOUNT,
   type TenantCurrency,
 } from '@vertex/fx/contract';
-import { DEFAULT_TIME_ZONE, Organisation, type Branch } from '@vertex/sys/contract';
+import {
+  DEFAULT_TIME_ZONE,
+  DocumentNumbering,
+  Organisation,
+  type Branch,
+  type IssuedNumber,
+  type NumberingRefusal,
+  type RecordSession,
+  type Register,
+  type SeriesScope,
+} from '@vertex/sys/contract';
 
-import { admitPosting } from './calendar.js';
 import {
   ChartAdministration,
   ChartOfAccounts,
   FiscalCalendar,
   FiscalCalendarAdministration,
-  type AccountingPeriod,
-  type CalendarRefusal,
+  Journal,
+  JournalAdministration,
+  PostingEngine,
+  PostingExceptionAdministration,
+  PostingExceptions,
+  type EntryDraft,
+  type Posted,
+  type PostingRefusal,
 } from './contract.js';
 import { finModule } from './index.js';
 
@@ -55,9 +83,10 @@ import { finModule } from './index.js';
  * more, and a test composing the real ones would be asserting things `FIN` is
  * not allowed to know. Each stand-in answers the questions `FIN` actually asks
  * and raises on any other, so that a change which started asking something new
- * fails here instead of widening the coupling unremarked. `SYS` is asked
- * nothing yet; the branch and its day, and the document number, arrive with
- * the posting engine.
+ * fails here instead of widening the coupling unremarked. Of `SYS` those are
+ * the tenant's branches, one branch, the registers of a branch, and the next
+ * document number inside the caller's own transaction; of `FX`, the
+ * currencies and the functional one.
  *
  * The modules that will one day post — `STK`, `CSH`, `SAL` — are stood in for
  * by their **declarations** alone: a role each, reserved or not, so that the
@@ -71,6 +100,11 @@ export interface Installed {
   readonly admin: ChartAdministration;
   readonly calendar: FiscalCalendar;
   readonly calendarAdmin: FiscalCalendarAdministration;
+  readonly posting: PostingEngine;
+  readonly journal: Journal;
+  readonly journalAdmin: JournalAdministration;
+  readonly exceptions: PostingExceptions;
+  readonly exceptionsAdmin: PostingExceptionAdministration;
   /** The shop's time. Noon in Damascus on 20 September 2026, which is 09:00 UTC. */
   readonly clock: ManualClock;
   readonly tenant: Id<'tenant'>;
@@ -81,6 +115,13 @@ export interface Installed {
   /** A second tenant on the same store node, which is the normal case. */
   readonly otherTenant: Id<'tenant'>;
   readonly byOther: CommandContext;
+  /**
+   * The transaction of a business event — a sale, a goods receipt — as the
+   * module that owns the event would open it. A test that posts inside one is
+   * the test `FIN-02` asks for: the event and its entry commit together, or
+   * neither does.
+   */
+  run<T>(by: CommandContext, work: (uow: UnitOfWork<MemorySession>) => Promise<T>): Promise<T>;
   /**
    * What the stand-in authority answers, for a test that came to prove a guard
    * is live rather than to exercise the command behind it. Everything, by
@@ -109,17 +150,49 @@ export interface Installed {
   /** `FX` for a tenant that has no currencies at all. */
   forgetCurrencies(tenant?: Id<'tenant'>): void;
   /**
+   * `FX`'s `makeFunctional`, as `FIN` sees it: the currency the books are kept
+   * in (`FX-02`) — or null, for a tenant that has never chosen one.
+   */
+  setFunctional(code: CurrencyCode | null): void;
+  /**
    * A branch, as `SYS` would have opened one. In the order they are opened
    * here, which is the order their identifiers carry.
    */
-  openBranch(options?: { readonly timeZone?: string; readonly tenant?: Id<'tenant'> }): BranchId;
+  openBranch(options?: {
+    readonly timeZone?: string;
+    readonly tenant?: Id<'tenant'>;
+    readonly active?: boolean;
+  }): BranchId;
+  /** Withdraws a branch, as `SYS`'s `deactivate` would. */
+  closeBranch(branch: BranchId): void;
   /**
-   * The posting engine of `FIN-02`, reduced to what `FIN-05` needs from it: an
-   * entry dated on a day, written inside one transaction, which the calendar
-   * either admits or refuses. `U06.3` replaces this with the engine itself —
-   * and it will call exactly what this calls.
+   * A till in a branch with a machine standing at it, as `SYS` would have
+   * opened and paired one — and the context of somebody working at that
+   * machine, which is what makes a command "made at a register".
    */
-  post(day: LocalDate, by?: CommandContext): Promise<Result<AccountingPeriod, CalendarRefusal>>;
+  openRegister(branch: BranchId, options?: { readonly prefix?: string }): AtRegister;
+  /**
+   * A whole posting through the engine of `FIN-02` — a goods receipt, ten
+   * dollars of stock against cash — dated on a day, in a transaction of its
+   * own, which the calendar either admits or refuses. What `FIN-05`'s tests
+   * need of the engine, and nothing about how the entry is composed.
+   */
+  post(day: LocalDate, by?: CommandContext): Promise<Result<Posted, PostingRefusal>>;
+  /**
+   * An entry posted where it was made — at a register trading with the line
+   * down — as far as this store is concerned: prepared, numbered and written
+   * in a transaction this store never saw commit. What reaches the system of
+   * record in `U07` is exactly this value, and `PostingEngine.accept` is the
+   * door it comes through.
+   */
+  postedElsewhere(by: CommandContext, draft: EntryDraft): Promise<Posted>;
+}
+
+/** A register, the machine at it, and somebody working there. */
+export interface AtRegister {
+  readonly register: RegisterId;
+  readonly device: DeviceId;
+  readonly by: CommandContext;
 }
 
 /** 12:00 in Damascus, which keeps UTC+3 all year. */
@@ -150,10 +223,12 @@ function authorityStandIn(
 }
 
 /**
- * What `FIN` is entitled to know about a shop's structure, which so far is the
- * branches and the zone each counts its days in.
+ * What `FIN` is entitled to know about a shop's structure: the branches, the
+ * zone each counts its days in, and the tills with a machine standing at them.
  */
 type Branches = Map<BranchId, Branch>;
+
+type Registers = Map<RegisterId, Register>;
 
 function unasked(module: string, method: string): never {
   throw new Error(
@@ -163,12 +238,84 @@ function unasked(module: string, method: string): never {
 }
 
 /**
- * `SYS`, stood in for: the tenant's branches and nothing else.
- *
- * The day and the document number of the posting engine arrive in `U06.3`; what
- * `FIN-05` asks for is the zone the calendar's first year is counted in.
+ * The two shapes the real module refuses a series scope for, mirrored so that
+ * what `FIN` hands `SYS` — its own document type, and the label it gives a
+ * fiscal year — is held here to what `SYS` will actually take. A label `SYS`
+ * refused would surface as a posting refused in every shop, on the first day of
+ * a fiscal year nobody had tested.
  */
-function organisationStandIn(branches: Branches): ModuleDefinition<MemorySession> {
+const DOCUMENT_TYPE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const FISCAL_YEAR = /^[A-Za-z0-9][A-Za-z0-9-]{0,15}$/;
+
+/**
+ * `SYS-02` numbering, reduced to what `FIN` relies on from it: a counter that
+ * moves in the **caller's** session and nowhere else, one number per document
+ * however often it is asked for, a till's series numbered only by the machine
+ * standing at it, and the default formats — so that what an entry is called
+ * here is what the real module would call it.
+ */
+function issueNumber(
+  registers: Registers,
+  uow: UnitOfWork<RecordSession>,
+  scope: SeriesScope,
+  document: string,
+): Result<IssuedNumber, NumberingRefusal> {
+  if (!DOCUMENT_TYPE.test(scope.documentType)) {
+    return refuse('sys.document-type-unowned', { documentType: scope.documentType });
+  }
+  if (!FISCAL_YEAR.test(scope.fiscalYear)) {
+    return refuse('sys.fiscal-year-required', { fiscalYear: scope.fiscalYear });
+  }
+  const { session, context } = uow;
+  const series = [scope.documentType, scope.branch, scope.register ?? '-', scope.fiscalYear]
+    .map(encodeURIComponent)
+    .join('|');
+  const issuedKey = `standin/issued/${context.tenant}/${document}/${series}`;
+  const already = session.get(issuedKey);
+  if (already !== undefined) return ok(already as IssuedNumber);
+
+  let prefix = '';
+  let generation = 0;
+  if (scope.register !== null) {
+    const register = registers.get(scope.register);
+    if (register === undefined)
+      return refuse('sys.register-not-found', { register: scope.register });
+    // Read as the real module reads it: a UUID in the one case every record is
+    // filed under, so a machine's identifier arriving upper-cased is the machine.
+    const machine =
+      context.device !== null && isId(context.device) ? parseId<'device'>(context.device) : null;
+    if (register.heldBy === null || register.heldBy !== machine) {
+      return refuse('sys.register-held-elsewhere', { register: register.name });
+    }
+    prefix = register.prefix;
+    generation = register.generation;
+  }
+  const counterKey = `standin/counter/${context.tenant}/${series}/${String(generation)}`;
+  const sequence = (session.get(counterKey) as { readonly next: number } | undefined)?.next ?? 1;
+  const padded = String(sequence).padStart(6, '0');
+  const issued: IssuedNumber = {
+    number:
+      scope.register === null
+        ? `${scope.fiscalYear}-${padded}`
+        : `${prefix}-${String(generation)}-${scope.fiscalYear}-${padded}`,
+    sequence,
+    generation,
+    scope,
+  };
+  session.put(counterKey, { next: sequence + 1 });
+  session.put(issuedKey, issued);
+  return ok(issued);
+}
+
+/**
+ * `SYS`, stood in for: the tenant's branches, one branch, the tills of a
+ * branch, and the next document number — inside the caller's transaction, as
+ * the real module issues it.
+ */
+function organisationStandIn(
+  branches: Branches,
+  registers: Registers,
+): ModuleDefinition<MemorySession> {
   return defineModule<MemorySession>({
     code: 'SYS',
     labelKey: 'module.sys',
@@ -182,39 +329,65 @@ function organisationStandIn(branches: Branches): ModuleDefinition<MemorySession
               (one) => one.tenant === by.tenant && (listing?.including === 'all' || one.active),
             ),
           ),
+        branch: (by, id) => {
+          const found = branches.get(id);
+          return Promise.resolve(found?.tenant === by.tenant ? found : null);
+        },
+        registers: (by, branch, listing) =>
+          Promise.resolve(
+            [...registers.values()].filter(
+              (one) =>
+                one.tenant === by.tenant &&
+                one.branch === branch &&
+                (listing?.including === 'all' || one.active),
+            ),
+          ),
         company: () => unasked('SYS', 'a company'),
-        branch: () => unasked('SYS', 'one branch'),
         location: () => unasked('SYS', 'a location'),
         register: () => unasked('SYS', 'a register'),
         companies: () => unasked('SYS', 'every company'),
         locations: () => unasked('SYS', 'the locations of a branch'),
-        registers: () => unasked('SYS', 'the registers of a branch'),
         profile: () => unasked('SYS', 'a business profile'),
         setting: () => unasked('SYS', 'a setting'),
+      })),
+      provideContract(DocumentNumbering, () => ({
+        next: (uow, scope, document) =>
+          Promise.resolve(issueNumber(registers, uow, scope, document)),
+        series: () => unasked('SYS', 'a numbering series'),
+        configured: () => unasked('SYS', 'the configured series of a branch'),
+        preview: () => unasked('SYS', 'a numbering specimen'),
       })),
     ],
   });
 }
 
 /**
- * A currency as `FX` would define it: the kernel's shape, with rules that do
- * not matter to a chart — only the code does, and the tenant it belongs to.
+ * A currency as `FX` would define it: the kernel's shape, at the precision the
+ * real module seeds it — the pound stored to two places and settled to the
+ * ten-pound note, the rest to four places, which is the ledger precision every
+ * functional amount is held to. The rounding rules matter to nothing here; the
+ * precision does, because a figure finer than it is one the engine refuses.
  */
 function currencyNamed(tenant: TenantId, code: CurrencyCode): TenantCurrency {
+  const pound = code === 'SYP';
   return {
     tenant,
     code,
     symbol: code,
-    decimals: 2,
-    roundingIncrement: '0.01',
+    decimals: pound ? 2 : 4,
+    roundingIncrement: pound ? '10' : '0.01',
     roundingMode: 'half-up',
     enabled: true,
   };
 }
 
+/** What each tenant keeps its books in (`FX-02`), as the stand-in holds it. */
+type Functional = Map<TenantId, CurrencyCode | null>;
+
 /**
- * `FX`, stood in for: the currencies of each tenant, the announcement of a new
- * one, and the one account role the real module declares.
+ * `FX`, stood in for: the currencies of each tenant, the one the books are
+ * kept in, the announcement of a new currency, and the one account role the
+ * real module declares.
  *
  * Declares the event the real module declares, under its real name, because
  * the registry refuses a subscription to an event no module in the catalogue
@@ -223,7 +396,10 @@ function currencyNamed(tenant: TenantId, code: CurrencyCode): TenantCurrency {
  * for it, so that what is proved here about `FX-07`'s residual reaching a
  * reserved account is proved about the role `FX` actually posts to.
  */
-function currenciesStandIn(held: Map<TenantId, TenantCurrency[]>): ModuleDefinition<MemorySession> {
+function currenciesStandIn(
+  held: Map<TenantId, TenantCurrency[]>,
+  functional: Functional,
+): ModuleDefinition<MemorySession> {
   return defineModule<MemorySession>({
     code: 'FX',
     labelKey: 'module.fx',
@@ -246,7 +422,11 @@ function currenciesStandIn(held: Map<TenantId, TenantCurrency[]>): ModuleDefinit
               .sort((one, other) => (one.code < other.code ? -1 : 1)),
           ),
         currency: () => unasked('FX', 'one currency'),
-        functional: () => unasked('FX', 'the functional currency'),
+        functional: (by) =>
+          Promise.resolve(
+            (held.get(by.tenant) ?? []).find((one) => one.code === functional.get(by.tenant)) ??
+              null,
+          ),
       })),
     ],
   });
@@ -280,11 +460,13 @@ export function installFin(): Installed {
     true;
 
   const held = new Map<TenantId, TenantCurrency[]>();
+  const functional: Functional = new Map();
   const branches: Branches = new Map();
+  const registers: Registers = new Map();
   const catalogue = [
-    organisationStandIn(branches),
+    organisationStandIn(branches, registers),
     authorityStandIn(() => decide),
-    currenciesStandIn(held),
+    currenciesStandIn(held, functional),
     finModule<MemorySession>(),
     declaring('STK', [
       {
@@ -368,20 +550,60 @@ export function installFin(): Installed {
     ['EUR', 'SYP', 'TRY', 'USD'].map((code) => currencyNamed(tenant, code)),
   );
   held.set(otherTenant, [currencyNamed(otherTenant, 'USD')]);
+  // The dollar, as `FX-01` seeds it and `FX-02` makes it — for both tenants,
+  // so that a test which never mentions the functional currency is a test of a
+  // shop set up the ordinary way.
+  functional.set(tenant, 'USD');
+  functional.set(otherTenant, 'USD');
+
+  const posting = registry.require(PostingEngine);
+  const admin = registry.require(ChartAdministration);
+
+  const openBranch = (
+    options: {
+      readonly timeZone?: string;
+      readonly tenant?: Id<'tenant'>;
+      readonly active?: boolean;
+    } = {},
+  ): BranchId => {
+    const branch: Branch = {
+      id: newId<'branch'>(),
+      tenant: options.tenant ?? tenant,
+      company: newId<'company'>(),
+      name: 'Aleppo',
+      address: '',
+      point: null,
+      timeZone: options.timeZone ?? DEFAULT_TIME_ZONE,
+      active: options.active ?? true,
+    };
+    branches.set(branch.id, branch);
+    return branch.id;
+  };
+
+  /** The branch a posting with no branch of its own is booked at: the tenant's first, opened if there is none. */
+  const someBranch = (of: TenantId): BranchId =>
+    [...branches.values()].find((one) => one.tenant === of && one.active)?.id ??
+    openBranch({ tenant: of });
 
   return {
     registry,
     store,
     chart: registry.require(ChartOfAccounts),
-    admin: registry.require(ChartAdministration),
+    admin,
     calendar: registry.require(FiscalCalendar),
     calendarAdmin: registry.require(FiscalCalendarAdministration),
+    posting,
+    journal: registry.require(Journal),
+    journalAdmin: registry.require(JournalAdministration),
+    exceptions: registry.require(PostingExceptions),
+    exceptionsAdmin: registry.require(PostingExceptionAdministration),
     clock,
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),
     system: systemContext(tenant),
     otherTenant,
     byOther: commandContext({ tenant: otherTenant, actor: newId<'user'>() }),
+    run: (by, work) => transactor.run(by, work),
     answers(
       next: (by: CommandContext, right: string, where?: AuthorisationScope) => boolean,
     ): void {
@@ -398,25 +620,80 @@ export function installFin(): Installed {
     },
     forgetCurrencies(of = tenant) {
       held.set(of, []);
+      functional.set(of, null);
     },
-    openBranch(options = {}): BranchId {
-      const branch: Branch = {
-        id: newId<'branch'>(),
-        tenant: options.tenant ?? tenant,
-        company: newId<'company'>(),
-        name: 'Aleppo',
-        address: '',
-        point: null,
-        timeZone: options.timeZone ?? DEFAULT_TIME_ZONE,
+    setFunctional(code) {
+      functional.set(tenant, code);
+    },
+    openBranch,
+    closeBranch(id) {
+      const branch = branches.get(id);
+      if (branch === undefined) throw new Error('No such branch to close.');
+      branches.set(id, { ...branch, active: false });
+    },
+    openRegister(branch, options = {}): AtRegister {
+      const device = newId<'device'>();
+      const register: Register = {
+        id: newId<'register'>(),
+        tenant: branches.get(branch)?.tenant ?? tenant,
+        branch,
+        name: 'Till',
+        prefix: options.prefix ?? 'T1',
         active: true,
+        generation: 1,
+        heldBy: device,
       };
-      branches.set(branch.id, branch);
-      return branch.id;
+      registers.set(register.id, register);
+      return {
+        register: register.id,
+        device,
+        by: commandContext({ tenant: register.tenant, actor: newId<'user'>(), device }),
+      };
     },
-    post(day: LocalDate, by: CommandContext = commandContext({ tenant, actor: newId<'user'>() })) {
-      return transactor.run(by, (uow) =>
-        Promise.resolve(admitPosting(uow.session, by.tenant, day)),
+    async post(day, by = commandContext({ tenant, actor: newId<'user'>() })) {
+      // Ten dollars of stock received against cash: two roles every edition
+      // reserves, so that a posting needs nothing mapped first. The chart is
+      // seeded if it has not been, which is what a shop's first morning does.
+      orThrow(
+        await admin.seed(systemContext(by.tenant)),
+        (refusal) => new Error(`The chart would not seed: ${refusal.code}`),
       );
+      const prepared = await posting.prepare(by, {
+        id: newId<'journal-entry'>(),
+        source: { kind: 'stk.goods-receipt', document: newId<'goods-receipt'>() },
+        branch: someBranch(by.tenant),
+        day,
+        lines: [
+          { role: INVENTORY_ROLE, side: 'debit', amount: money('10', 'USD') },
+          { role: CASH_ROLE, currency: 'USD', side: 'credit', amount: money('10', 'USD') },
+        ],
+      });
+      if (!prepared.ok) return prepared;
+      return transactor.run(by, (uow) => posting.post(uow, prepared.value));
+    },
+    async postedElsewhere(by, draft) {
+      const prepared = orThrow(
+        await posting.prepare(by, draft),
+        (refusal) => new Error(`The entry would not prepare: ${refusal.code}`),
+      );
+      // Posted, then rolled back on purpose: the register's store committed
+      // this and ours never did, which is the whole of what "elsewhere" means
+      // to a store node. The value is kept; the transaction is not.
+      const made: { value: Posted | null } = { value: null };
+      const elsewhere = new Error('made elsewhere');
+      try {
+        await transactor.run(by, async (uow) => {
+          made.value = orThrow(
+            await posting.post(uow, prepared),
+            (refusal) => new Error(`The entry would not post: ${refusal.code}`),
+          );
+          throw elsewhere;
+        });
+      } catch (cause) {
+        if (cause !== elsewhere) throw cause;
+      }
+      if (made.value === null) throw new Error('Nothing was made elsewhere.');
+      return made.value;
     },
     async defineCurrency(code, options = {}) {
       const of = options.tenant ?? tenant;

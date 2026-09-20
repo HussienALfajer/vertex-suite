@@ -242,7 +242,7 @@ describe('Fiscal calendar and period closing — FIN-05', () => {
     const [year] = taken(await fin.calendarAdmin.seed(fin.system));
     const march = periodOf(year!, 3);
 
-    expect(taken(await fin.post(day('2026-03-14'))).id).toBe(march.id);
+    expect(taken(await fin.post(day('2026-03-14'))).entry.period).toBe(march.id);
 
     const posted = (await fin.calendar.years(fin.by))[0]!;
     expect(periodOf(posted, 3).posted).toBe(true);
@@ -561,7 +561,9 @@ describe('Who may keep the calendar', () => {
     const declared = new Map(FIN_PERMISSION_SEEDS.map((one) => [one.id, one]));
     const { fiscalYear, accountingPeriod } = FIN_PERMISSIONS;
 
-    expect([...declared.keys()].filter((id) => !/^fin\.account(-mapping)?\./.test(id))).toEqual([
+    expect(
+      [...declared.keys()].filter((id) => /^fin\.(fiscal-year|accounting-period)\./.test(id)),
+    ).toEqual([
       'fin.fiscal-year.view',
       'fin.fiscal-year.create',
       'fin.fiscal-year.edit',
