@@ -16,6 +16,7 @@ import type {
 import {
   balancedOrThrow,
   entryFrom,
+  keyOfSource,
   ownedBy,
   postedFor,
   postedIn,
@@ -117,7 +118,7 @@ export function acceptEntry(
   const already = postedFor(session, tenant, entry.source);
   if (already !== null) return ok(Object.freeze({ outcome: 'posted', posted: already }));
 
-  const queued = readRecord(session, 'queued', tenant, [entry.source.kind, entry.source.document]);
+  const queued = readRecord(session, 'queued', tenant, keyOfSource(entry.source));
   if (queued !== null) {
     const waiting = exceptionIn(session, tenant, queued.exception);
     // Queued and neither waiting nor posted is a store that lost a record
@@ -140,7 +141,7 @@ export function acceptEntry(
       // As it arrived, with nothing of this store's on it: the period and the
       // queue mark are this store's to settle when the entry is posted here.
       arrived: sealedPosted(
-        entryFrom(entry, {
+        entryFrom(entry, lines, {
           number: entry.number,
           day: entry.day,
           period: entry.period,
@@ -153,7 +154,7 @@ export function acceptEntry(
       resolved: null,
     };
     writeRecord(session, 'exception', tenant, [exception.id], exception);
-    appendRecord(session, 'queued', tenant, [entry.source.kind, entry.source.document], {
+    appendRecord(session, 'queued', tenant, keyOfSource(entry.source), {
       tenant,
       source: entry.source,
       exception: exception.id,
@@ -165,7 +166,7 @@ export function acceptEntry(
   // else: the number is the one the register printed (`SYS-02`).
   const posted = writePosted(
     session,
-    entryFrom(entry, {
+    entryFrom(entry, lines, {
       number: entry.number,
       day: entry.day,
       period: admitted.value.period.id,
@@ -223,7 +224,7 @@ export function resolveException(
 
   const posted = writePosted(
     session,
-    entryFrom(arrived.entry, {
+    entryFrom(arrived.entry, arrived.lines, {
       number: arrived.entry.number,
       day: on,
       period: admitted.value.period.id,

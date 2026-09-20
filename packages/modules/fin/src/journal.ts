@@ -83,15 +83,30 @@ export function entryIn(
   return readRecord(session, 'entry', tenant, [id]);
 }
 
-/** An entry's lines, in their order — read by the entry's own prefix, never by scanning every line. */
-export function linesOf(
+/**
+ * An entry's lines, in their order, each read **by name**: the entry says how
+ * many it has, and every one sits under its own ordinal. Never a scan — the
+ * posting path reads an entry back whenever a replay finds its event already
+ * posted, and a scan there would make the replay conflict with every command
+ * adding a record anywhere. A line the entry counts and the store lacks is a
+ * store that lost a record written with the entry, and is not answered around.
+ */
+function linesOf(
   session: RecordSession,
   tenant: TenantId,
-  entry: JournalEntryId,
+  entry: JournalEntry,
 ): readonly JournalLine[] {
-  return scanRecords(session, 'line', tenant, [entry]).sort(
-    (one, other) => one.ordinal - other.ordinal,
-  );
+  const lines: JournalLine[] = [];
+  for (let ordinal = 1; ordinal <= entry.lineCount; ordinal += 1) {
+    const line = readRecord(session, 'line', tenant, [entry.id, String(ordinal)]);
+    if (line === null) {
+      throw new Error(
+        `Line ${String(ordinal)} of entry ${entry.id} of tenant ${tenant} is missing.`,
+      );
+    }
+    lines.push(line);
+  }
+  return lines;
 }
 
 /** One entry with its lines, sealed, or null. */
@@ -101,21 +116,26 @@ export function postedIn(
   id: JournalEntryId,
 ): Posted | null {
   const entry = entryIn(session, tenant, id);
-  return entry === null ? null : sealedPosted(entry, linesOf(session, tenant, id));
+  return entry === null ? null : sealedPosted(entry, linesOf(session, tenant, entry));
 }
 
 /**
- * Where a business event's entry is, by the one key a replay can read by name.
- *
- * The reference is read as the draft read it, so that the journal asked about a
- * document in either spelling answers about the same document.
+ * The key parts a business event is filed under, wherever it is filed: the
+ * placement of its entry and its place in the queue both use this, and both
+ * read the reference as the draft read it, so that a source in either spelling
+ * — and a source written here or read here — is one source.
  */
-export function placementOf(
+export function keyOfSource(source: EntrySource): readonly string[] {
+  return [source.kind, referenceArriving(source.document)];
+}
+
+/** Where a business event's entry is, by the one key a replay can read by name. */
+function placementOf(
   session: RecordSession,
   tenant: TenantId,
   source: EntrySource,
 ): Placement | null {
-  return readRecord(session, 'posted', tenant, [source.kind, referenceArriving(source.document)]);
+  return readRecord(session, 'posted', tenant, keyOfSource(source));
 }
 
 /**
@@ -231,10 +251,12 @@ export function balancedOrThrow(facts: EntryFacts, lines: readonly JournalLine[]
  * The entry as it will be written: the facts, and what only posting settles.
  *
  * Picked field by field rather than spread, because a `PreparedEntry` carries
- * its lines and an entry record must not — the lines are records of their own.
+ * its lines and an entry record must not — the lines are records of their own,
+ * and the entry carries only how many there are.
  */
 export function entryFrom(
   facts: EntryFacts,
+  lines: readonly JournalLine[],
   settled: {
     readonly number: string;
     readonly day: LocalDate;
@@ -246,6 +268,7 @@ export function entryFrom(
     id: facts.id,
     tenant: facts.tenant,
     number: settled.number,
+    lineCount: lines.length,
     source: Object.freeze({ ...facts.source }),
     branch: facts.branch,
     register: facts.register,
@@ -274,6 +297,15 @@ export function writePosted(
   lines: readonly JournalLine[],
 ): Posted {
   const { tenant } = entry;
+  // Numbered one to N in order, or the entry could never be read back by name;
+  // this module numbers every line it prepares, so anything else was altered.
+  lines.forEach((line, index) => {
+    if (line.ordinal !== index + 1) {
+      throw new Error(
+        `The lines of entry ${entry.id} are not numbered one to ${String(lines.length)}.`,
+      );
+    }
+  });
   appendRecord(session, 'entry', tenant, [entry.id], entry);
   for (const line of lines) {
     appendRecord(session, 'line', tenant, [entry.id, String(line.ordinal)], {
@@ -289,7 +321,7 @@ export function writePosted(
       reversal: entry.id,
     });
   }
-  appendRecord(session, 'posted', tenant, [entry.source.kind, entry.source.document], {
+  appendRecord(session, 'posted', tenant, keyOfSource(entry.source), {
     tenant,
     source: entry.source,
     entry: entry.id,
@@ -351,7 +383,7 @@ export async function postEntry(
   const admitted = admitPosting(session, tenant, prepared.day);
   if (!admitted.ok) return admitted;
 
-  const entry = entryFrom(prepared, {
+  const entry = entryFrom(prepared, prepared.lines, {
     number: numbered.value.number,
     day: prepared.day,
     period: admitted.value.period.id,

@@ -166,6 +166,7 @@ describe('Automatic posting engine — FIN-02', () => {
       id: draft.id,
       tenant: fin.tenant,
       number: '2026-000001',
+      lineCount: 2,
       source: draft.source,
       branch,
       register: null,

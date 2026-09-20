@@ -777,9 +777,18 @@ export interface PreparedEntry extends EntryFacts {
  * reads it. `exception` names the queue entry this came through when it
  * arrived late for a closed period and somebody decided on it; for every
  * ordinary posting it is null.
+ *
+ * `lineCount` is how many lines the entry has, and it is here so that the
+ * lines can be read **by name** — `1` to `lineCount`, each its own key — and
+ * never by scanning the key space for them. The posting path reads an entry
+ * back whenever a replay finds the event already posted, and a scan there
+ * would make that replay conflict with every command adding a record
+ * anywhere, which is the cost `TenantCalendar` keeps the calendar off for the
+ * same reason.
  */
 export interface JournalEntry extends EntryFacts {
   readonly number: string;
+  readonly lineCount: number;
   readonly period: AccountingPeriodId;
   readonly exception: PostingExceptionId | null;
 }
@@ -1015,8 +1024,9 @@ export interface PostingEngine {
    * already has.
    *
    * The sale happened, so the one thing this never does is refuse the entry
-   * for its date: that is what the queue is for. It still refuses what cannot
-   * be written at all — an entry reversing one already reversed.
+   * for its date: that is what the queue is for. A reversal that arrives for an
+   * entry the system of record has since reversed itself is answered with that
+   * reversal, as any other event already posted is.
    */
   accept(uow: UnitOfWork<RecordSession>, arrived: Posted): Booked<Accepted>;
 }
