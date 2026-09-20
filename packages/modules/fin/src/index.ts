@@ -61,6 +61,7 @@ import {
   PostingEngine,
   PostingExceptionAdministration,
   PostingExceptions,
+  Statements,
   type AccountId,
   type AccountingPeriodId,
   type AttachmentStore,
@@ -85,6 +86,7 @@ import {
 import { postingEngine } from './engine.js';
 import { exceptionIn, exceptionsIn, resolveException } from './exceptions.js';
 import { entriesIn, postedFor, postedIn, reversalIn } from './journal.js';
+import { statements } from './statements.js';
 
 export * from './contract.js';
 export { yearState } from './calendar.js';
@@ -417,6 +419,10 @@ export function finModule<Session extends RecordSession>(
             read(by, (session) => exceptionIn(session, by.tenant, id)),
         } satisfies PostingExceptions;
       }),
+
+      // Unguarded, as the module's other reads are: see `Statements` in the
+      // contract for where a person's sight is decided.
+      provideContract(Statements, (context: ModuleContext<Session>) => statements(context)),
 
       provideContract(PostingExceptionAdministration, (context: ModuleContext<Session>) => {
         const { postingException } = FIN_PERMISSIONS;

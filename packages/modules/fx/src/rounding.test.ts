@@ -316,6 +316,87 @@ describe('Presentation currency switching — FX-03', () => {
     expect(presented.rate).toBeNull();
   });
 
+  it('shows a page of figures at one rate, read once, in the order they were given', async () => {
+    const page = taken(
+      await fx.presentation.presentAll(
+        fx.by,
+        aleppo,
+        [money('100', 'USD'), money('0.5', 'USD'), money('0', 'USD')],
+        'SYP',
+      ),
+    );
+
+    expect(page.amounts.map(shown)).toEqual(['1300000 SYP', '6500 SYP', '0 SYP']);
+    // One rate for the page, which is what a statement shows beside it — not
+    // one beside every figure, and not one board read per figure.
+    expect(page.rate).toMatchObject({ basis: 'mid', rate: '13000', currency: 'SYP' });
+  });
+
+  it('shows two figures equal in the books as two equal figures, whatever they are read in', async () => {
+    const page = taken(
+      await fx.presentation.presentAll(
+        fx.by,
+        aleppo,
+        [money('0.000005', 'USD'), money('0.000005', 'USD'), money('0.00001', 'USD')],
+        'SYP',
+      ),
+    );
+    const [one, other, whole] = page.amounts;
+
+    // The property every statement rests on. Debits against credits, assets
+    // against what funds them: each identity the ledger guarantees is two
+    // figures that are equal, and a conversion that is a function of the figure
+    // alone cannot make them differ.
+    expect(shown(one!)).toBe(shown(other!));
+    // What does not survive is addition. The two halves come to the whole in
+    // the books and not in the pound, which is a property of reading one unit
+    // in another — and the reason a statement converts every figure from its
+    // own exact figure rather than by adding up the converted ones.
+    expect([shown(one!), shown(other!), shown(whole!)]).toEqual([
+      '0.07 SYP',
+      '0.07 SYP',
+      '0.13 SYP',
+    ]);
+  });
+
+  it('answers a page already in the currency asked for, with no rate to state', async () => {
+    const page = taken(
+      await fx.presentation.presentAll(fx.by, aleppo, [money('100', 'USD')], 'USD'),
+    );
+
+    expect(page.amounts.map(shown)).toEqual(['100 USD']);
+    expect(page.rate).toBeNull();
+  });
+
+  it('reads no board at all for a page with no figures on it', async () => {
+    const quiet = fx.openBranch();
+
+    // No rate entered at this branch today, which refuses a figure. A page of
+    // none has nothing to convert, so there is nothing to refuse about.
+    expect(
+      refused(await fx.presentation.present(fx.by, quiet, money('1', 'USD'), 'SYP')).code,
+    ).toBe('fx.rate-missing');
+    const page = taken(await fx.presentation.presentAll(fx.by, quiet, [], 'SYP'));
+    expect(page).toEqual({ amounts: [], rate: null });
+  });
+
+  it('refuses a whole page when the branch has no rate for today', async () => {
+    const quiet = fx.openBranch();
+
+    expect(
+      refused(await fx.presentation.presentAll(fx.by, quiet, [money('1', 'USD')], 'SYP')).code,
+    ).toBe('fx.rate-missing');
+  });
+
+  it('raises on a page holding more than one currency, which one rate cannot convert', async () => {
+    // A defect in whoever assembled the page, not a fact about the shop: the
+    // alternative is a euro figure converted at the pound's rate and printed
+    // in the column beside it as though it belonged there.
+    await expect(
+      fx.presentation.presentAll(fx.by, aleppo, [money('100', 'USD'), money('100', 'EUR')], 'SYP'),
+    ).rejects.toThrow(/one rate converts one currency/i);
+  });
+
   it('presents a document at its own stamped rate, and never at today’s', async () => {
     const stamp = await stampFor('SYP');
     // The day's rate is corrected after the document was issued.

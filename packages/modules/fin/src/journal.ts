@@ -131,7 +131,15 @@ function countedOf<C extends 'line' | 'attachment'>(
   return found;
 }
 
-function linesOf(
+/**
+ * Every line of an entry, in the order the entry holds them.
+ *
+ * Published because `FIN-07` reads the lines of entries it found by walking
+ * the journal, and reads them the same way a posting replay does: by name,
+ * one to `lineCount`. A statement that scanned the key space for an entry's
+ * lines would scan it once per entry.
+ */
+export function linesIn(
   session: RecordSession,
   tenant: TenantId,
   entry: JournalEntry,
@@ -170,7 +178,7 @@ export function postedIn(
   if (entry === null) return null;
   return sealedPosted(
     entry,
-    linesOf(session, tenant, entry),
+    linesIn(session, tenant, entry),
     countedOf(session, tenant, 'attachment', entry, entry.attachmentCount),
   );
 }

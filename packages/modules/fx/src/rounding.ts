@@ -19,6 +19,8 @@ import {
   type CurrencyRefusal,
   type DocumentValue,
   type Presented,
+  type PresentedAll,
+  type PresentationRate,
   type RateInForce,
   type RateRefusal,
   type RateStamp,
@@ -240,8 +242,8 @@ function pairFor(
 }
 
 /** A figure already in the currency it is being read in: converted by nothing. */
-function asItStands(amount: Money, into: TenantCurrency): Presented {
-  return { amount: money(toPlaces(amount.amount, into), into.code), rate: null };
+function asItStands(amount: Money, into: TenantCurrency): Money {
+  return money(toPlaces(amount.amount, into), into.code);
 }
 
 /** Which of the pair is not the functional currency: the one a rate exists for. */
@@ -266,7 +268,25 @@ function convert(amount: Money, pair: Pair, rate: string): Money {
 }
 
 /**
- * A figure shown at today's mid rate in this branch (`FX-03`).
+ * A rate read once, and the pair of currencies it runs between: everything a
+ * figure needs to be shown in another currency, worked out before the first
+ * figure is.
+ *
+ * Separated from the showing because a page of figures is shown at **one**
+ * rate (`Presentation.presentAll`): the board is read once here, and every
+ * figure on the page then goes through the same `translated`. `at` is null for
+ * a figure already in the currency asked for, which is the one case where
+ * there is no rate to read and none to show.
+ */
+interface Translation {
+  readonly pair: Pair;
+  readonly at: string | null;
+  readonly rate: PresentationRate | null;
+}
+
+/**
+ * The translation from one currency into another at today's mid in this
+ * branch (`FX-03`).
  *
  * The rate is read here rather than handed in, because which currency the rate
  * is *for* is not known until the pair is resolved: one end of it is the
@@ -279,16 +299,16 @@ function convert(amount: Money, pair: Pair, rate: string): Money {
  * register under `FX-04`'s exception shows the rate's own day here as it must
  * on every currency-sensitive screen.
  */
-export function presentAtMid(
+function midFrom(
   session: RecordSession,
   tenant: TenantId,
   here: BranchDay,
-  amount: Money,
+  from: CurrencyCode,
   into: CurrencyCode,
-): Rounded<Presented> {
-  const pair = pairFor(session, tenant, amount.currency, into);
+): Rounded<Translation> {
+  const pair = pairFor(session, tenant, from, into);
   if (!pair.ok) return pair;
-  if (amount.currency === into) return ok(asItStands(amount, pair.value.into));
+  if (from === into) return ok({ pair: pair.value, at: null, rate: null });
 
   const traded = tradedOf(pair.value);
   const inForce = rateInForce(session, tenant, here.branch, here.day, traded.code, here.device);
@@ -296,7 +316,8 @@ export function presentAtMid(
 
   const rate = midOf(inForce.value);
   return ok({
-    amount: convert(amount, pair.value, rate),
+    pair: pair.value,
+    at: rate,
     rate: Object.freeze({
       currency: traded.code,
       functional: pair.value.functional.code,
@@ -308,6 +329,70 @@ export function presentAtMid(
       revision: inForce.value.revision.id,
       lastKnown: inForce.value.lastKnown?.id ?? null,
     }),
+  });
+}
+
+/** One figure through a translation already resolved. */
+function translated(amount: Money, translation: Translation): Money {
+  const { pair, at } = translation;
+  return at === null ? asItStands(amount, pair.into) : convert(amount, pair, at);
+}
+
+/** A figure shown at today's mid rate in this branch (`FX-03`). */
+export function presentAtMid(
+  session: RecordSession,
+  tenant: TenantId,
+  here: BranchDay,
+  amount: Money,
+  into: CurrencyCode,
+): Rounded<Presented> {
+  const translation = midFrom(session, tenant, here, amount.currency, into);
+  if (!translation.ok) return translation;
+  return ok({
+    amount: translated(amount, translation.value),
+    rate: translation.value.rate,
+  });
+}
+
+/**
+ * A page of figures shown at today's mid rate in this branch, read once
+ * (`Presentation.presentAll`).
+ *
+ * The currency of the page is the first figure's, and every other figure is
+ * held to it: a page translated at one rate is a page in one unit, and a
+ * figure in another would be converted at a rate that is not its own and then
+ * printed beside the rest as though it were. It raises for the reason a stamp
+ * of another tenant does — whoever assembled the page holds every figure on
+ * it, so this is a defect there and not a fact about the shop.
+ *
+ * An empty page reads no board at all. There is nothing to convert, so there
+ * is no rate to state, and refusing a branch that has not entered today's
+ * rates for a page with no figures on it would be a refusal about nothing.
+ */
+export function presentAllAtMid(
+  session: RecordSession,
+  tenant: TenantId,
+  here: BranchDay,
+  amounts: readonly Money[],
+  into: CurrencyCode,
+): Rounded<PresentedAll> {
+  const first = amounts[0];
+  if (first === undefined) return ok({ amounts: Object.freeze([]), rate: null });
+
+  for (const amount of amounts) {
+    if (amount.currency !== first.currency) {
+      throw new Error(
+        `A page of figures to show at one rate holds both ${first.currency} and ` +
+          `${amount.currency}. One rate converts one currency.`,
+      );
+    }
+  }
+
+  const translation = midFrom(session, tenant, here, first.currency, into);
+  if (!translation.ok) return translation;
+  return ok({
+    amounts: Object.freeze(amounts.map((amount) => translated(amount, translation.value))),
+    rate: translation.value.rate,
   });
 }
 
@@ -323,7 +408,8 @@ export function presentAtStamp(
 
   const pair = pairFor(session, tenant, amount.currency, into);
   if (!pair.ok) return pair;
-  if (amount.currency === into) return ok(asItStands(amount, pair.value.into));
+  if (amount.currency === into)
+    return ok({ amount: asItStands(amount, pair.value.into), rate: null });
 
   if (tradedOf(pair.value).code !== stamp.currency) {
     return refuse('fx.stamp-currency-mismatch', {

@@ -13,7 +13,12 @@ import {
 } from '@vertex/contracts';
 import type { CurrencyCode, Id, Instant, LocalDate, Money, Refusal, Result } from '@vertex/kernel';
 import { contractKey, type CommandContext, type UnitOfWork } from '@vertex/platform';
-import type { RateOverrideQuote, RateRefusalCode, RateStampId } from '@vertex/fx/contract';
+import type {
+  PresentationRate,
+  RateOverrideQuote,
+  RateRefusalCode,
+  RateStampId,
+} from '@vertex/fx/contract';
 
 /**
  * What `FIN` lets the rest of the system see.
@@ -1450,6 +1455,352 @@ export const PostingExceptionAdministration = contractKey<PostingExceptionAdmini
 );
 
 /**
+ * A figure the books carry on one side or the other (`FIN-07`).
+ *
+ * Every statement here is made of these. `amount` is never negative and `side`
+ * says which way it reads — the arrangement a journal line uses, for the
+ * reason it uses it: a signed amount **and** a side would be two ways of
+ * saying one thing, free to disagree. What a balance has that a line does not
+ * is the third case: a balance can be nothing, and then it is on neither side.
+ * `side` is null exactly when the amount is nought, so a screen has no
+ * question to answer about which column a nought belongs in.
+ *
+ * Which side is not the account's normal one. An asset overdrawn reads as a
+ * credit and a supplier paid in advance as a debit, and a statement that filed
+ * either under the side its kind usually takes would be hiding the one thing
+ * the reader is looking for.
+ */
+export interface Balance {
+  readonly side: EntrySide | null;
+  readonly amount: LedgerAmount;
+}
+
+/** The debits and the credits of a column, each a total of the amounts on that side. */
+export interface SideTotals {
+  readonly debits: LedgerAmount;
+  readonly credits: LedgerAmount;
+}
+
+/**
+ * What a statement was read over: the days it covers, and whose figures.
+ *
+ * Echoed back on the statement because a statement is printed, filed and read
+ * again months later, and a page of figures whose range lives only in the
+ * screen that asked for it is a page nobody can check.
+ *
+ * `branch` is null for the tenant's own books, which is every branch at once.
+ * A statement of one branch still balances: a branch is a fact of the **entry**
+ * and not of its lines, so no entry has half of itself at one shop and half at
+ * another, and every subtotal of the journal by branch is made of whole
+ * entries.
+ */
+export interface StatementScope {
+  readonly from: LocalDate;
+  readonly to: LocalDate;
+  readonly branch: BranchId | null;
+}
+
+/**
+ * Reading a statement in a currency other than the one the books are kept in
+ * (`FX-03`).
+ *
+ * `board` is whose rates the figures are translated at. A statement covers
+ * every branch by default and rates are a branch's own (`FX-04`), so somebody
+ * has to choose one; omitted, it is the statement's own branch, or else the
+ * first branch the tenant opened that is still trading. Said on the statement
+ * either way, with the rate, because a figure in pounds whose rate came from
+ * another shop's board is a figure nobody could reproduce.
+ */
+export interface Presenting {
+  readonly into: CurrencyCode;
+  readonly board?: BranchId;
+}
+
+/** What every statement of `FIN-07` is asked for: a span of days, whose books, and in what currency. */
+export interface StatementRequest {
+  readonly from: LocalDate;
+  readonly to: LocalDate;
+  /** One branch's figures; omitted or null, the tenant's own. */
+  readonly branch?: BranchId | null;
+  /** Omitted, the statement is in the currency the books are kept in (`FX-02`). */
+  readonly presentation?: Presenting;
+}
+
+/** A general ledger, which is the one statement asked for by account. */
+export interface LedgerRequest extends StatementRequest {
+  /**
+   * Which accounts to detail. Omitted, every account that has a balance at the
+   * end of the span or moved within it — which is the whole ledger, and is what
+   * "general ledger" means.
+   */
+  readonly accounts?: readonly AccountId[];
+}
+
+/**
+ * What every statement says about itself: what it covers, what unit its
+ * figures are in, and how they got there.
+ *
+ * `rate` is null when nothing was converted — the statement is in the books'
+ * own currency — and is otherwise the **one** rate every figure on it went
+ * through. One rate, because `FX-03` shows a rate beside the page and not
+ * beside each line, and because two figures equal in the books have to stay
+ * equal when they are read in another currency: that is what carries "debits
+ * equal credits" and "assets equal what funds them" across the conversion.
+ *
+ * Addition does not cross it. A column of translated figures can differ from
+ * its translated total by the rounding of each, because every figure here is
+ * converted from its **own** exact figure in the books rather than by adding up
+ * the converted ones — which is what keeps each of them the true reading of
+ * what it stands for. The alternative makes the column add up and makes every
+ * figure in it slightly invented.
+ */
+export interface Statement {
+  readonly scope: StatementScope;
+  readonly currency: CurrencyCode;
+  readonly rate: PresentationRate | null;
+}
+
+/**
+ * One line of a statement read as a tree: an account, what it comes to, and
+ * what sits beneath it.
+ *
+ * `total` is the account **and its subtree**, because that is what a reader
+ * adds up — a group showing only its own postings would leave a page whose
+ * figures do not come to its totals. A leaf's total is its own.
+ *
+ * The whole account is carried rather than a copy of the parts a statement
+ * prints. A seeded account has a null name and is displayed through the
+ * terminology layer, an account the tenant added is displayed as it was typed,
+ * and a statement that flattened either into a string would be a second copy of
+ * a rule `design-system.md` §12 already states in one place.
+ */
+export interface StatementLine {
+  readonly account: Account;
+  readonly total: Balance;
+  readonly children: readonly StatementLine[];
+}
+
+/**
+ * One kind of account, with its accounts and what they come to.
+ *
+ * A section is every root of that kind and everything beneath it. An account
+ * can only be parented under one of its own kind (`fin.account-kind-mismatch`),
+ * so the sections of a chart partition it: nothing is counted twice and nothing
+ * is left out.
+ *
+ * `total` is computed from **every** account of the kind, including any the
+ * statement does not show. Nothing is lost by that — an account is left off a
+ * statement only when it has nothing to contribute to it — so the lines printed
+ * always come to the total printed above them.
+ */
+export interface StatementSection {
+  readonly kind: AccountKind;
+  readonly lines: readonly StatementLine[];
+  readonly total: Balance;
+}
+
+/** One account on a trial balance: where it stood, what moved, and where it stands. */
+export interface TrialBalanceRow {
+  readonly account: Account;
+  /** Everything posted before the span, which is what the span opened on. */
+  readonly opening: Balance;
+  /** What was posted to it within the span, each side on its own. */
+  readonly debits: LedgerAmount;
+  readonly credits: LedgerAmount;
+  readonly closing: Balance;
+}
+
+/** The three columns of a trial balance, each totalled on both sides. */
+export interface TrialBalanceTotals {
+  readonly opening: SideTotals;
+  readonly movements: SideTotals;
+  readonly closing: SideTotals;
+}
+
+/**
+ * The trial balance of `FIN-07`: every account with something to say over the
+ * span, and the proof that the books balance.
+ *
+ * Flat and in code order, which is what a trial balance is. The groups of the
+ * chart are an income statement's and a balance sheet's business; a trial
+ * balance is the list a person checks a ledger against.
+ *
+ * Its whole point is `totals`: the debits equal the credits in each of the
+ * three columns, and they do so by construction rather than by arithmetic done
+ * here — every entry ever written balanced, so any sum of whole entries
+ * balances. A trial balance that did not would mean the store had lost a line.
+ */
+export interface TrialBalance extends Statement {
+  readonly rows: readonly TrialBalanceRow[];
+  readonly totals: TrialBalanceTotals;
+}
+
+/**
+ * The income statement of `FIN-07`: what the shop earned and spent over the
+ * span, and what it made.
+ *
+ * Only what moved **within** the span. An income account's balance from before
+ * it is not income of it, and that is the one thing distinguishing this
+ * statement from the two beside it.
+ *
+ * `result` is a **credit** when the shop made money and a debit when it lost
+ * it, in the books' own terms rather than in a sign nobody could check: the
+ * books carry income on the credit side, so a profit is what is left over
+ * there. It has no side at all when income and expenses came to the same
+ * figure.
+ */
+export interface IncomeStatement extends Statement {
+  readonly income: StatementSection;
+  readonly expenses: StatementSection;
+  readonly result: Balance;
+}
+
+/** The two sides of a balance sheet, which are equal — that being what makes it one. */
+export interface BalanceSheetTotals {
+  readonly assets: Balance;
+  /** Liabilities, the equity accounts, what was made before the span and what was made within it. */
+  readonly liabilitiesAndEquity: Balance;
+}
+
+/**
+ * The balance sheet of `FIN-07`: where the shop stands on the last day of the
+ * span, and what it stands on.
+ *
+ * A position and not a period, so every figure in its three sections is
+ * everything posted **up to and including** the span's last day. The span's
+ * first day still does work, and it is the work a closing entry would otherwise
+ * do: what the shop has made is split at it, into what it had made before the
+ * span (`broughtForward`) and what it made within it (`result`) — and the
+ * second of those is exactly the figure the income statement of the same
+ * request ends on. Two statements of one request are one statement read twice.
+ *
+ * **There is no year-end closing entry**, here or anywhere: the accumulated
+ * result is computed when it is read, from the income and expense accounts
+ * themselves. An entry that swept them into equity each year would be a posting
+ * nobody made, dated on a day nobody chose, and would leave `FIN-03` holding
+ * something the books cannot explain.
+ *
+ * Both figures read as credits when the shop is in profit, which is the side
+ * equity sits on: they fund the assets, exactly as capital does.
+ */
+export interface BalanceSheet extends Statement {
+  readonly assets: StatementSection;
+  readonly liabilities: StatementSection;
+  /** The equity **accounts**; what the shop has made is `broughtForward` and `result`. */
+  readonly equity: StatementSection;
+  /** Every result before the span's first day. */
+  readonly broughtForward: Balance;
+  /** The result within the span. */
+  readonly result: Balance;
+  readonly totals: BalanceSheetTotals;
+}
+
+/**
+ * One posting on a general ledger: which entry it came from, what it did, and
+ * where the account stood afterwards.
+ *
+ * `running` is the account's balance **after** this posting, counted from its
+ * opening balance down the page. It is what a ledger is read for: not that a
+ * figure was posted, but what it made of the account.
+ *
+ * `original` is the line's own amount in the currency its document was in, and
+ * it is never translated — it is a fact about that document, in that currency,
+ * and restating it in a third one would be a figure nobody wrote.
+ */
+export interface LedgerPosting {
+  readonly entry: JournalEntryId;
+  /** What a person reads back, issued by `SYS-02`. */
+  readonly number: string;
+  readonly day: LocalDate;
+  readonly branch: BranchId;
+  readonly source: EntrySource;
+  /** The entry's, which is what a manual entry says about itself (`FIN-04`). */
+  readonly description: string | null;
+  /** The line's place in the entry, counted from one. */
+  readonly ordinal: number;
+  readonly memo: string | null;
+  readonly side: EntrySide;
+  readonly amount: LedgerAmount;
+  readonly original: LedgerAmount | null;
+  readonly running: Balance;
+}
+
+/** One account's ledger over the span: where it opened, every posting, and where it closed. */
+export interface LedgerAccount {
+  readonly account: Account;
+  readonly opening: Balance;
+  /** In the order the journal keeps them: by day, then as they were recorded. */
+  readonly postings: readonly LedgerPosting[];
+  readonly debits: LedgerAmount;
+  readonly credits: LedgerAmount;
+  readonly closing: Balance;
+}
+
+/** The general ledger detail of `FIN-07`, account by account in code order. */
+export interface GeneralLedger extends Statement {
+  readonly accounts: readonly LedgerAccount[];
+}
+
+/**
+ * Why a statement could not be read.
+ *
+ * Reading a statement writes nothing and judges nothing about the books, so
+ * there is very little of its own here: what a statement refuses is the
+ * request it was given. `FX`'s refusals pass through whole — no rate for today
+ * at the branch whose board was asked for, a currency the shop does not take —
+ * because the code and its figures are what a screen already knows how to say
+ * about them, and enumerating which of them a translation can produce would
+ * tie this list to the inside of another module.
+ *
+ * A chart that was never seeded is not among them. A tenant with no accounts
+ * has no figures either, and a page of noughts is the true answer to what its
+ * books came to.
+ */
+export type StatementRefusalCode =
+  | RateRefusalCode
+  /** Not a day: see `localDate` in `@vertex/kernel` for the one spelling. */
+  | 'fin.day-invalid'
+  /** A span that ends before it begins, which covers no day at all. */
+  | 'fin.span-inverted'
+  /** `FX-02`: the tenant has not said what its books are kept in, so no figure has a unit. */
+  | 'fin.functional-currency-unset'
+  /** The branch whose figures were asked for, or whose board would translate them, is not the tenant's. */
+  | 'fin.branch-not-found'
+  /** A general ledger was asked for an account the tenant does not have. */
+  | 'fin.account-not-found';
+
+export type StatementRefusal = Refusal<StatementRefusalCode>;
+
+type Read<T> = Promise<Result<T, StatementRefusal>>;
+
+/**
+ * The financial statements of `FIN-07`: the four ways the journal is read.
+ *
+ * Every one of them is the same reading of the same journal, differing in what
+ * it measures and how it arranges it — the trial balance by account, the income
+ * statement and the balance sheet by the chart's own groups, the general ledger
+ * posting by posting. None of them stores anything, and none of them is a
+ * cache: a statement is computed from the entries every time it is asked for,
+ * because a figure kept beside the ledger is a figure free to disagree with it.
+ *
+ * Unguarded, as this module's other reads are: what a *person* may see is
+ * decided where their request enters the system of record (`U07`), with the
+ * view right declared below. `RPT-15` surfaces these four to a reader and adds
+ * nothing to them.
+ */
+export interface Statements {
+  trialBalance(by: CommandContext, request: StatementRequest): Read<TrialBalance>;
+
+  incomeStatement(by: CommandContext, request: StatementRequest): Read<IncomeStatement>;
+
+  balanceSheet(by: CommandContext, request: StatementRequest): Read<BalanceSheet>;
+
+  generalLedger(by: CommandContext, request: LedgerRequest): Read<GeneralLedger>;
+}
+
+export const Statements = contractKey<Statements>('fin.statements');
+
+/**
  * The account roles this module posts to itself, declared the way every other
  * module declares its own (`modules.md` §4.4).
  *
@@ -1546,6 +1897,21 @@ export interface ExceptionRights {
 }
 
 /**
+ * Reading the statements of `FIN-07`, which is the only thing anybody does to
+ * one: they are computed from the journal when they are asked for and there is
+ * nothing there to create, revise or withdraw.
+ *
+ * Its own right rather than the journal's. What a shop's books came to and
+ * what every posting in them was are different things to be trusted with: a
+ * branch manager is shown the figures their shop is judged on without being
+ * handed the entry behind every sale, and the two are separable only if they
+ * were separate rights from the first day.
+ */
+export interface StatementRights {
+  readonly view: PermissionId;
+}
+
+/**
  * Every right defined below, collected as each is built, with the roles that
  * hold it the day a shop is set up (`SEC-01`).
  *
@@ -1620,6 +1986,7 @@ export interface FinPermissions {
   readonly journalEntry: JournalRights;
   readonly openingBalance: OpeningRights;
   readonly postingException: ExceptionRights;
+  readonly statement: StatementRights;
 }
 
 export const FIN_PERMISSIONS: FinPermissions = Object.freeze({
@@ -1667,6 +2034,13 @@ export const FIN_PERMISSIONS: FinPermissions = Object.freeze({
   postingException: Object.freeze({
     view: right('posting-exception', 'view', READERS),
     resolve: right('posting-exception', operation('resolve'), ACCOUNTANT),
+  }),
+  // What the shop came to, which is what a manager is measured on and what an
+  // accountant keeps. Nobody who works a till or a stockroom reads it: `SEC-03`
+  // keeps cost and margin from them, and an income statement is the one page
+  // that states the margin of everything at once.
+  statement: Object.freeze({
+    view: right('statement', 'view', READERS),
   }),
 });
 
