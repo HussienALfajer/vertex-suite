@@ -21,7 +21,9 @@ export default defineConfig({
      * is; it hashes passwords with scrypt from Node's standard library and
      * cannot be bundled into a browser at all. What this app names is
      * `@vertex/sec/contract`, which is types and keys and nothing that runs —
-     * resolved through the package's own exports map, from its build.
+     * and that one entry point *is* below, because the keys are values built
+     * when the file loads, and a seed revised in it is otherwise a seed the
+     * role editor goes on showing the old way until the package is rebuilt.
      */
     alias: [
       /**
@@ -34,21 +36,33 @@ export default defineConfig({
        * found it empty, and threw *"a Vertex component was rendered outside
        * `<VertexProvider>`"* from inside a provider that was plainly there.
        *
-       * It has to come first: the exact-match pattern below would not catch a
-       * subpath, but a future loosened one would.
+       * The subpaths have to come first: the exact-match patterns below would
+       * not catch one, but a future loosened one would.
+       *
+       * Held by `src/resolution.test.ts`, which reads this list against what
+       * the shipped source imports: the rule was broken a second time, without
+       * a sound, by a contract entry point left off while its package was on.
        */
       { find: /^@vertex\/ui\/map$/, replacement: source('ui', 'geo/index.ts') },
       { find: /^@vertex\/ui$/, replacement: source('ui') },
       { find: /^@vertex\/kernel$/, replacement: source('kernel') },
       { find: /^@vertex\/i18n$/, replacement: source('i18n') },
-      // `SYS` is the real module, hosted here (`dev-system.ts`) rather than
-      // stood in for — nothing in it needs a machine. Left off this list it
-      // resolves through the package's `dist/` exports instead of `src/`, and
-      // an edit to a rule in `packages/modules/sys` looks like it did nothing
-      // until the package is rebuilt: the same stale-copy trap `@vertex/ui/map`
-      // fell into above. `@vertex/platform` composes it and needs the same fix
-      // for the same reason.
+      { find: /^@vertex\/contracts$/, replacement: source('contracts') },
+      // `SYS` and `FX` are the real modules, hosted here (`dev-system.ts`)
+      // rather than stood in for — nothing in either needs a machine. Left off
+      // this list they resolve through the package's `dist/` exports instead of
+      // `src/`, and an edit to a rule in `packages/modules/sys` or `fx` looks
+      // like it did nothing until the package is rebuilt: the same stale-copy
+      // trap `@vertex/ui/map` fell into above. Their `/contract` entries come
+      // with them, by the rule at the top of this list — `@vertex/sys/contract`
+      // once resolved to `dist/` while `@vertex/sys` resolved to `src/`, which
+      // was two copies of `SYS_PERMISSIONS` in one page. `@vertex/platform`
+      // composes them and needs the same fix for the same reason.
+      { find: /^@vertex\/sys\/contract$/, replacement: source('modules/sys', 'contract.ts') },
       { find: /^@vertex\/sys$/, replacement: source('modules/sys') },
+      { find: /^@vertex\/fx\/contract$/, replacement: source('modules/fx', 'contract.ts') },
+      { find: /^@vertex\/fx$/, replacement: source('modules/fx') },
+      { find: /^@vertex\/sec\/contract$/, replacement: source('modules/sec', 'contract.ts') },
       { find: /^@vertex\/platform$/, replacement: source('platform') },
     ],
   },

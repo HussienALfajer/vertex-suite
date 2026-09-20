@@ -554,6 +554,39 @@ function rightsOver(resource: string, seeds: Seeds): StructuralRights {
 }
 
 /**
+ * The three rights over an assignment, which has no `edit`.
+ *
+ * An assignment is a user in a role over a reach, and there is no command that
+ * revises one in place: re-assigning the same role replaces the reach, and
+ * `assignRole` judges that as the withdrawal of the old reach **and** the grant
+ * of the new one, because checked only as a grant it was the way round every
+ * rule a withdrawal keeps. So the two rights it asks for are `create` and
+ * `delete`, and an `edit` beside them would be a right no command ever asks —
+ * a tick in the role editor that reads as protection and is none.
+ */
+export interface StaffingRights {
+  readonly view: PermissionId;
+  readonly create: PermissionId;
+  readonly withdraw: PermissionId;
+}
+
+type StaffingSeeds = Readonly<Record<keyof StaffingRights, readonly SeededRole[]>>;
+
+function staffingRights(resource: string, seeds: StaffingSeeds): StaffingRights {
+  const rights: StaffingRights = Object.freeze({
+    view: permissionId('sec', resource, 'view'),
+    create: permissionId('sec', resource, 'create'),
+    withdraw: permissionId('sec', resource, 'delete'),
+  });
+  DECLARED.push(
+    { id: rights.view, seededFor: seeds.view },
+    { id: rights.create, seededFor: seeds.create },
+    { id: rights.withdraw, seededFor: seeds.withdraw },
+  );
+  return rights;
+}
+
+/**
  * The four, and the two things done to a person that are neither an edit nor a
  * deletion.
  *
@@ -588,7 +621,7 @@ function userRights(seeds: UserSeeds): UserRights {
 
 export interface SecPermissions {
   readonly role: StructuralRights;
-  readonly assignment: StructuralRights;
+  readonly assignment: StaffingRights;
   readonly user: UserRights;
 }
 
@@ -616,10 +649,9 @@ export const SEC_PERMISSIONS: SecPermissions = Object.freeze({
    * Safe to seed that far because an assignment can never exceed the assigner's
    * own reach: a manager confined to one shop staffs that shop.
    */
-  assignment: rightsOver('role-assignment', {
+  assignment: staffingRights('role-assignment', {
     view: MANAGER,
     create: MANAGER,
-    edit: MANAGER,
     withdraw: MANAGER,
   }),
   /**

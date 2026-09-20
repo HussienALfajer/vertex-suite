@@ -265,7 +265,6 @@ export const catalogue = {
   'permission.sec.role.delete': 'سحب دور من الخدمة',
   'permission.sec.role-assignment.view': 'الاطلاع على تكليفات الأدوار',
   'permission.sec.role-assignment.create': 'تعيين دور لمستخدم',
-  'permission.sec.role-assignment.edit': 'تعديل تكليف دور',
   'permission.sec.role-assignment.delete': 'سحب تكليف دور',
   /**
    * `FX`'s own rights. `rate.override` and `last-known-rate.confirm` are named

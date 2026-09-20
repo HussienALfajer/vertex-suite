@@ -90,6 +90,18 @@ describe('Action-level permissions — SEC-02', () => {
     expect(decision).toEqual({ granted: false, grounds: 'no-such-right' });
   });
 
+  it('declares no right over an assignment that no command asks for', () => {
+    // An assignment is granted and withdrawn, never revised in place: giving
+    // somebody a role they already hold replaces its reach, and that is judged
+    // as both a withdrawal and a grant. `sec.role-assignment.edit` was declared
+    // beside those two and asked by nothing — a tick in the role editor that
+    // read as protection and was none.
+    const declared = sec.registry.permissions.map((one) => one.id);
+    expect(declared).toContain(SEC_PERMISSIONS.assignment.create);
+    expect(declared).toContain(SEC_PERMISSIONS.assignment.withdraw);
+    expect(declared).not.toContain(permissionId('sec', 'role-assignment', 'edit'));
+  });
+
   it('grants nothing at all to somebody in no role', async () => {
     await aShopWithAnOwner(sec);
     const stranger = sec.as(await sec.hire('person-3'));

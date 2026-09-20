@@ -320,7 +320,7 @@ export function Currencies(): ReactNode {
  * reads the same `CurrenciesProvider`: one banner for a provider that has
  * fallen behind, not one per screen that happens to read it.
  */
-export function CurrenciesStaleBanner(): ReactNode {
+function CurrenciesStaleBanner(): ReactNode {
   const translator = useTranslator();
   const { unreachable, reload } = useCurrencies();
   if (!unreachable) return null;

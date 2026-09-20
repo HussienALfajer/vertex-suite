@@ -165,7 +165,7 @@ function fieldsSeparated(tokens: readonly Token[]): boolean {
  * numbers again; and parts that run into each other print two different
  * documents under one number. Both are refused where they can still be retyped.
  */
-export function checkFormat(
+function checkFormat(
   format: string,
   hasRegister: boolean,
 ): Result<readonly Token[], NumberingRefusal> {

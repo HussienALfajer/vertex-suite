@@ -682,6 +682,14 @@ export function setLocationActive(
     if (branch !== null && !branch.active) {
       return refuse('sys.branch-inactive', { branch: branch.name });
     }
+    // One level further up as well, and for the reason `openLocation` asks:
+    // the branch may still be trading while the company that issues its
+    // documents has been withdrawn, and putting a place back into use below
+    // it is the same growth that opening one would be.
+    if (branch !== null) {
+      const inactiveCompany = companyWithdrawn(session, tenant, branch);
+      if (inactiveCompany !== null) return inactiveCompany;
+    }
     const siblings = locationsIn(session, tenant, location.branch, { including: 'all' });
     if (nameTaken(siblings, location.name, (one) => one.id === id)) {
       return refuse('sys.name-taken', { of: 'location', name: location.name });
@@ -703,6 +711,10 @@ export function setRegisterActive(
     const branch = branchIn(session, tenant, register.branch);
     if (branch !== null && !branch.active) {
       return refuse('sys.branch-inactive', { branch: branch.name });
+    }
+    if (branch !== null) {
+      const inactiveCompany = companyWithdrawn(session, tenant, branch);
+      if (inactiveCompany !== null) return inactiveCompany;
     }
     const siblings = registersIn(session, tenant, register.branch, { including: 'all' });
     if (nameTaken(siblings, register.name, (one) => one.id === id)) {

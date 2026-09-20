@@ -135,7 +135,7 @@ function tenantsOf(identity: IdentityRecord | null): readonly TenantId[] {
 }
 
 /** What a caller is allowed to know about the sign-in: that it is not only theirs. */
-export function isShared(identity: IdentityRecord | null, tenant: TenantId): boolean {
+function isShared(identity: IdentityRecord | null, tenant: TenantId): boolean {
   return tenantsOf(identity).some((one) => one !== tenant);
 }
 
