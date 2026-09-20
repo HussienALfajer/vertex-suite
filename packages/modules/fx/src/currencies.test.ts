@@ -46,6 +46,52 @@ beforeEach(() => {
   fx = installFx();
 });
 
+describe('A currency, announced to whoever keeps an account for it — FX-01', () => {
+  it('states each currency the seed installed, once, and nothing on a replayed seed', async () => {
+    const seeded = taken(await fx.admin.seed(fx.system));
+    expect(fx.heard().map((one) => one.payload.currency)).toEqual(seeded);
+    expect(fx.heard().map((one) => one.name)).toEqual(Array<string>(4).fill('fx.currency-defined'));
+    // The context travels with the event: the same tenant and the same
+    // correlation as the command that installed the currencies.
+    expect(fx.heard().every((one) => one.context.tenant === fx.tenant)).toBe(true);
+    expect(new Set(fx.heard().map((one) => one.context.correlation)).size).toBe(1);
+
+    taken(await fx.admin.seed(fx.system));
+    expect(fx.heard()).toHaveLength(4);
+  });
+
+  it('states a currency the owner defined, and nothing for one that was refused', async () => {
+    taken(await fx.admin.seed(fx.system));
+    const before = fx.heard().length;
+
+    const aed = taken(await fx.admin.define(fx.by, AED));
+    expect(
+      fx
+        .heard()
+        .slice(before)
+        .map((one) => one.payload.currency),
+    ).toEqual([aed]);
+
+    expect(refusalOf(await fx.admin.define(fx.by, AED))).toBe('fx.currency-exists');
+    expect(refusalOf(await fx.admin.define(fx.by, { ...AED, code: 'aed' }))).toBe(
+      'fx.currency-code-invalid',
+    );
+    expect(fx.heard()).toHaveLength(before + 1);
+  });
+
+  it('is heard only once the transaction that defined it has committed', async () => {
+    taken(await fx.admin.seed(fx.system));
+    const before = fx.heard().length;
+
+    // A definition refused for want of the right opens no transaction and
+    // publishes nothing; the bus never hears of a currency that does not exist.
+    fx.answers(() => false);
+    expect(refusalOf(await fx.admin.define(fx.by, AED))).toBe('fx.not-permitted');
+    expect(fx.heard()).toHaveLength(before);
+    expect(await fx.read.currency(fx.by, 'AED')).toBeNull();
+  });
+});
+
 describe('Currencies — FX-01', () => {
   it('seeds SYP, USD, TRY and EUR, each with its own symbol, decimal precision and rounding rule', async () => {
     const seeded = taken(await fx.admin.seed(fx.system));

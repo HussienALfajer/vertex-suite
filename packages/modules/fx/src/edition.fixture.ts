@@ -14,6 +14,7 @@ import {
   type AuthorisationScope,
   type Authoriser,
   type CommandContext,
+  type DomainEvent,
   type MemorySession,
   type MemoryStore,
   type Registry,
@@ -23,6 +24,7 @@ import { DEFAULT_TIME_ZONE, Organisation, type Branch, type Register } from '@ve
 import {
   Currencies,
   CurrencyAdministration,
+  CurrencyDefined,
   ExchangeRates,
   Presentation,
   RateAdministration,
@@ -79,6 +81,16 @@ export interface Installed {
    * test of this module a test of permissions.
    */
   answers(decide: (by: CommandContext, right: string, where?: AuthorisationScope) => boolean): void;
+
+  /**
+   * Every `CurrencyDefined` this module has announced, in order, as the ledger
+   * will hear them.
+   *
+   * Heard on the bus directly rather than through a stand-in module, because
+   * what is being proved is what `FX` says and when — after the commit, once
+   * per currency, never for a refusal — and not what any listener does with it.
+   */
+  heard(): readonly DomainEvent<CurrencyDefined>[];
 
   /**
    * A command of some *other* module, with its transaction open: what `SAL`
@@ -202,6 +214,13 @@ export function installFx(): Installed {
       throw new Error(`A subscriber failed: ${String(failure.cause)}`);
     },
   });
+  const heard: DomainEvent<CurrencyDefined>[] = [];
+  // Under `FIN`'s code, because that is who listens for it in a real edition.
+  bus.subscribe(CurrencyDefined.name, 'FIN', (event) => {
+    heard.push(event as DomainEvent<CurrencyDefined>);
+    return Promise.resolve();
+  });
+
   const store = createMemoryStore();
   const transactor = createTransactor({
     driver: store.driver,
@@ -246,6 +265,7 @@ export function installFx(): Installed {
     ): void {
       decide = next;
     },
+    heard: () => [...heard],
     asCaller<T>(by: CommandContext, work: (session: MemorySession) => T): Promise<T> {
       return transactor.run(by, (uow) => Promise.resolve(work(uow.session)));
     },

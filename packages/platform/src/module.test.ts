@@ -141,6 +141,25 @@ describe('defineModule', () => {
     ).toThrow(ModuleDeclarationError);
   });
 
+  it('refuses an account role reserved for a purpose the ledger does not reserve an account for', () => {
+    expect(() =>
+      defineModule({
+        code: 'STK',
+        labelKey: 'module.stk',
+        accounts: [
+          {
+            role: 'stk.inventory',
+            labelKey: 'account-role.stk.inventory',
+            normalBalance: 'debit',
+            // A purpose the vocabulary does not name resolves to nothing, in
+            // every shop, and the symptom is a posting refused months later.
+            reserved: 'stock' as 'inventory',
+          },
+        ],
+      }),
+    ).toThrow(ModuleDeclarationError);
+  });
+
   it('accepts a complete declaration and freezes it', () => {
     const History = contractKey<{ read(): string }>('pur.item-purchase-history');
     const module = defineModule({
@@ -148,7 +167,14 @@ describe('defineModule', () => {
       labelKey: 'module.pur',
       dependsOn: ['CAT', 'STK', 'FIN', 'FX'],
       permissions: [{ id: 'pur.order.approve', labelKey: 'permission.pur.order.approve' }],
-      accounts: [{ role: 'pur.payable', labelKey: 'account.pur.payable', normalBalance: 'credit' }],
+      accounts: [
+        {
+          role: 'pur.payable',
+          labelKey: 'account-role.pur.payable',
+          normalBalance: 'credit',
+          reserved: 'payables',
+        },
+      ],
       settings: [{ key: 'pur.landed-cost', labelKey: 'setting.pur.landed-cost', scope: 'tenant' }],
       switches: [
         { key: 'pur.consignment', labelKey: 'switch.pur.consignment', enabledByDefault: false },
