@@ -77,6 +77,18 @@ export function MoneyInput({
   const { formattingLocale } = useVertex();
   const marks = marksOf(formattingLocale);
 
+  // The mix-up §12 exists to prevent, on the side where it is made rather than
+  // where it is displayed: `Money` refuses to render an amount against a
+  // currency it is not expressed in, and a field that quietly did so would show
+  // a figure in dollars under a chooser saying pounds — and hand it back as
+  // whichever the caller happened to read. A caller changes the two together.
+  if (value !== null && value.currency !== currency.code) {
+    throw new Error(
+      `An amount in ${value.currency} was given the currency ${currency.code}. ` +
+        'A field never holds an amount in a currency it is not a field of.',
+    );
+  }
+
   // What the field is a field *of*, as one string. The amount alone is not
   // enough: the same figure typed against a currency kept to three places and
   // then against one kept to none is two different fields, and the second has

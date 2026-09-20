@@ -1,7 +1,10 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { fixedClock } from '@vertex/kernel';
+
 import { catalogue, createTranslator } from './catalogue.js';
+import { developmentSystem } from './dev-system.js';
 import {
   aTradingShop,
   chooseAccount,
@@ -10,11 +13,21 @@ import {
   typeDay,
   ACCRUED,
   CASH,
+  NOON,
   RENT,
   TRADING_DAY,
   type EntryDraft,
 } from './ledger.fixture.js';
-import { chooseOption, goTo, optionsOf, startAt, type OpenShop } from './screens.fixture.js';
+import {
+  chooseOption,
+  enterTheShop,
+  goTo,
+  optionsOf,
+  selectNamed,
+  startAt,
+  PEOPLE,
+  type OpenShop,
+} from './screens.fixture.js';
 
 /**
  * `FIN-04`: the accountant's own entry, written by hand — with a mandatory
@@ -234,5 +247,24 @@ describe('Manual journal entry — FIN-04', () => {
     await shop.person.type(amountOf(1), '1.23456');
 
     expect((amountOf(1) as HTMLInputElement).value).toBe('1.2345');
+  });
+  it('opens on the currency the books are kept in, even landed on straight from an address', async () => {
+    // The screen can be reached by its own address — a bookmark, a reload —
+    // and then `FX` has not answered yet when the first draft is made. A line
+    // that read its own unresolved currency would be judged **foreign**: an
+    // `FX-06` override would be offered on a figure already in the books' own
+    // currency, which the ledger refuses outright
+    // (`fin.line-override-on-functional`), under a chooser showing nothing.
+    startAt('manual-entry');
+    await enterTheShop(developmentSystem({ people: PEOPLE, clock: fixedClock(NOON) }));
+    await screen.findByRole('heading', {
+      name: say.format('manualEntry.line.ordinal', { ordinal: 1 }),
+    });
+
+    const line = lineAt(1);
+    expect(selectNamed(catalogue['manualEntry.line.currency'], line).textContent.trim()).toBe(
+      'USD',
+    );
+    expect(screen.queryAllByText(catalogue['override.use'])).toHaveLength(0);
   });
 });

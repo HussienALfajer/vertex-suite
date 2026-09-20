@@ -402,8 +402,12 @@ function FigureFields({
   readonly onRemove?: () => void;
 }): ReactNode {
   const translator = useTranslator();
+
+  // A figure drafted before `FX` had answered carries no currency yet; the
+  // books' own is what it means until then. See `ManualEntry` for what reading
+  // the unresolved one would cost.
   const currency = currencies.find((one) => one.code === figure.currency) ?? functional;
-  const isForeign = functional !== null && figure.currency !== functional.code;
+  const isForeign = currency !== null && functional !== null && currency.code !== functional.code;
 
   return (
     <div className="flex flex-col gap-[var(--vx-gap-md)]">
@@ -411,7 +415,7 @@ function FigureFields({
         <Select
           label={translator.format('opening.figure.currency')}
           options={currencies.map((one) => ({ id: one.code, label: one.code }))}
-          value={figure.currency}
+          value={currency?.code ?? null}
           onChange={(key) => {
             // The amount goes with the currency, and the override with it: an
             // amount is in one currency, and a rate values a figure that no
@@ -448,7 +452,7 @@ function FigureFields({
           beneath it values nothing at all. */}
       {isForeign && figure.amount !== null ? (
         <RateOverrideFields
-          currency={figure.currency}
+          currency={currency.code}
           functional={functional.code}
           value={figure.override}
           onChange={(override) => {

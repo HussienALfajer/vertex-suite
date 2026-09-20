@@ -444,8 +444,16 @@ function LineFields({
   readonly onRemove: (() => void) | null;
 }): ReactNode {
   const translator = useTranslator();
+
+  // A line drafted before `FX` had answered carries no currency yet — the
+  // screen can be opened straight from an address, and the currencies arrive a
+  // moment later. What it means until then is the currency the books are kept
+  // in, and **everything below reads the resolved one**: a line judged foreign
+  // on the strength of an empty string would be offered an `FX-06` override
+  // that the ledger refuses outright (`fin.line-override-on-functional`), under
+  // a chooser showing nothing at all.
   const currency = currencies.find((one) => one.code === line.currency) ?? functional;
-  const isForeign = functional !== null && line.currency !== functional.code;
+  const isForeign = currency !== null && functional !== null && currency.code !== functional.code;
 
   const sideOptions: readonly SelectOption[] = ENTRY_SIDES.map((side) => ({
     id: side,
@@ -496,7 +504,7 @@ function LineFields({
         <Select
           label={translator.format('manualEntry.line.currency')}
           options={currencies.map((one) => ({ id: one.code, label: one.code }))}
-          value={line.currency}
+          value={currency?.code ?? null}
           onChange={(key) => {
             // The amount goes with the currency: an amount is in one currency,
             // and pointing the field at another does not convert it. The
@@ -532,7 +540,7 @@ function LineFields({
           books are kept in, and is refused there — so it is not offered. */}
       {isForeign ? (
         <RateOverrideFields
-          currency={line.currency}
+          currency={currency.code}
           functional={functional.code}
           value={line.override}
           onChange={(override) => {

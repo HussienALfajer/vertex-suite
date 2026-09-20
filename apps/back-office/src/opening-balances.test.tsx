@@ -1,9 +1,20 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { fixedClock } from '@vertex/kernel';
+
 import { catalogue } from './catalogue.js';
-import { aTradingShop, typeDay, TRADING_DAY } from './ledger.fixture.js';
-import { goTo, optionsOf, selectNamed, startAt, type OpenShop } from './screens.fixture.js';
+import { developmentSystem } from './dev-system.js';
+import { aTradingShop, typeDay, NOON, TRADING_DAY } from './ledger.fixture.js';
+import {
+  enterTheShop,
+  goTo,
+  optionsOf,
+  selectNamed,
+  startAt,
+  PEOPLE,
+  type OpenShop,
+} from './screens.fixture.js';
 
 /**
  * `FIN-06`: structured entry of the opening inventory, the till balances, what
@@ -140,5 +151,17 @@ describe('Opening balances — FIN-06', () => {
       expect(within(tills).getAllByRole('listitem')).toHaveLength(4);
     });
     expect(add().hasAttribute('disabled')).toBe(true);
+  });
+  it('opens on the currency the books are kept in, even landed on straight from an address', async () => {
+    // `ManualEntry` says what reading an unresolved currency costs; the same
+    // holds for every figure here.
+    startAt('opening-balances');
+    await enterTheShop(developmentSystem({ people: PEOPLE, clock: fixedClock(NOON) }));
+    await screen.findByLabelText(catalogue['opening.inventory']);
+
+    // The first figure of the panel, which is the stock on hand.
+    const has = panelOf(catalogue['opening.whatTheShopHas']);
+    expect(selectNamed(catalogue['opening.figure.currency'], has).textContent.trim()).toBe('USD');
+    expect(screen.queryAllByText(catalogue['override.use'])).toHaveLength(0);
   });
 });
