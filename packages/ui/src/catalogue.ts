@@ -1,0 +1,126 @@
+/**
+ * The design system's own sentences.
+ *
+ * `design-system.md` §12 allows no user-facing literal in code, and the
+ * components here keep to it: a dialog's close button, a map's zoom control,
+ * the reveal on a password field and the mark on a rate that is not today's
+ * each name a key and never write a word. Somebody still has to write the
+ * word, and until now that was every application that installed the design
+ * system — each carrying its own copy of these forty-odd sentences, and each
+ * required to know, from reading the components, which keys they would ask
+ * for. Two hosts had already drifted: one lacked the three sentences the
+ * display contracts speak (`rate.notToday`, the provisional date), and would
+ * have thrown `MissingMessageError` the first time a rate board showed
+ * yesterday's rate.
+ *
+ * So the sentences ship with the components that speak them. A host merges
+ * this **under** its own catalogue — `{ ...UI_CATALOGUE, ...own }` — so that it
+ * may still reword any of them, and supplies only what its own screens say.
+ * `catalogue.test.ts` holds this file to the components both ways: every key
+ * a component formats is here, and nothing is here that no component formats.
+ *
+ * Arabic only, as every catalogue in the workspace is today; the second
+ * language arrives for all of them at once, through the same seam.
+ */
+export const UI_CATALOGUE = {
+  /** `Page`'s skip link, the first tab stop on every screen (§11.1). */
+  'a11y.skipToContent': 'تخطَّ إلى المحتوى',
+
+  /** `Dialog`'s close control and the cancel button of its confirming forms; `Toast`'s dismissal. */
+  'action.close': 'إغلاق',
+  'action.cancel': 'إلغاء',
+  'action.dismiss': 'إخفاء',
+
+  /** `ThemeSwitch`: the control's name carries the theme in force, and the two it toggles between. */
+  'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
+  'theme.light': 'فاتح',
+  'theme.dark': 'داكن',
+
+  /** Named by `TextInput` itself for any field of type `password`. */
+  'password.show': 'إظهار كلمة المرور',
+  'password.hide': 'إخفاء كلمة المرور',
+
+  /** `Combobox`'s disclosure, `AttachmentInput`'s two controls. */
+  'combobox.showOptions': 'إظهار الخيارات',
+  'attachment.choose': 'إرفاق ملف',
+  'attachment.remove': 'إزالة المرفق {name}',
+
+  /**
+   * What `TreeView` calls its disclosure control. React Aria points the
+   * button at its own row as well, so a page of them reads as "فتح الأصول"
+   * rather than as thirty controls with one name.
+   */
+  'tree.expand': 'فتح',
+  'tree.collapse': 'طيّ',
+
+  /** Named by `FormatBuilder` itself for the parts of it no screen labels one by one. */
+  'formatBuilder.leading': 'نص قبل أول علامة',
+  'formatBuilder.mark.drag': 'اسحب لإعادة ترتيب: {mark}',
+  'formatBuilder.mark.width': 'عدد خانات {mark}',
+  'formatBuilder.mark.suffix': 'نص بعد {mark}',
+  /** Announced when a mark is moved from the keyboard, where nobody may be looking at it. */
+  'formatBuilder.mark.moved': '{mark} في الموضع {position, number} من {count, number}',
+
+  /**
+   * The two display contracts of §12 that carry a mark: a rate that is not
+   * today's (`CurrencyRate`, `FX-04`), and a provisional business date
+   * (`DateTime`, `POS-01`).
+   */
+  'rate.notToday': 'ليس سعر اليوم',
+  'date.provisional': 'تاريخ مؤقت',
+  'date.provisional.explanation': 'وردية فُتحت دون اتصال بعقدة المتجر',
+
+  /**
+   * `GeoMap` (`SYS-14`). The map's own controls are named rather than left as
+   * symbols, because an icon-only control with no name is invisible to a
+   * screen reader (§11) and a `+` on a map is only obvious to somebody who has
+   * used one before.
+   */
+  'map.zoomIn': 'تقريب',
+  'map.zoomOut': 'تبعيد',
+  'map.reset': 'إعادة الإطار',
+  /** The number in the marker itself. It goes through the locale, so §5.5's per-tenant digits reach it. */
+  'map.marker.count': '{count, number}',
+  'map.marker.many': '{count, number} أماكن هنا',
+  /** Over the tenant's own places rather than the world: instant, and offline. */
+  'map.search': 'ابحث في أماكنك',
+  'map.search.results': 'نتائج البحث في أماكنك',
+
+  /**
+   * `PointPicker` (`SYS-14`). The one control here that needs a line, and the
+   * only place that says so.
+   *
+   * One sentence for every search failure, deliberately: somebody who typed a
+   * street name does not need to know whether the line is down, the service
+   * is busy or the answer came back malformed — only that typing is not the
+   * way in today and that the map below still is.
+   */
+  'picker.search': 'ابحث عن مكان بالاسم',
+  'picker.search.placeholder': 'مثل: حلب، شارع التلل',
+  'picker.search.searching': 'جارٍ البحث…',
+  'picker.search.empty': 'لا نتائج بهذا الاسم. جرّب اسمًا أقرب، أو حدّد الموقع على الخريطة.',
+  'picker.search.failed':
+    'تعذّر البحث بالاسم الآن — يحتاج اتصالًا بالإنترنت. حدّد الموقع على الخريطة أو ألصق رابطًا.',
+
+  'picker.placeHere': 'ضع النقطة هنا',
+  'picker.useMyLocation': 'موقعي الحالي',
+  'picker.locating': 'جارٍ التحديد…',
+  'picker.clear': 'أزل النقطة',
+  'picker.paste': 'ألصق رابط خرائط أو إحداثيًا',
+  'picker.paste.description': 'مثل «36.1997, 37.1637» أو رابط خرائط جوجل الكامل.',
+  'picker.paste.shortened':
+    'هذا رابط مختصر يخفي إحداثياته خلف تحويل. افتحه في المتصفّح وانسخ الرابط الكامل — لا نتبعه من هنا حتى لا نسأل طرفًا خارجيًا عن مواقع متجرك.',
+  'picker.paste.unreadable': 'لم نتعرّف على موقع في هذا النص.',
+  /**
+   * Four outcomes, four sentences. One of them is a fact about how this system
+   * was installed rather than about the person reading it, and saying so is
+   * what sends the right person to fix the right thing.
+   */
+  'picker.device.insecure':
+    'المتصفّح لا يكشف موقع الجهاز إلا عبر اتصال مؤمَّن. اطلب من مثبّت عقدة المتجر تشغيل HTTPS، أو حدّد الموقع على الخريطة.',
+  'picker.device.unsupported': 'هذا المتصفّح لا يعرف موقع الجهاز.',
+  'picker.device.refused':
+    'رُفض إذن الموقع لهذه الصفحة. امنحه من إعدادات المتصفّح، أو حدّده يدويًا.',
+  'picker.device.unavailable':
+    'تعذّر تحديد موقع الجهاز الآن — جهاز بلا GPS يسأل الإنترنت، وهذا المتجر قد يكون بلا اتصال. حدّده على الخريطة.',
+} as const;

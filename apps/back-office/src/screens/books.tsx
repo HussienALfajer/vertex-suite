@@ -9,7 +9,6 @@ import {
   type LocalDate,
 } from '@vertex/kernel';
 import {
-  Badge,
   Code,
   Money,
   Select,
@@ -28,7 +27,6 @@ import type {
   AccountId,
   AccountNode,
   Balance,
-  EntrySide,
   EntrySource,
   LedgerAmount,
 } from '@vertex/fin/contract';
@@ -114,16 +112,6 @@ export function BalanceFigure({ balance }: { readonly balance: Balance }): React
   );
 }
 
-/** Which side of the books a line falls on, as a mark a reader scans a column for. */
-export function SideBadge({ side }: { readonly side: EntrySide }): ReactNode {
-  const translator = useTranslator();
-  return (
-    <Badge tone={side === 'debit' ? 'info' : 'neutral'}>
-      {translator.format(`entry.side.${side}`)}
-    </Badge>
-  );
-}
-
 /**
  * The tenant's currencies by code, withdrawn ones included.
  *
@@ -132,7 +120,7 @@ export function SideBadge({ side }: { readonly side: EntrySide }): ReactNode {
  * since been taken out of use still has to be written at that currency's
  * precision.
  */
-export function useCurrencyBook(): (code: CurrencyCode) => Currency | null {
+function useCurrencyBook(): (code: CurrencyCode) => Currency | null {
   const { currencies } = useCurrencies();
   // A scan rather than a map, on purpose: a tenant has a handful of currencies
   // (`FX-01`), every figure on a statement asks this, and building a map per
@@ -144,7 +132,7 @@ export function useCurrencyBook(): (code: CurrencyCode) => Currency | null {
 }
 
 /** The chart, flat, with the two questions every ledger screen asks of it. */
-export interface AccountBook {
+interface AccountBook {
   /** Every account, depth first, which is the order the chart is read in. */
   readonly accounts: readonly Account[];
   readonly of: (id: AccountId) => Account | null;
@@ -152,7 +140,7 @@ export interface AccountBook {
   readonly nameOf: (id: AccountId) => string;
 }
 
-export function useAccountBook(): AccountBook {
+function useAccountBook(): AccountBook {
   const translator = useTranslator();
   const { tree } = useChart();
 
@@ -261,7 +249,7 @@ export interface OverrideDraft {
   readonly reason: string;
 }
 
-export const BLANK_OVERRIDE: OverrideDraft = Object.freeze({
+const BLANK_OVERRIDE: OverrideDraft = Object.freeze({
   form: 'units-per-functional',
   rate: '',
   reason: '',

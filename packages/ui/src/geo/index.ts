@@ -4,18 +4,20 @@
  * `@vertex/ui/map` rather than `@vertex/ui`, because the atlas is the largest
  * thing this package ships and the register has no map on it. An application
  * that never imports this never carries the geometry.
+ *
+ * Two components, the one basemap a tenant may configure, the one search a
+ * screen may hand the picker, and the types their signatures speak. The
+ * projection, the tiles, the gestures, the clustering and the atlas behind
+ * them are how the two are built, not what a screen is offered: this once
+ * published all of it, and nothing outside the package ever named any of it.
+ * A screen that needs a piece of the machinery names it in the pull request
+ * that needs it, which is how every entry point in this workspace grows.
  */
-export { GeoMap, asLatLng, type GeoMapProps, type MapPlace, type PlaceKind } from './GeoMap.js';
+export { GeoMap, type GeoMapProps, type MapPlace, type PlaceKind } from './GeoMap.js';
 
 export { PointPicker, type PickedPoint, type PointPickerProps } from './PointPicker.js';
 
-export {
-  BaseLayer,
-  OUTLINE_MAX_ZOOM,
-  STREET_MAP,
-  zoomCeilingOf,
-  type Basemap,
-} from './BaseLayer.js';
+export { STREET_MAP, type Basemap } from './BaseLayer.js';
 
 export {
   nominatimSearch,
@@ -23,50 +25,3 @@ export {
   type NominatimOptions,
   type PlaceSearch,
 } from './geocode.js';
-
-export { fold, matchesPlace } from './match.js';
-
-export {
-  homeCentre,
-  homeExtent,
-  isHome,
-  regionOutlines,
-  worldOutlines,
-  type Outline,
-} from './atlas.js';
-
-export { cluster, type Cluster, type Placed } from './cluster.js';
-
-export { parsePlace, type ParsedPlace } from './parse.js';
-
-export { pathFor, type DrawOutline } from './path.js';
-
-export {
-  LATITUDE_LIMIT,
-  LONGITUDE_LIMIT,
-  MAX_ZOOM,
-  MERCATOR_LIMIT,
-  MIN_ZOOM,
-  TILE,
-  clamp,
-  fitToPoints,
-  fromWorld,
-  isOnEarth,
-  panBy,
-  project,
-  toWorld,
-  unproject,
-  worldSize,
-  zoomAround,
-  type FitOptions,
-  type LatLng,
-  type MapView,
-  type Pixel,
-  type Viewport,
-} from './projection.js';
-
-export { useMapGestures, useMeasured, type Gestures, type GestureOptions } from './surface.js';
-
-export { tileUrl, tilesFor, type TileRef } from './tiles.js';
-
-export { narrow } from './topology.js';

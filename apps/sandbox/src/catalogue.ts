@@ -1,4 +1,5 @@
 import { Translator } from '@vertex/i18n';
+import { UI_CATALOGUE } from '@vertex/ui';
 
 /**
  * The sandbox's strings.
@@ -6,17 +7,15 @@ import { Translator } from '@vertex/i18n';
  * They live here rather than in the components because §12 allows no
  * user-facing literal in code — including in a sandbox, since a sandbox that
  * breaks the rule is a sandbox that teaches the wrong habit.
+ *
+ * Only the sandbox's own. What a component says for itself — the skip link,
+ * a dialog's buttons, the mark on a provisional date — ships with the
+ * component as `UI_CATALOGUE`, merged beneath these at the bottom.
  */
-const catalogue = {
-  'a11y.skipToContent': 'تخطَّ إلى المحتوى',
-
+const own = {
   'unit.KG': 'كغ',
   'unit.PC': 'قطعة',
   'unit.BOX': 'كرتونة',
-
-  'date.provisional': 'تاريخ مؤقت',
-  'date.provisional.explanation': 'وردية فُتحت دون اتصال بعقدة المتجر',
-  'rate.notToday': 'ليس سعر اليوم',
 
   'page.title': 'معاينة المكوّنات',
   'page.description':
@@ -28,7 +27,6 @@ const catalogue = {
   'panel.status': 'الحالات',
 
   'action.save': 'حفظ',
-  'action.cancel': 'إلغاء',
   'action.more': 'خيارات أخرى',
   'action.delete': 'حذف',
 
@@ -44,8 +42,6 @@ const catalogue = {
   'status.info': 'للعلم',
 
   'theme.label': 'السمة',
-  'theme.light': 'فاتح',
-  'theme.dark': 'داكن',
   'theme.system': 'النظام',
   'density.label': 'الكثافة',
   'density.compact': 'مضغوطة',
@@ -73,13 +69,8 @@ const catalogue = {
   'column.actions': 'إجراءات',
   'grid.empty': 'لا أصناف بعد',
 
-  'action.close': 'إغلاق',
-  'action.dismiss': 'إخفاء',
   'action.edit': 'تعديل',
 
-  /** Named by `TextInput` itself for any field of type `password`. */
-  'password.show': 'إظهار كلمة المرور',
-  'password.hide': 'إخفاء كلمة المرور',
   'action.openDialog': 'افتح نافذة',
   'action.confirmDelete': 'احذف الصنف',
   'action.notify': 'أظهر إشعارًا',
@@ -110,6 +101,8 @@ const catalogue = {
   'toggle.active': 'صنف فعّال',
   'toggle.track': 'تتبّع الصلاحية',
 } as const;
+
+const catalogue = { ...UI_CATALOGUE, ...own } as const;
 
 const terms = {
   item: 'صنف',

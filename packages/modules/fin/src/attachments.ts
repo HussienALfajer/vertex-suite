@@ -117,7 +117,7 @@ declare const crypto:
   | undefined;
 
 /** The SHA-256 of some bytes, in lower-case hexadecimal. */
-export async function sha256Of(bytes: Uint8Array): Promise<string> {
+async function sha256Of(bytes: Uint8Array): Promise<string> {
   // `typeof`, not a comparison: where the global does not exist at all,
   // reading it throws, and the message below would never be the one seen.
   if (typeof crypto === 'undefined') {
@@ -208,7 +208,7 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
  * file attached twice — to one entry or to two — is kept once, and so that
  * keeping it again, as a replayed command does, changes nothing.
  */
-export function keyOfAttachment(tenant: TenantId, sha256: string): string {
+function keyOfAttachment(tenant: TenantId, sha256: string): string {
   // The hash is this module's own, computed by `sha256Of` for everything it
   // keeps — so anything else here is a record that did not come from this
   // module, and a key built from it could carry a separator into the store's

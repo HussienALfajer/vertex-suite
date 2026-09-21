@@ -69,6 +69,17 @@ function isScript(subtag: string): boolean {
 }
 
 /**
+ * A singleton — one character — opens an extension or the private-use
+ * section, and nothing after it is a script. `en-u-nu-arab` asks for
+ * Arabic-Indic digits in English, and `arab` there is a numbering system, not
+ * the script the interface is written in; `formattingLocale` produces exactly
+ * that tag for the numeral setting, so the shape is not hypothetical.
+ */
+function isSingleton(subtag: string): boolean {
+  return subtag.length === 1;
+}
+
+/**
  * The direction a locale is written in.
  *
  * Unknown and malformed tags read as left-to-right. That is the safe default in
@@ -80,7 +91,11 @@ export function directionOf(locale: string): Direction {
   const subtags = locale.trim().toLowerCase().split(/[-_]/);
   const language = subtags[0] ?? '';
 
-  const script = subtags.slice(1).find(isScript);
+  // Only the part of the tag before the first singleton can carry a script:
+  // language, extlangs, script, region and variants, in that order (BCP 47).
+  const core = subtags.slice(1);
+  const extensionsFrom = core.findIndex(isSingleton);
+  const script = (extensionsFrom === -1 ? core : core.slice(0, extensionsFrom)).find(isScript);
   if (script !== undefined) {
     return RTL_SCRIPTS.has(script) ? 'rtl' : 'ltr';
   }

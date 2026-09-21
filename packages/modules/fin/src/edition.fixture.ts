@@ -265,7 +265,7 @@ export interface AttachmentsKept extends AttachmentStore {
 }
 
 /** 12:00 in Damascus, which keeps UTC+3 all year. */
-export const NOON_IN_DAMASCUS = instant(Date.UTC(2026, 8, 20, 9, 0, 0));
+const NOON_IN_DAMASCUS = instant(Date.UTC(2026, 8, 20, 9, 0, 0));
 
 /**
  * `SEC`'s answer, stood in for.

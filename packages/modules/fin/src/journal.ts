@@ -48,7 +48,7 @@ type Outcome<T> = Result<T, PostingRefusal>;
  * an amount and hand it to something that believed it. Every nested object an
  * entry or a line carries is frozen with it.
  */
-export function sealedLine(line: JournalLine): JournalLine {
+function sealedLine(line: JournalLine): JournalLine {
   return Object.freeze({
     ...line,
     amount: Object.freeze({ ...line.amount }),
@@ -56,7 +56,7 @@ export function sealedLine(line: JournalLine): JournalLine {
   });
 }
 
-export function sealedEntry(entry: JournalEntry): JournalEntry {
+function sealedEntry(entry: JournalEntry): JournalEntry {
   return Object.freeze({
     ...entry,
     source: Object.freeze({ ...entry.source }),
@@ -64,7 +64,7 @@ export function sealedEntry(entry: JournalEntry): JournalEntry {
   });
 }
 
-export function sealedAttachment(attachment: Attachment): Attachment {
+function sealedAttachment(attachment: Attachment): Attachment {
   return Object.freeze({ ...attachment });
 }
 
