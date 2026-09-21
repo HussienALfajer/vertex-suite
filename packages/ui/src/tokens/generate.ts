@@ -67,21 +67,17 @@ export function generateNeutralRamp(): Map<number, string> {
  *
  * Reads `ACCENT_PALETTE_HEX` literally instead of solving fill, text and
  * border lightness against the neutral ramp for `CONTRAST_TARGET` — see that
- * constant's own comment in `spec.ts`. `neutral` is accepted and ignored: a
- * solved version would need it as the background to solve `text` and `onBg`
- * against; this one does not solve anything.
+ * constant's own comment in `spec.ts`. It therefore takes no neutral ramp: a
+ * solved version needs one as the background to solve `text` and `onBg`
+ * against, and the day the solver comes back is the day the parameter does —
+ * it once stayed on, ignored, under a lint exemption, which is a signature
+ * saying something the function does not do.
  *
  * `onBg` is the same value as `text`: a role's tinted background is read with
  * exactly the ink that names the role elsewhere, which is the source
  * system's own choice and not a coincidence of this table.
  */
-export function generateAccents(
-  // `neutral` is accepted and ignored, kept for interface parity with an
-  // algorithmically solved palette — still reachable by reintroducing the
-  // solver this replaced, which needs it as the background to solve against.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  neutral: ReadonlyMap<number, string>,
-): Map<AccentName, AccentTokens> {
+export function generateAccents(): Map<AccentName, AccentTokens> {
   const accents = new Map<AccentName, AccentTokens>();
   for (const [name, hue] of Object.entries(ACCENT_PALETTE_HEX) as [
     AccentName,
@@ -111,7 +107,7 @@ export function generateChartSeries(): ChartSeries[] {
 /** The whole palette. The only permitted source of the values in §4. */
 export function generatePalette(): Palette {
   const neutral = generateNeutralRamp();
-  return { neutral, accents: generateAccents(neutral), chart: generateChartSeries() };
+  return { neutral, accents: generateAccents(), chart: generateChartSeries() };
 }
 
 function required(ramp: ReadonlyMap<number, string>, stop: number): string {

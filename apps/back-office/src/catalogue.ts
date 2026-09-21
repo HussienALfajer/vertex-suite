@@ -1,5 +1,6 @@
 import { Translator } from '@vertex/i18n';
 import type { Refusal, RefusalValue } from '@vertex/kernel';
+import { UI_CATALOGUE } from '@vertex/ui';
 
 /**
  * The back office's strings.
@@ -8,15 +9,21 @@ import type { Refusal, RefusalValue } from '@vertex/kernel';
  * `check:policy` holds every shipped file to it. A screen renders a component
  * and names a key; it never writes a sentence.
  *
+ * **Only this application's own.** What a design-system component says for
+ * itself — a dialog's close button, the map's controls, the reveal on a
+ * password field — ships with the component as `UI_CATALOGUE`, and is merged
+ * beneath this at the bottom of the file. A sentence written here under one of
+ * those keys rewords it for this application, which is the one thing a host may
+ * want to do about it; a sentence copied here unchanged is a second copy that
+ * drifts, which is what this file once held forty of.
+ *
  * **A refusal is a code, and this is where a code becomes a sentence.** The
  * kernel's `Refusal` carries `sec.password-wrong` and its values, never prose,
  * precisely so that the words a cashier reads under pressure are a tenant's to
  * rename (`SYS-08`) and exist in both languages. A domain that returned an
  * English sentence would have decided both of those for everybody.
  */
-export const catalogue = {
-  'a11y.skipToContent': 'تخطَّ إلى المحتوى',
-
+const own = {
   /**
    * The product's name, not the shop's. A tenant sees their own business name
    * in the frame once they are signed in — `SYS-05`'s profile is what puts it
@@ -486,10 +493,6 @@ export const catalogue = {
   'permission.resource.fin.posting-exception': 'القيود المعلّقة',
   'permission.resource.fin.statement': 'القوائم المالية',
 
-  'theme.switch': 'المظهر: {current}. اضغط للتبديل.',
-  'theme.light': 'فاتح',
-  'theme.dark': 'داكن',
-
   'shell.signedInAs': 'المستخدم الحالي: {handle}',
   'shell.account.action': 'كلمة المرور',
   'shell.signOut': 'تسجيل الخروج',
@@ -516,9 +519,6 @@ export const catalogue = {
   'nav.postingExceptions': 'القيود المعلّقة',
   'nav.statements': 'القوائم المالية',
 
-  'action.close': 'إغلاق',
-  'action.cancel': 'إلغاء',
-  'action.dismiss': 'إخفاء',
   'action.rename': 'تغيير الاسم',
   'action.retry': 'إعادة المحاولة',
   'action.save': 'حفظ',
@@ -536,23 +536,6 @@ export const catalogue = {
   'navigation.unsaved.save': 'حفظ ومتابعة',
   'navigation.unsaved.saving': 'جارٍ الحفظ…',
 
-  /**
-   * `SYS-14` — the address, the map, and the picker.
-   *
-   * The map's own controls are named rather than left as symbols, because an
-   * icon-only control with no name is invisible to a screen reader (§11) and a
-   * `+` on a map is only obvious to somebody who has used one before.
-   */
-  'map.zoomIn': 'تقريب',
-  'map.zoomOut': 'تبعيد',
-  'map.reset': 'إعادة الإطار',
-  /** The number in the marker itself. It goes through the locale, so §5.5's per-tenant digits reach it. */
-  'map.marker.count': '{count, number}',
-  'map.marker.many': '{count, number} أماكن هنا',
-  /** Over the tenant's own places rather than the world: instant, and offline. */
-  'map.search': 'ابحث في أماكنك',
-  'map.search.results': 'نتائج البحث في أماكنك',
-
   'place.title': 'موقع «{name}»',
   'place.address': 'العنوان',
   'place.address.description':
@@ -563,55 +546,6 @@ export const catalogue = {
   'place.moves':
     'سيارة التوزيع مكانها يتحرّك معها، فلا نثبّت لها نقطة — يبقى لها عنوان إن كان لها مرآب ثابت.',
 
-  /**
-   * The one thing here that needs a line, and the only place that says so.
-   *
-   * One sentence for every failure, deliberately: somebody who typed a street
-   * name does not need to know whether the line is down, the service is busy or
-   * the answer came back malformed — only that typing is not the way in today
-   * and that the map below still is.
-   */
-  'picker.search': 'ابحث عن مكان بالاسم',
-  'picker.search.placeholder': 'مثل: حلب، شارع التلل',
-  'picker.search.searching': 'جارٍ البحث…',
-  'picker.search.empty': 'لا نتائج بهذا الاسم. جرّب اسمًا أقرب، أو حدّد الموقع على الخريطة.',
-  'picker.search.failed':
-    'تعذّر البحث بالاسم الآن — يحتاج اتصالًا بالإنترنت. حدّد الموقع على الخريطة أو ألصق رابطًا.',
-
-  'picker.placeHere': 'ضع النقطة هنا',
-  'picker.useMyLocation': 'موقعي الحالي',
-  'picker.locating': 'جارٍ التحديد…',
-  'picker.clear': 'أزل النقطة',
-  'picker.paste': 'ألصق رابط خرائط أو إحداثيًا',
-  'picker.paste.description': 'مثل «36.1997, 37.1637» أو رابط خرائط جوجل الكامل.',
-  'picker.paste.shortened':
-    'هذا رابط مختصر يخفي إحداثياته خلف تحويل. افتحه في المتصفّح وانسخ الرابط الكامل — لا نتبعه من هنا حتى لا نسأل طرفًا خارجيًا عن مواقع متجرك.',
-  'picker.paste.unreadable': 'لم نتعرّف على موقع في هذا النص.',
-  /**
-   * Four outcomes, four sentences. One of them is a fact about how this system
-   * was installed rather than about the person reading it, and saying so is
-   * what sends the right person to fix the right thing.
-   */
-  'picker.device.insecure':
-    'المتصفّح لا يكشف موقع الجهاز إلا عبر اتصال مؤمَّن. اطلب من مثبّت عقدة المتجر تشغيل HTTPS، أو حدّد الموقع على الخريطة.',
-  'picker.device.unsupported': 'هذا المتصفّح لا يعرف موقع الجهاز.',
-  'picker.device.refused':
-    'رُفض إذن الموقع لهذه الصفحة. امنحه من إعدادات المتصفّح، أو حدّده يدويًا.',
-  'picker.device.unavailable':
-    'تعذّر تحديد موقع الجهاز الآن — جهاز بلا GPS يسأل الإنترنت، وهذا المتجر قد يكون بلا اتصال. حدّده على الخريطة.',
-
-  /** Named by `TextInput` itself for any field of type `password`. */
-  'password.show': 'إظهار كلمة المرور',
-  'password.hide': 'إخفاء كلمة المرور',
-
-  /** Named by `FormatBuilder` itself for the parts of it no screen labels one by one. */
-  'formatBuilder.leading': 'نص قبل أول علامة',
-  'formatBuilder.mark.drag': 'اسحب لإعادة ترتيب: {mark}',
-  'formatBuilder.mark.width': 'عدد خانات {mark}',
-  'formatBuilder.mark.suffix': 'نص بعد {mark}',
-  /** Announced when a mark is moved from the keyboard, where nobody may be looking at it. */
-  'formatBuilder.mark.moved': '{mark} في الموضع {position, number} من {count, number}',
-
   'status.inUse': 'قيد الاستخدام',
   'status.withdrawn': 'مسحوب من الخدمة',
 
@@ -619,14 +553,6 @@ export const catalogue = {
    * `SYS-09` deactivates and never deletes, so a list that only ever showed
    * what is in use would be a list nobody can restore anything from.
    */
-  /**
-   * What `TreeView` calls its disclosure control. React Aria points the
-   * button at its own row as well, so a page of them reads as "فتح الأصول"
-   * rather than as thirty controls with one name.
-   */
-  'tree.expand': 'فتح',
-  'tree.collapse': 'طيّ',
-
   'listing.includeWithdrawn': 'إظهار المسحوب من الخدمة',
   'listing.noMatch': 'لا شيء يطابق ما بحثت عنه.',
 
@@ -1396,7 +1322,6 @@ export const catalogue = {
   'chart.search': 'ابحث برمز الحساب أو باسمه',
   /** The mark `FIN-01` puts on the accounts the system posts to. */
   'chart.reserved': 'محجوز: {purpose}',
-  'chart.kind': 'النوع: {kind}',
   'chart.empty': 'لا حسابات بعد',
   'chart.add': 'إضافة حساب',
   'chart.new.title': 'حساب جديد',
@@ -1534,11 +1459,6 @@ export const catalogue = {
   'entry.kind.fin.manual-entry': 'قيد يدوي',
   'entry.kind.fin.opening-balance': 'قيد افتتاحي',
   'entry.kind.fin.reversal': 'قيد عكسي',
-
-  /** The design system's own furniture, worded here like `password.show` above. */
-  'combobox.showOptions': 'إظهار الخيارات',
-  'attachment.choose': 'إرفاق ملف',
-  'attachment.remove': 'إزالة المرفق {name}',
 
   /**
    * `FX-06`'s override, as the two screens that state an amount in another
@@ -1786,7 +1706,12 @@ export const catalogue = {
   'statements.account.description': 'اتركه فارغًا ليفصّل الأستاذ كل حساب له رصيد أو حركة.',
 } as const;
 
-export type MessageKey = keyof typeof catalogue;
+/**
+ * Every sentence this application can say: the design system's beneath its
+ * own, so that a component's furniture is worded once and a screen's words
+ * are this file's.
+ */
+export const catalogue = { ...UI_CATALOGUE, ...own } as const;
 
 /**
  * What a message formatter may be handed.
@@ -1830,7 +1755,7 @@ export function nameOfPermission(translator: Translator, right: string): string 
  * read, so **the whole message throws** rather than choosing the wrong branch.
  * It did, and nothing said so until every message in this file was parsed.
  */
-export function nameOfReservedAccount(translator: Translator, reserved: string): string {
+function nameOfReservedAccount(translator: Translator, reserved: string): string {
   const key = `account.reserved.${reserved}`;
   return translator.has(key) ? translator.format(key) : translator.format('data.unknown');
 }

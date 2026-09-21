@@ -81,6 +81,12 @@ export {
   type VertexLogoProps,
 } from './brand/VertexLogo.js';
 
+/**
+ * The sentences the components speak (§12). A host merges them under its own
+ * catalogue, so it may reword any of them and need write none.
+ */
+export { UI_CATALOGUE } from './catalogue.js';
+
 export { VertexProvider, type VertexProviderProps } from './providers/VertexProvider.js';
 export { DensityScope, densityAtLeast, type DensityScopeProps } from './providers/DensityScope.js';
 export {

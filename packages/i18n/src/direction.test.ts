@@ -17,6 +17,18 @@ describe('directionOf', () => {
     expect(directionOf('ar-Latn')).toBe('ltr');
   });
 
+  it('does not mistake a numbering system or a private-use tag for a script', () => {
+    // `en-u-nu-arab` is English written with Arabic-Indic digits — the tag
+    // `formattingLocale` builds for the numeral setting — and `arab` after the
+    // `u` singleton is the numbering system, not the script. It once read as
+    // right-to-left, and `ar-u-nu-latn` would have read as left-to-right.
+    expect(directionOf('en-u-nu-arab')).toBe('ltr');
+    expect(directionOf('ar-u-nu-latn')).toBe('rtl');
+    expect(directionOf('en-x-arab')).toBe('ltr');
+    // A script before the extension still counts.
+    expect(directionOf('ku-Arab-u-nu-latn')).toBe('rtl');
+  });
+
   it('accepts the tags older systems still emit', () => {
     expect(directionOf('iw')).toBe('rtl');
     expect(directionOf('ji')).toBe('rtl');

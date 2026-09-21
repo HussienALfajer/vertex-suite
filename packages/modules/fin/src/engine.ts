@@ -73,7 +73,7 @@ type Context<Session extends RecordSession> = ModuleContext<Session>;
  * here, as `FX` reads it, so that the till an entry is made at and the machine
  * its number is issued to cannot disagree about which machine that is.
  */
-export function machineOf(by: CommandContext): DeviceId | null {
+function machineOf(by: CommandContext): DeviceId | null {
   const device = by.device as unknown;
   return typeof device === 'string' && isId(device) ? parseId<'device'>(device) : null;
 }
