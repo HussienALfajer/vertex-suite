@@ -51,8 +51,8 @@ export interface UnitOfWork<Session = unknown> {
  * Deliberately three methods. Postgres on the store node and SQLite on the
  * register have very different opinions about isolation, locking and nesting,
  * and none of those opinions belongs in a package that hosts modules. The
- * drivers arrive with U07; what is fixed here is that a command is bracketed,
- * and that the bracket is the same shape on both.
+ * drivers live in adapters/storage; what is fixed here is that a command is
+ * bracketed, and that the bracket is the same shape on both.
  *
  * One opinion is not a driver's to hold: **conflicting commands serialise.**
  * The modules decide by reading and then writing — whether anybody else still

@@ -22,6 +22,8 @@ jobs:
   verify:
     name: verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      VERTEX_TEST_POSTGRES_URL: postgresql://postgres:root@127.0.0.1:5432/postgres
     # A run takes three to eight minutes. A hung one would otherwise hold a runner
     # for GitHub's six-hour default.
     timeout-minutes: 30
@@ -43,6 +45,22 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # Both runner images include PostgreSQL but leave it stopped. The storage
+      # suite must exercise the real server on both operating systems.
+      - name: Start PostgreSQL (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'root'"
+          pg_isready -h 127.0.0.1 -p 5432
+
+      - name: Start PostgreSQL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Service postgresql-x64-17
+          & "$env:PGBIN\pg_isready.exe" -h 127.0.0.1 -p 5432
 
       - run: pnpm verify
 

@@ -84,6 +84,7 @@ export {
 
 export {
   memoryJournal,
+  recordJournal,
   runMigrations,
   type MigrationJournal,
   type MigrationOutcome,

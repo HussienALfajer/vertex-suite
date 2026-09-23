@@ -1,7 +1,7 @@
 import type { CommandContext } from './context.js';
 import { MigrationError } from './errors.js';
 import type { MigrationDeclaration } from './module.js';
-import type { MemorySession, Transactor } from './unit-of-work.js';
+import { untilCommitted, type MemorySession, type Transactor } from './unit-of-work.js';
 
 /**
  * Applying a module's schema, once, and knowing that it was applied.
@@ -63,20 +63,20 @@ export async function runMigrations<Session>(
   const alreadyApplied: string[] = [];
 
   for (const migration of plan) {
-    await transactor.run(context, async (uow) => {
-      const done = await journal.applied(uow.session);
-      if (done.has(migration.id)) {
-        alreadyApplied.push(migration.id);
-        return;
-      }
-      try {
-        await migration.up(uow.session);
-      } catch (cause) {
-        throw new MigrationError(`The migration "${migration.id}" failed.`, { cause });
-      }
-      await journal.record(uow.session, migration.id);
-      applied.push(migration.id);
-    });
+    const didApply = await untilCommitted(() =>
+      transactor.run(context, async (uow) => {
+        const done = await journal.applied(uow.session);
+        if (done.has(migration.id)) return false;
+        try {
+          await migration.up(uow.session);
+        } catch (cause) {
+          throw new MigrationError(`The migration "${migration.id}" failed.`, { cause });
+        }
+        await journal.record(uow.session, migration.id);
+        return true;
+      }),
+    );
+    (didApply ? applied : alreadyApplied).push(migration.id);
   }
 
   return Object.freeze({
@@ -140,13 +140,17 @@ const JOURNAL_PREFIX = 'platform.migration.';
  * the property that matters: rolling back a failed migration rolls back its
  * journal entry too, exactly as the real one will.
  */
-export function memoryJournal(): MigrationJournal<MemorySession> {
+export function recordJournal(): MigrationJournal<MemorySession> {
   return {
     applied(session: MemorySession): Promise<ReadonlySet<string>> {
       const ids = session
         .keys()
         .filter((key) => key.startsWith(JOURNAL_PREFIX))
-        .map((key) => key.slice(JOURNAL_PREFIX.length));
+        .map((key) => {
+          if (session.get(key) !== true)
+            throw new MigrationError(`Corrupted migration journal entry at "${key}".`);
+          return key.slice(JOURNAL_PREFIX.length);
+        });
       return Promise.resolve(new Set(ids));
     },
     record(session: MemorySession, id: string): Promise<void> {
@@ -155,3 +159,6 @@ export function memoryJournal(): MigrationJournal<MemorySession> {
     },
   };
 }
+
+/** The same transactional journal over the memory driver in module tests. */
+export const memoryJournal = recordJournal;
