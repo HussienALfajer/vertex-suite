@@ -67,14 +67,10 @@ import {
 } from '@vertex/sys';
 
 import {
-  applyFixtureSale,
-  applyFixtureSaleDocument,
   IdentityConflictError,
-  parseFixtureSale,
-  parseSaleMovement,
-  SALE_FIXTURE_KIND,
-  STOCK_FIXTURE_KIND,
+  STOCK_OPERATION_KINDS,
   stockFixtureMigrations,
+  stockOperation,
 } from './stock-fixture.js';
 
 interface Session {
@@ -831,9 +827,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
             correlation: envelope.correlation,
           });
           const syn02 = options.enableSyn02Fixture && envelope.kind === 'syn02.fixture-post';
-          const stock =
-            options.enableStockFixture &&
-            (envelope.kind === STOCK_FIXTURE_KIND || envelope.kind === SALE_FIXTURE_KIND);
+          const stock = options.enableStockFixture && STOCK_OPERATION_KINDS.has(envelope.kind);
           if (!syn02 && !stock) {
             send(response, 422, { error: 'unsupported-operation' });
             return;
@@ -865,24 +859,10 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
               )
                 return { status: 'forbidden' };
               if (stock) {
-                let lines: readonly { readonly location: string }[];
-                let apply: () => void;
-                if (envelope.kind === SALE_FIXTURE_KIND) {
-                  const sale = parseFixtureSale(envelope.payload);
-                  lines = sale.lines;
-                  apply = () => {
-                    applyFixtureSaleDocument(uow, envelope, sale);
-                  };
-                } else {
-                  const movement = parseSaleMovement(envelope.payload);
-                  lines = [movement];
-                  apply = () => {
-                    applyFixtureSale(uow, envelope, movement);
-                  };
-                }
+                const operation = stockOperation(envelope);
                 // Every line of a sale answers to the same check as a lone
                 // movement: a register moves stock only where its own branch is.
-                for (const id of new Set(lines.map((line) => line.location))) {
+                for (const id of operation.locations) {
                   const location = await organisation.location(
                     operationBy,
                     id as Parameters<typeof organisation.location>[1],
@@ -898,7 +878,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
                     return { status: 'forbidden' };
                 }
                 return receiveOperation(uow, envelope, () => {
-                  apply();
+                  operation.apply(uow);
                   return Promise.resolve();
                 });
               }

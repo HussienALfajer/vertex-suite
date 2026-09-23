@@ -34,8 +34,10 @@ import {
   fixtureSale,
   IdentityConflictError,
   openFixtureStock,
+  owedReceipts,
   parseFixtureSale,
   recordFixtureSale,
+  settleReceipt,
   SALE_FIXTURE_KIND,
   stockFixtureMigrations,
   type FixtureReceipt,
@@ -113,6 +115,19 @@ function receiptOf(sale: FixtureSalePayload, device: string, sequence = 1): Fixt
   };
 }
 
+/** A printer that records what it put on paper, then settles the receipt as the till's own would. */
+function printer(store: PersistentStore, context: CommandContext, sheets: FixtureReceipt[]) {
+  return async (receipt: FixtureReceipt): Promise<void> => {
+    sheets.push(receipt);
+    await untilCommitted(() =>
+      transactor(store.driver).run(context, (uow) => {
+        settleReceipt(uow, receipt.sale);
+        return Promise.resolve();
+      }),
+    );
+  };
+}
+
 /** Everything a sale could have left behind, read in a transaction of its own. */
 async function remains(store: PersistentStore, context: CommandContext, sale: FixtureSalePayload) {
   return transactor(store.driver).run(context, (uow) =>
@@ -131,13 +146,23 @@ async function remains(store: PersistentStore, context: CommandContext, sale: Fi
           acknowledged,
         }),
       ),
+      owed: owedReceipts(uow.session, context.tenant, context.device!),
     }),
   );
 }
 
-const NOTHING = { document: undefined, movements: [], outbox: [] };
+const keep = (store: PersistentStore): PersistentStore => {
+  cleanup.push(() => store.close());
+  return store;
+};
 
-function everything(sale: FixtureSalePayload, context: CommandContext) {
+const NOTHING = { document: undefined, movements: [], outbox: [], owed: [] };
+
+function everything(
+  sale: FixtureSalePayload,
+  context: CommandContext,
+  owed: readonly FixtureReceipt[] = [],
+) {
   return {
     document: {
       ...sale,
@@ -155,6 +180,7 @@ function everything(sale: FixtureSalePayload, context: CommandContext) {
       sequence: 1,
     })),
     outbox: [{ kind: SALE_FIXTURE_KIND, sequence: 1, payload: sale, acknowledged: false }],
+    owed,
   };
 }
 
@@ -222,18 +248,24 @@ describe('SYN-05 power-loss durability — the receipt waits for the sale', () =
     const reader = await openSqliteStore(path);
     cleanup.push(() => reader.close());
     const sale = saleOf(3);
+    const receipt = receiptOf(sale, context.device!);
     const seen: unknown[] = [];
+    const sheets: FixtureReceipt[] = [];
+    const print = printer(store, context, sheets);
     const envelope = await transactor(store.driver).run(context, (uow) =>
       Promise.resolve(
-        recordFixtureSale(uow, sale, async (receipt) => {
-          seen.push({ receipt, stored: await remains(reader, context, sale) });
+        recordFixtureSale(uow, sale, async (one) => {
+          seen.push(await remains(reader, context, sale));
+          await print(one);
         }),
       ),
     );
     expect(envelope).toMatchObject({ kind: SALE_FIXTURE_KIND, sequence: 1, payload: sale });
-    expect(seen).toEqual([
-      { receipt: receiptOf(sale, context.device!), stored: everything(sale, context) },
-    ]);
+    // At the first sheet the sale is there, and so is the receipt it owes.
+    expect(seen).toEqual([everything(sale, context, [receipt])]);
+    // Printed and settled, the debt is gone and the sale is not.
+    expect(sheets).toEqual([receipt]);
+    expect(await remains(reader, context, sale)).toEqual(everything(sale, context));
   });
 
   it('SYN-05 prints nothing and stores nothing for a sale interrupted after some of it was written', async () => {
@@ -276,6 +308,7 @@ describe('SYN-05 power-loss durability — the receipt waits for the sale', () =
     expect(await remains(store, context, clash)).toEqual({
       ...NOTHING,
       outbox: [expect.objectContaining({ sequence: 1, payload: first })],
+      owed: [receiptOf(first, context.device!)],
     });
   });
 
@@ -293,10 +326,7 @@ describe('SYN-05 power-loss durability — the receipt waits for the sale', () =
     await untilCommitted(() =>
       transactor(store.driver).run(context, async (uow) => {
         attempts += 1;
-        const envelope = recordFixtureSale(uow, sale, (receipt) => {
-          receipts.push(receipt);
-          return Promise.resolve();
-        });
+        const envelope = recordFixtureSale(uow, sale, printer(store, context, receipts));
         // The first attempt loses to a commit made while it ran; the store
         // refuses it at commit, and its receipt must go with it.
         if (attempts === 1)
@@ -357,14 +387,24 @@ describe('SYN-05 power-loss durability — the till killed at every boundary', (
     if (!('completed' in whole.report)) throw new Error('The uninterrupted sale did not complete.');
     const { trace, durability } = whole.report;
     expect(durability).toEqual({ journal_mode: 'wal', synchronous: '2' });
-    const committed = commitOf(trace, 'exec BEGIN IMMEDIATE', 'exec COMMIT');
+    // The sale's commit is the last write before the paper starts; the
+    // receipt's settlement is the last write of all.
     const firstSheet = trace.indexOf('print');
-    expect(firstSheet, 'the receipt starts only after the sale commits').toBeGreaterThan(committed);
+    expect(firstSheet, 'the receipt is printed').toBeGreaterThan(0);
+    const committed = commitOf(trace.slice(0, firstSheet), 'exec BEGIN IMMEDIATE', 'exec COMMIT');
+    const settled = commitOf(trace, 'exec BEGIN IMMEDIATE', 'exec COMMIT');
+    expect(settled, 'settled only once the last sheet is out').toBeGreaterThan(
+      trace.lastIndexOf('print'),
+    );
     // A header, a sheet per line and a footer, each on the device before the next.
-    const receipt = await printed(whole.spool);
-    expect(receipt).toHaveLength(sale.lines.length + 2);
-    expect(receipt[0]).toContain(sale.sale);
-    expect(trace.filter((step) => step === 'print')).toHaveLength(receipt.length);
+    const paper = await printed(whole.spool);
+    expect(paper).toHaveLength(sale.lines.length + 2);
+    expect(paper[0]).toContain(sale.sale);
+    expect(trace.filter((step) => step === 'print')).toHaveLength(paper.length);
+    const receipt = receiptOf(sale, context.device!);
+    expect(await remains(await openSqliteStore(whole.path).then(keep), context, sale)).toEqual(
+      everything(sale, context),
+    );
 
     const outcomes = new Set<string>();
     for (let crashAt = 1; crashAt <= trace.length; crashAt += 1) {
@@ -378,33 +418,42 @@ describe('SYN-05 power-loss durability — the till killed at every boundary', (
       try {
         const left = await remains(store, context, sale);
         const paperOut = await printed(spool);
-        // Killed before the COMMIT ran, the sale is gone; killed after, it is
-        // all there. There is no third state to find.
-        if (crashAt - 1 <= committed) {
+        // Killed before the sale's COMMIT ran, the sale is gone; killed after,
+        // it is all there, owing its receipt until the settlement commits.
+        // There is no third state to find.
+        const at = crashAt - 1;
+        const sheets = trace.slice(0, at).filter((one) => one === 'print').length;
+        if (at <= committed) {
           expect(left, `killed before ${String(step)}`).toEqual(NOTHING);
           expect(paperOut).toEqual([]);
           outcomes.add('none');
         } else {
-          expect(left, `killed before ${String(step)}`).toEqual(everything(sale, context));
-          const sheets = trace.slice(0, crashAt - 1).filter((one) => one === 'print').length;
-          expect(paperOut).toEqual(receipt.slice(0, sheets));
-          outcomes.add(sheets === 0 ? 'stored, unprinted' : 'stored, part printed');
+          expect(left, `killed before ${String(step)}`).toEqual(
+            everything(sale, context, at <= settled ? [receipt] : []),
+          );
+          expect(paperOut).toEqual(paper.slice(0, sheets));
+          outcomes.add(
+            sheets === 0
+              ? 'owed, unprinted'
+              : sheets < paper.length
+                ? 'owed, torn'
+                : 'owed, printed',
+          );
         }
 
-        // The power comes back and the cashier rings the same sale: a till
-        // that kept it refuses the second, one that lost it takes it now.
+        // The power comes back. The till first prints what it still owes...
+        const reprinted: FixtureReceipt[] = [];
+        for (const owed of left.owed) await printer(store, context, reprinted)(owed);
+        expect(reprinted).toEqual(left.owed);
+        // ...and the cashier rings the same sale: a till that kept it refuses
+        // the second, one that lost it takes it now and prints it once.
         const again: FixtureReceipt[] = [];
         const ring = transactor(store.driver).run(context, (uow) =>
-          Promise.resolve(
-            recordFixtureSale(uow, sale, (one) => {
-              again.push(one);
-              return Promise.resolve();
-            }),
-          ),
+          Promise.resolve(recordFixtureSale(uow, sale, printer(store, context, again))),
         );
         if (left.document === undefined) {
           await ring;
-          expect(again).toEqual([receiptOf(sale, context.device!)]);
+          expect(again).toEqual([receipt]);
         } else {
           await expect(ring).rejects.toThrow(IdentityConflictError);
           expect(again).toEqual([]);
@@ -414,7 +463,12 @@ describe('SYN-05 power-loss durability — the till killed at every boundary', (
         await store.close();
       }
     }
-    expect([...outcomes].sort()).toEqual(['none', 'stored, part printed', 'stored, unprinted']);
+    expect([...outcomes].sort()).toEqual([
+      'none',
+      'owed, printed',
+      'owed, torn',
+      'owed, unprinted',
+    ]);
   }, 180_000);
 });
 
@@ -673,8 +727,15 @@ describe.skipIf(!database)('SYN-05 power-loss durability — through the store n
     expect(crashed).toMatchObject({ crashedAt: 'print' });
     expect(await printed(spool)).toEqual([]);
 
-    const store = await openSqliteStore(path);
-    cleanup.push(() => store.close());
+    const store = keep(await openSqliteStore(path));
+    // Back on, the till owes the receipt and prints it before anything else.
+    const owed = await transactor(store.driver).run(context, (uow) =>
+      Promise.resolve(owedReceipts(uow.session, tenant, device)),
+    );
+    expect(owed).toEqual([receiptOf(onFloor, device)]);
+    const reprinted: FixtureReceipt[] = [];
+    for (const one of owed) await printer(store, context, reprinted)(one);
+    expect(reprinted).toEqual(owed);
     const [pending] = await transactor(store.driver).run(context, (uow) =>
       Promise.resolve(outboxEntries(uow.session, tenant, device)),
     );

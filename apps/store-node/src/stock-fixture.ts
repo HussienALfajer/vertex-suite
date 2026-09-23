@@ -15,13 +15,25 @@ export const SALE_FIXTURE_KIND = 'syn05.fixture-sale';
 const VERSION = 'syn03.fixture.version';
 const MOVEMENT = 'syn03.fixture.movement.';
 const SALE = 'syn05.fixture.sale.';
+const OWED = 'syn05.fixture.receipt-owed.';
 /**
  * A sale travels as one operation so the store node applies it in one
  * transaction too. Sent a movement at a time, a power cut between two
  * deliveries would leave the server holding half a sale that the register
  * holds whole — the partial document SYN-05 forbids, only moved upstream.
+ *
+ * One operation is one store-node transaction, so its size is bounded: a
+ * hundred lines keeps the delivery far inside the request-body limit and the
+ * transaction short, and is more than a fixture sale needs. The real sale in
+ * U12 sets its own bound.
  */
 const MAX_SALE_LINES = 100;
+
+/** The operations this fixture sends, each one answered by `stockOperation` on the store node. */
+export const STOCK_OPERATION_KINDS: ReadonlySet<string> = new Set([
+  STOCK_FIXTURE_KIND,
+  SALE_FIXTURE_KIND,
+]);
 
 export interface FixtureMovement {
   readonly movement: string;
@@ -63,7 +75,7 @@ export interface FixtureSale extends FixtureSalePayload {
   readonly sequence: number;
 }
 
-/** What the till prints: taken from the document that committed, never from the command's input. */
+/** What the till prints: built from the document its transaction writes, so paper and row agree. */
 export interface FixtureReceipt {
   readonly sale: string;
   readonly device: string;
@@ -71,6 +83,17 @@ export interface FixtureReceipt {
   readonly lines: readonly { readonly item: string; readonly delta: string }[];
 }
 
+/**
+ * Puts a receipt on paper, then settles it with `settleReceipt` in a
+ * transaction of its own.
+ *
+ * Until it is settled the receipt is owed, and an owed receipt is a row
+ * committed with the sale: a power cut between the commit and the last sheet
+ * leaves the sale and the debt together, and the till that restarts prints what
+ * `owedReceipts` lists. That is at least once, deliberately. A receipt printed
+ * twice after a power cut is a nuisance; a sale the customer paid for and never
+ * got a receipt for — or rang again, and so counted twice — is not.
+ */
 export type ReceiptPrinter = (receipt: FixtureReceipt) => Promise<void>;
 
 /** A movement or sale identity is already taken: a replay under a new key, or a sale rung twice. */
@@ -93,6 +116,17 @@ export function stockFixtureMigrations(): readonly MigrationDeclaration<MemorySe
 
 function ready(session: MemorySession): void {
   if (session.get(VERSION) !== 1) throw new Error('Stock fixture migration has not run.');
+}
+
+function exactKeys(value: unknown, keys: string, what: string): Record<string, unknown> {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(',') !== keys
+  )
+    throw new TypeError(`Invalid ${what}.`);
+  return value as Record<string, unknown>;
 }
 
 function exactDelta(value: unknown, source: FixtureMovement['source']): string {
@@ -181,11 +215,8 @@ export function stageFixtureSale(
 }
 
 export function parseSaleMovement(value: unknown): SaleMovementPayload {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    throw new TypeError('Invalid sale movement.');
-  const payload = value as Record<string, unknown>;
+  const payload = exactKeys(value, 'delta,item,location,movement,source', 'sale movement');
   if (
-    Object.keys(payload).sort().join(',') !== 'delta,item,location,movement,source' ||
     payload['source'] !== 'sale-fixture' ||
     typeof payload['movement'] !== 'string' ||
     !isId(payload['movement']) ||
@@ -204,17 +235,22 @@ export function parseSaleMovement(value: unknown): SaleMovementPayload {
   };
 }
 
+/** The store node sells only stock it was told a location holds. */
+function requireOpening(uow: UnitOfWork<MemorySession>, item: string, location: string): void {
+  if (
+    !fixtureMovements(uow.session, uow.context.tenant, item, location).some(
+      (movement) => movement.source === 'opening-fixture',
+    )
+  )
+    throw new TypeError('The stock fixture item has no opening movement at this location.');
+}
+
 export function applyFixtureSale(
   uow: UnitOfWork<MemorySession>,
   envelope: OperationEnvelope,
   payload: SaleMovementPayload,
 ): void {
-  if (
-    !fixtureMovements(uow.session, uow.context.tenant, payload.item, payload.location).some(
-      (movement) => movement.source === 'opening-fixture',
-    )
-  )
-    throw new TypeError('The stock fixture item has no opening movement at this location.');
+  requireOpening(uow, payload.item, payload.location);
   save(uow.session, {
     ...payload,
     tenant: uow.context.tenant,
@@ -255,20 +291,13 @@ function saleKey(tenant: string, sale: string): string {
   return `${SALE}${tenant}.${sale}`;
 }
 
-function exactKeys(value: unknown, keys: string): Record<string, unknown> {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    Array.isArray(value) ||
-    Object.keys(value).sort().join(',') !== keys
-  )
-    throw new TypeError('Invalid fixture sale.');
-  return value as Record<string, unknown>;
+function owedKey(tenant: string, device: string, sale: string): string {
+  return `${OWED}${tenant}.${device}.${sale}`;
 }
 
 /** Validates a sale wherever it arrives from — the till's own command, or the wire. */
 export function parseFixtureSale(value: unknown): FixtureSalePayload {
-  const input = exactKeys(value, 'lines,sale');
+  const input = exactKeys(value, 'lines,sale', 'fixture sale');
   const sale = input['sale'];
   const lines = input['lines'];
   if (
@@ -280,7 +309,7 @@ export function parseFixtureSale(value: unknown): FixtureSalePayload {
   )
     throw new TypeError('Invalid fixture sale.');
   const parsed = lines.map((candidate: unknown): FixtureSaleLine => {
-    const line = exactKeys(candidate, 'delta,item,location,movement');
+    const line = exactKeys(candidate, 'delta,item,location,movement', 'fixture sale line');
     const { movement, item, location } = line;
     if (
       typeof movement !== 'string' ||
@@ -330,9 +359,9 @@ function saveSale(
 }
 
 /**
- * Rings a sale on the till: the document, its movements and its outgoing
- * operation in the caller's one transaction, and the receipt deferred to after
- * that transaction commits (SYN-05).
+ * Rings a sale on the till: the document, its movements, its outgoing
+ * operation and the receipt it owes in the caller's one transaction, and the
+ * printing deferred to after that transaction commits (SYN-05).
  *
  * The receipt is not printed here because nothing here knows yet whether the
  * sale will exist. A receipt printed inside the command is a receipt for a sale
@@ -354,25 +383,78 @@ export function recordFixtureSale(
     sequence: document.sequence,
     lines: document.lines.map(({ item, delta }) => ({ item, delta })),
   };
+  uow.session.put(owedKey(uow.context.tenant, envelope.device, receipt.sale), receipt);
   uow.afterCommit(() => print(receipt));
   return envelope;
 }
 
-/** The store node's half: the whole sale applied in the transaction that records its receipt. */
+/** The receipts this till has committed to and not yet finished printing, oldest first. */
+export function owedReceipts(
+  session: MemorySession,
+  tenant: string,
+  device: string,
+): readonly FixtureReceipt[] {
+  ready(session);
+  const prefix = `${OWED}${tenant}.${device}.`;
+  return session
+    .keys()
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => session.get(key) as FixtureReceipt)
+    .sort((a, b) => a.sequence - b.sequence);
+}
+
+/** The last sheet is out: the till no longer owes this receipt. Settling twice is harmless. */
+export function settleReceipt(uow: UnitOfWork<MemorySession>, sale: string): void {
+  ready(uow.session);
+  const { tenant, device } = uow.context;
+  if (device === null) throw new TypeError('Only a till settles a receipt.');
+  const key = owedKey(tenant, device, sale);
+  if (uow.session.get(key) !== undefined) uow.session.remove(key);
+}
+
+/** The store node's half: the whole sale applied in the transaction that records it as received. */
 export function applyFixtureSaleDocument(
   uow: UnitOfWork<MemorySession>,
   envelope: OperationEnvelope,
   payload: FixtureSalePayload,
 ): void {
   ready(uow.session);
-  for (const { item, location } of payload.lines)
-    if (
-      !fixtureMovements(uow.session, uow.context.tenant, item, location).some(
-        (movement) => movement.source === 'opening-fixture',
-      )
-    )
-      throw new TypeError('The stock fixture item has no opening movement at this location.');
+  for (const { item, location } of payload.lines) requireOpening(uow, item, location);
   saveSale(uow, envelope, payload);
+}
+
+/** A stock operation as the store node authorises it: where it moves stock, and how it applies. */
+export interface StockOperation {
+  /** Never empty: every operation moves stock somewhere, and each place is checked. */
+  readonly locations: ReadonlySet<string>;
+  apply(uow: UnitOfWork<MemorySession>): void;
+}
+
+/**
+ * Reads one of `STOCK_OPERATION_KINDS` off the wire. The locations come from
+ * the same parse the application uses, so a kind cannot be applied anywhere
+ * its authorisation did not look.
+ */
+export function stockOperation(envelope: OperationEnvelope): StockOperation {
+  if (envelope.kind === SALE_FIXTURE_KIND) {
+    const sale = parseFixtureSale(envelope.payload);
+    return {
+      locations: new Set(sale.lines.map((line) => line.location)),
+      apply: (uow) => {
+        applyFixtureSaleDocument(uow, envelope, sale);
+      },
+    };
+  }
+  if (envelope.kind === STOCK_FIXTURE_KIND) {
+    const movement = parseSaleMovement(envelope.payload);
+    return {
+      locations: new Set([movement.location]),
+      apply: (uow) => {
+        applyFixtureSale(uow, envelope, movement);
+      },
+    };
+  }
+  throw new TypeError('Not a stock fixture operation.');
 }
 
 export function fixtureSale(

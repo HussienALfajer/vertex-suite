@@ -33,15 +33,17 @@ import {
 } from '@vertex/platform';
 import { openPostgresStore, openSqliteStore, type PersistentStore } from '@vertex/storage';
 
-// The built fixture, because Node runs this file without a compiler to map
-// `./stock-fixture.js` onto its source. `pnpm verify` builds before it tests.
+// The source, by its own name: Node strips its types as it loads it, so the
+// process that is killed runs exactly the code the test was written against,
+// never a `dist` an earlier build left behind.
 import {
   applyFixtureSaleDocument,
   parseFixtureSale,
   recordFixtureSale,
+  settleReceipt,
   type FixtureReceipt,
   type FixtureSalePayload,
-} from '../dist/stock-fixture.js';
+} from './stock-fixture.ts';
 
 export type PowerCutPlan =
   | {
@@ -132,21 +134,6 @@ intercept(pg.Client.prototype, 'query', (_self, args) => {
   return `query ${schema === null ? step : step.replaceAll(schema, '<schema>')}`;
 });
 
-const print = (receipt: FixtureReceipt): Promise<void> => {
-  if (plan.role !== 'register') throw new Error('Only a register prints.');
-  const device = openSync(plan.spool, 'a');
-  try {
-    for (const line of receiptLines(receipt)) {
-      boundary('print');
-      writeSync(device, `${line}\n`);
-      fsyncSync(device);
-    }
-  } finally {
-    closeSync(device);
-  }
-  return Promise.resolve();
-};
-
 function transactor(store: PersistentStore) {
   return createTransactor<MemorySession>({
     driver: store.driver,
@@ -180,12 +167,30 @@ function durability(): Record<string, string> {
 let store: PersistentStore;
 let outcome: unknown;
 if (plan.role === 'register') {
-  store = await openSqliteStore(plan.path);
-  const sale = plan.sale;
+  const { context, spool, sale } = plan;
+  const till = await openSqliteStore(plan.path);
+  store = till;
+  // The printer: each sheet on the device before the next, then the debt settled.
+  const print = async (receipt: FixtureReceipt): Promise<void> => {
+    const device = openSync(spool, 'a');
+    try {
+      for (const line of receiptLines(receipt)) {
+        boundary('print');
+        writeSync(device, `${line}\n`);
+        fsyncSync(device);
+      }
+    } finally {
+      closeSync(device);
+    }
+    await untilCommitted(() =>
+      transactor(till).run(context, (uow) => {
+        settleReceipt(uow, receipt.sale);
+        return Promise.resolve();
+      }),
+    );
+  };
   outcome = await untilCommitted(() =>
-    transactor(store).run(plan.context, (uow) =>
-      Promise.resolve(recordFixtureSale(uow, sale, print)),
-    ),
+    transactor(till).run(context, (uow) => Promise.resolve(recordFixtureSale(uow, sale, print))),
   );
 } else {
   store = await openPostgresStore({ connectionString: plan.connectionString, schema: plan.schema });

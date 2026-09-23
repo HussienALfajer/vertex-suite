@@ -1,5 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "noEmit": true, "types": ["node", "vitest/globals"] },
+  "compilerOptions": {
+    "noEmit": true,
+    // The power-cut fixture runs under Node from source and names the modules it
+    // imports by their real file. Only this type-check sees it; the build excludes it.
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vitest/globals"]
+  },
   "include": ["src/**/*.ts", "vitest.config.ts"]
 }
