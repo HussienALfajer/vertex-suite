@@ -5,6 +5,20 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { newId } from '@vertex/kernel';
+import { openPostgresStore, openSqliteStore } from '@vertex/storage';
+import {
+  commandContext,
+  createEventBus,
+  createTransactor,
+  deliverOutbox,
+  operationMailboxMigrations,
+  outboxEntries,
+  runMigrations,
+  stageOperation,
+  type MemorySession,
+  type Receipt,
+} from '@vertex/platform';
+import { systemClock } from '@vertex/kernel';
 import { SYS_PERMISSIONS } from '@vertex/sys';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -19,13 +33,13 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
-async function fixture() {
+async function fixture(enableSyn02Fixture = false) {
   if (!database) throw new Error('A PostgreSQL test URL is required.');
   const schema = `vertex_test_${newId<'schema'>().replaceAll('-', '')}`;
   const attachmentsDirectory = await mkdtemp(join(tmpdir(), 'vertex-u07-attachments-'));
   const tenant = newId<'tenant'>();
   const otherTenant = newId<'tenant'>();
-  const options = { connectionString: database, schema, attachmentsDirectory };
+  const options = { connectionString: database, schema, attachmentsDirectory, enableSyn02Fixture };
   cleanup.push(async () => {
     const admin = new Pool({ connectionString: database });
     try {
@@ -80,10 +94,22 @@ async function fixture() {
 async function startProcess(
   options: { connectionString: string; schema: string; attachmentsDirectory: string },
   tenant: string,
+  syn02Fixture = false,
 ): Promise<{ base: string; stop(): Promise<void> }> {
+  const fixtureProgram = [
+    `import { composeStoreNode } from ${JSON.stringify(new URL('../dist/store-node.js', import.meta.url).href)};`,
+    'const node = await composeStoreNode({ connectionString: process.env.VERTEX_POSTGRES_URL, schema: process.env.VERTEX_SCHEMA, attachmentsDirectory: process.env.VERTEX_ATTACHMENTS_DIR, enableSyn02Fixture: true });',
+    'const listener = await node.listen(0);',
+    'const address = listener.address();',
+    "if (!address || typeof address === 'string') throw new Error('Missing test port.');",
+    "console.log('STORE_NODE_PORT=' + String(address.port));",
+    "process.once('SIGTERM', () => { void node.close(); });",
+  ].join('\n');
   const child: ChildProcess = spawn(
     process.execPath,
-    [fileURLToPath(new URL('../dist/main.js', import.meta.url))],
+    syn02Fixture
+      ? ['--input-type=module', '-e', fixtureProgram]
+      : [fileURLToPath(new URL('../dist/main.js', import.meta.url))],
     {
       env: {
         ...process.env,
@@ -336,5 +362,213 @@ describe.skipIf(!database)('SYN-01 store-node HTTP and PostgreSQL', () => {
     expect(
       ((await visible.json()) as { value: { id: string }[] }).value.map((one) => one.id),
     ).toEqual([allowed]);
+  });
+});
+
+describe.skipIf(!database)('SYN-02 authenticated transactional delivery', () => {
+  it('replays after server restart without another document or balance change, and rejects forged authority', async () => {
+    const shop = await fixture(true);
+    const sign = await shop.request(
+      '/v1/sign-in',
+      undefined,
+      { tenant: shop.tenant, handle: 'owner', password: 'till-morning-1' },
+      'POST',
+    );
+    const identity = (await sign.json()) as { token: string; authenticated: { user: string } };
+    const token = identity.token;
+    const write = async (route: string, args: unknown[]) => {
+      const response = await shop.request(
+        `/v1/tenants/${shop.tenant}/${route}`,
+        token,
+        { args },
+        'POST',
+      );
+      expect(response.status).toBe(200);
+      const result = (await response.json()) as { value: { ok: boolean; value: { id: string } } };
+      expect(result.value.ok).toBe(true);
+      return result.value.value.id;
+    };
+    const company = await write('companies.register', [{ name: 'Shop' }]);
+    const branch = await write('branches.open', [{ company, name: 'Aleppo' }]);
+    const register = await write('registers.open', [{ branch, name: 'Till', prefix: 'AL1' }]);
+    const device = newId<'device'>();
+    await write('registers.assignDevice', [register, device]);
+    const pairing = await shop.request(
+      `/v1/tenants/${shop.tenant}/devices.pair`,
+      token,
+      { register, device },
+      'POST',
+    );
+    expect(pairing.status).toBe(200);
+    let credential = ((await pairing.json()) as { credential: string }).credential;
+
+    const directory = await mkdtemp(join(tmpdir(), 'vertex-syn02-terminal-'));
+    cleanup.push(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'terminal.sqlite');
+    let terminal = await openSqliteStore(path);
+    cleanup.push(() => terminal.close());
+    const by = commandContext({
+      tenant: shop.tenant,
+      actor: identity.authenticated.user as Parameters<typeof commandContext>[0]['actor'],
+      device,
+    });
+    const tx = () =>
+      createTransactor({
+        driver: terminal.driver,
+        bus: createEventBus({
+          onHandlerFailure: (failure) => {
+            throw failure.cause;
+          },
+        }),
+        clock: systemClock,
+        onEffectFailure: (failure) => {
+          throw failure.cause;
+        },
+      });
+    await runMigrations({
+      plan: operationMailboxMigrations<MemorySession>(),
+      transactor: tx(),
+      context: by,
+      journal: terminal.journal,
+    });
+    const document = newId<'document'>();
+    await expect(
+      tx().run(by, (uow) => {
+        uow.session.put('local.aborted', { document });
+        stageOperation(uow, 'syn02.fixture-post', { document, amount: '12.3400' });
+        return Promise.reject(new Error('interrupted before commit'));
+      }),
+    ).rejects.toThrow('interrupted before commit');
+    const envelope = await tx().run(by, (uow) => {
+      uow.session.put('local.document', { document, amount: '12.3400' });
+      return Promise.resolve(
+        stageOperation(uow, 'syn02.fixture-post', { document, amount: '12.3400' }),
+      );
+    });
+    await terminal.close(); // Committed locally; delivery has not begun.
+    terminal = await openSqliteStore(path);
+    const entries = await tx().run(by, (uow) =>
+      Promise.resolve(outboxEntries(uow.session, shop.tenant, device)),
+    );
+    expect(entries).toEqual([{ envelope, acknowledged: false }]);
+
+    const deliver = (
+      candidate: unknown,
+      bearer = token,
+      tenant = shop.tenant,
+      machine = register,
+      deviceToken = credential,
+    ) =>
+      fetch(`${shop.base}/v1/tenants/${tenant}/operations.deliver`, {
+        method: 'POST',
+        headers: {
+          ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+          'content-type': 'application/json',
+          'x-vertex-device-token': deviceToken,
+        },
+        body: JSON.stringify({ register: machine, envelope: candidate }),
+      });
+    expect((await deliver(envelope, '')).status).toBe(401);
+    expect((await deliver(envelope, token, shop.tenant, register, 'wrong')).status).toBe(403);
+    const foreign = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+    expect(
+      (
+        await shop.request(
+          `/v1/tenants/${shop.tenant}/devices.pair`,
+          foreign,
+          { register, device },
+          'POST',
+        )
+      ).status,
+    ).toBe(403);
+    expect((await deliver(envelope, foreign)).status).toBe(403);
+    expect((await deliver(envelope, token, shop.otherTenant)).status).toBe(403);
+    expect((await deliver({ ...envelope, actor: newId<'user'>() })).status).toBe(403);
+    expect((await deliver({ ...envelope, device: newId<'device'>() })).status).toBe(403);
+    expect((await deliver(envelope, token, shop.tenant, newId<'register'>())).status).toBe(403);
+
+    await shop.close();
+    const first = await startProcess(shop.options, shop.tenant, true);
+    const processToken = async (base: string) => {
+      const login = await fetch(`${base}/v1/sign-in`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenant: shop.tenant, handle: 'owner', password: 'till-morning-1' }),
+      });
+      expect(login.status).toBe(200);
+      return ((await login.json()) as { token: string }).token;
+    };
+    const postTo = (base: string, bearer: string, candidate: unknown, deviceToken = credential) =>
+      fetch(`${base}/v1/tenants/${shop.tenant}/operations.deliver`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${bearer}`,
+          'content-type': 'application/json',
+          'x-vertex-device-token': deviceToken,
+        },
+        body: JSON.stringify({ register, envelope: candidate }),
+      });
+    const firstToken = await processToken(first.base);
+    const accepted = await postTo(first.base, firstToken, envelope);
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toEqual({ status: 'applied' });
+    const oldCredential = credential;
+    const rotated = await fetch(`${first.base}/v1/tenants/${shop.tenant}/devices.pair`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${firstToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ register, device }),
+    });
+    expect(rotated.status).toBe(200);
+    credential = ((await rotated.json()) as { credential: string }).credential;
+    expect((await postTo(first.base, firstToken, envelope, oldCredential)).status).toBe(403);
+    await first.stop(); // Server committed but client did not record acknowledgement.
+    const second = await startProcess(shop.options, shop.tenant, true);
+    const newToken = await processToken(second.base);
+    const replay = (candidate: unknown) => postTo(second.base, newToken, candidate);
+    expect((await replay(envelope)).status).toBe(200);
+    expect((await replay(envelope)).status).toBe(200);
+    expect(
+      (await Promise.all([replay(envelope), replay(envelope)])).map((one) => one.status),
+    ).toEqual([200, 200]);
+    expect((await replay({ ...envelope, payload: { document, amount: '99.00' } })).status).toBe(
+      409,
+    );
+    expect((await replay({ ...envelope, key: newId<'operation'>(), sequence: 3 })).status).toBe(
+      409,
+    );
+    expect(
+      await deliverOutbox(tx(), by, async (candidate) => {
+        const response = await replay(candidate);
+        return (await response.json()) as Receipt;
+      }),
+    ).toEqual({ acknowledged: 1, halted: null });
+    await terminal.close();
+    terminal = await openSqliteStore(path);
+    expect(
+      await tx().run(by, (uow) => Promise.resolve(outboxEntries(uow.session, shop.tenant, device))),
+    ).toEqual([{ envelope, acknowledged: true }]);
+    for (const entry of await tx().run(by, (uow) =>
+      Promise.resolve(outboxEntries(uow.session, shop.tenant, device)),
+    ))
+      expect((await replay(entry.envelope)).status).toBe(200);
+
+    const store = await openPostgresStore(shop.options);
+    try {
+      const session = await store.driver.begin(by);
+      try {
+        expect(session.get(`syn02.fixture.document.${shop.tenant}.${document}`)).toEqual({
+          document,
+          amount: '12.3400',
+        });
+        expect(session.get(`syn02.fixture.balance.${shop.tenant}`)).toBe('12.34');
+        expect(
+          session.keys().filter((key) => key.startsWith(`syn02.fixture.document.${shop.tenant}.`)),
+        ).toHaveLength(1);
+      } finally {
+        await store.driver.rollback(session);
+      }
+    } finally {
+      await store.close();
+    }
   });
 });

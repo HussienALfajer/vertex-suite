@@ -70,6 +70,19 @@ export {
 export { createRegistry, type Registry, type RegistryOptions } from './registry.js';
 
 export {
+  acknowledgeOperation,
+  deliverOutbox,
+  operationMailboxMigrations,
+  outboxEntries,
+  receiveOperation,
+  stageOperation,
+  type OperationEnvelope,
+  type OutboxEntry,
+  type DeliveryProgress,
+  type Receipt,
+} from './mailboxes.js';
+
+export {
   createMemoryStore,
   createTransactor,
   type EffectFailure,
