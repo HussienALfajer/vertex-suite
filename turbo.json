@@ -26,6 +26,7 @@
     },
     "test": {
       "dependsOn": ["^build"],
+      "env": ["VERTEX_TEST_POSTGRES_URL"],
       "outputs": []
     },
     "test:watch": {
