@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 
 import type { TenantId } from '@vertex/contracts';
+import { catModule, Catalogue, CatalogueAdministration, CAT_PERMISSIONS } from '@vertex/cat';
 import {
   ChartAdministration,
   ChartOfAccounts,
@@ -243,9 +244,10 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     secModule<MemorySession>(),
     fxModule<MemorySession>(),
     finModule<MemorySession>({ attachments }),
+    catModule<MemorySession>(),
   ];
   const plan = orThrow(
-    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN'] }),
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN', 'CAT'] }),
     (refusal) => new Error(`Store-node edition refused: ${refusal.code}`),
   );
   const store = await openPostgresStore(options);
@@ -304,6 +306,8 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     const exceptionsRead = registry.require(PostingExceptions);
     const exceptionsAdmin = registry.require(PostingExceptionAdministration);
     const statementsRead = registry.require(Statements);
+    const catRead = registry.require(Catalogue);
+    const catAdmin = registry.require(CatalogueAdministration);
     const sessions = new Map<string, Session>();
     const servers = new Set<Server>();
 
@@ -335,6 +339,41 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     };
     const tenantWide = async (by: CommandContext, right: string): Promise<boolean> =>
       authority.may(by, right as Parameters<typeof authority.may>[1]);
+
+    read('catalogue.categories', CAT_PERMISSIONS.category.view, (by) => catRead.categories(by));
+    read('catalogue.category', CAT_PERMISSIONS.category.view, (by, args) =>
+      catRead.category(by, string(args[0]) as Parameters<typeof catRead.category>[1]),
+    );
+    read('catalogue.items', CAT_PERMISSIONS.item.view, (by) => catRead.items(by));
+    read('catalogue.item', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.item(by, string(args[0]) as Parameters<typeof catRead.item>[1]),
+    );
+    write('catalogue.createCategory', (by, args) =>
+      catAdmin.createCategory(
+        by,
+        object(args[0]) as unknown as Parameters<typeof catAdmin.createCategory>[1],
+      ),
+    );
+    write('catalogue.reviseCategory', (by, args) =>
+      catAdmin.reviseCategory(
+        by,
+        string(args[0]) as Parameters<typeof catAdmin.reviseCategory>[1],
+        object(args[1]),
+      ),
+    );
+    write('catalogue.moveCategory', (by, args) =>
+      catAdmin.moveCategory(
+        by,
+        string(args[0]) as Parameters<typeof catAdmin.moveCategory>[1],
+        args[1] as Parameters<typeof catAdmin.moveCategory>[2],
+      ),
+    );
+    write('catalogue.createItem', (by, args) =>
+      catAdmin.createItem(
+        by,
+        object(args[0]) as unknown as Parameters<typeof catAdmin.createItem>[1],
+      ),
+    );
 
     read('companies.list', SYS_PERMISSIONS.company.view, (by, args) =>
       organisation.companies(by, args[0] as Parameters<typeof organisation.companies>[1]),

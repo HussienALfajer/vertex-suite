@@ -33,6 +33,51 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
+describe.skipIf(!database)('CAT-01 authenticated catalogue transport', () => {
+  it('creates and reads an item for its tenant, and refuses another tenant or an unsigned read', async () => {
+    const shop = await fixture();
+    const token = await shop.signIn();
+    const rootPath = `/v1/tenants/${shop.tenant}/catalogue`;
+    const created = await shop.request(
+      `${rootPath}.createCategory`,
+      token,
+      {
+        args: [
+          {
+            name: 'مشروبات',
+            parent: null,
+            defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+          },
+        ],
+      },
+      'POST',
+    );
+    expect(created.status).toBe(200);
+    const category = ((await created.json()) as { value: { value: { id: string } } }).value.value;
+    const itemResponse = await shop.request(
+      `${rootPath}.createItem`,
+      token,
+      { args: [{ name: 'ماء', category: category.id }] },
+      'POST',
+    );
+    expect(itemResponse.status).toBe(200);
+    const item = (
+      (await itemResponse.json()) as { value: { value: { id: string; category: string } } }
+    ).value.value;
+    expect(item.category).toBe(category.id);
+    const listed = await shop.request(`${rootPath}.items?args=%5B%5D`, token);
+    expect(listed.status).toBe(200);
+    expect(
+      ((await listed.json()) as { value: { id: string }[] }).value.map((one) => one.id),
+    ).toContain(item.id);
+    expect((await shop.request(`${rootPath}.items?args=%5B%5D`)).status).toBe(401);
+    expect(
+      (await shop.request(`/v1/tenants/${shop.otherTenant}/catalogue.items?args=%5B%5D`, token))
+        .status,
+    ).toBe(403);
+  });
+});
+
 async function fixture(enableSyn02Fixture = false) {
   if (!database) throw new Error('A PostgreSQL test URL is required.');
   const schema = `vertex_test_${newId<'schema'>().replaceAll('-', '')}`;

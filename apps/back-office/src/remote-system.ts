@@ -101,6 +101,10 @@ export function remoteSystem(options: RemoteSystemOptions): SystemOfRecord {
 }
 
 const READS = new Set([
+  'catalogue.categories',
+  'catalogue.category',
+  'catalogue.items',
+  'catalogue.item',
   'currencies.functional',
   'rates.board',
   'users.roles.rights',

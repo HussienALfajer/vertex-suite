@@ -6,6 +6,8 @@ import { ChangePasswordDialog } from './ChangePasswordDialog.js';
 import { useOrganisation } from './organisation.js';
 import { hrefOf, useRoute, type RouteName } from './routing.js';
 import { BusinessProfile } from './screens/BusinessProfile.js';
+import { CatalogueScreen } from './screens/Catalogue.js';
+import type { SystemOfRecord } from './system.js';
 import { Chart } from './screens/Chart.js';
 import { FiscalCalendar } from './screens/FiscalCalendar.js';
 import { Journal } from './screens/Journal.js';
@@ -39,7 +41,13 @@ import { useSession } from './session.js';
  * allows one per screen and it is the answer to "where am I", so it belongs to
  * whichever screen is actually on.
  */
-export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): ReactNode {
+export function Shell({
+  themeSwitch,
+  system,
+}: {
+  readonly themeSwitch: ReactNode;
+  readonly system: SystemOfRecord;
+}): ReactNode {
   const translator = useTranslator();
   const { session, signOut } = useSession();
   const { businessName } = useOrganisation();
@@ -47,6 +55,12 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const items: readonly NavItem[] = [
+    {
+      id: 'catalogue',
+      label: translator.format('nav.catalogue'),
+      href: hrefOf('catalogue'),
+      icon: <ChartIcon />,
+    },
     {
       id: 'companies',
       label: translator.format('nav.companies'),
@@ -199,7 +213,7 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
         />
       }
     >
-      <Screen name={route.name} />
+      <Screen name={route.name} system={system} />
       <ChangePasswordDialog isOpen={isChangingPassword} onOpenChange={setIsChangingPassword} />
     </Page>
   );
@@ -212,8 +226,16 @@ export function Shell({ themeSwitch }: { readonly themeSwitch: ReactNode }): Rea
  * then makes a fifth route a compile error here instead of a blank page found
  * later by whoever added it.
  */
-function Screen({ name }: { readonly name: RouteName }): ReactNode {
+function Screen({
+  name,
+  system,
+}: {
+  readonly name: RouteName;
+  readonly system: SystemOfRecord;
+}): ReactNode {
   switch (name) {
+    case 'catalogue':
+      return <CatalogueScreen system={system} />;
     case 'companies':
       return <Companies />;
     case 'business-profile':
