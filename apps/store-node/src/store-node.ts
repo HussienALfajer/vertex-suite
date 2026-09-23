@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -27,18 +27,23 @@ import {
   FX_PERMISSIONS,
   fxModule,
 } from '@vertex/fx';
-import { isOk, orThrow, systemClock } from '@vertex/kernel';
+import { Dec, isDecimalString, isId, isOk, orThrow, systemClock } from '@vertex/kernel';
 import {
   commandContext,
   composeEdition,
   createEventBus,
   createRegistry,
   createTransactor,
+  operationMailboxMigrations,
+  receiveOperation,
   runMigrations,
   systemContext,
   untilCommitted,
   type CommandContext,
   type MemorySession,
+  type OperationEnvelope,
+  type Receipt,
+  type UnitOfWork,
 } from '@vertex/platform';
 import {
   Authorisation,
@@ -137,6 +142,45 @@ async function bodyOf(request: IncomingMessage): Promise<Record<string, unknown>
 /** The host composes contracts; HTTP dispatch only selects and guards them. */
 export interface StoreNodeOptions extends PostgresStoreOptions {
   readonly attachmentsDirectory: string;
+  /** Only the SYN-02 integration fixture enables this narrow test command. */
+  readonly enableSyn02Fixture?: boolean;
+}
+
+function applySyn02Fixture(uow: UnitOfWork<MemorySession>, payload: unknown): Promise<void> {
+  const input = object(payload);
+  const document = input['document'];
+  const amount = input['amount'];
+  if (
+    typeof document !== 'string' ||
+    !isId(document) ||
+    typeof amount !== 'string' ||
+    !isDecimalString(amount) ||
+    !new Dec(amount).greaterThan(0)
+  )
+    throw new TypeError('Invalid SYN-02 fixture posting.');
+  const documentKey = `syn02.fixture.document.${uow.context.tenant}.${document}`;
+  if (uow.session.get(documentKey) !== undefined)
+    throw new TypeError('Fixture document already exists.');
+  const balanceKey = `syn02.fixture.balance.${uow.context.tenant}`;
+  const previous = uow.session.get(balanceKey) ?? '0';
+  if (typeof previous !== 'string' || !isDecimalString(previous))
+    throw new Error('Corrupted SYN-02 fixture balance.');
+  uow.session.put(documentKey, { document, amount });
+  uow.session.put(balanceKey, new Dec(previous).plus(amount).toString());
+  return Promise.resolve();
+}
+
+function deviceCredentialKey(tenant: TenantId, device: string): string {
+  return `platform.device-credential.${tenant}.${device}`;
+}
+
+function credentialDigest(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+function credentialMatches(stored: unknown, token: string): boolean {
+  if (typeof stored !== 'string' || !/^[0-9a-f]{64}$/u.test(stored)) return false;
+  return timingSafeEqual(Buffer.from(stored, 'hex'), Buffer.from(credentialDigest(token), 'hex'));
 }
 
 export async function composeStoreNode(options: StoreNodeOptions): Promise<StoreNode> {
@@ -213,7 +257,10 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
       authorisedBy: Authorisation,
     });
     await runMigrations({
-      plan: registry.migrationPlan('store-node'),
+      plan: [
+        ...operationMailboxMigrations<MemorySession>(),
+        ...registry.migrationPlan('store-node'),
+      ],
       transactor,
       context: systemContext('00000000-0000-7000-8000-000000000000' as TenantId),
       journal: store.journal,
@@ -706,6 +753,113 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         }
         if (parts[3] !== authenticated.tenant) {
           send(response, 403, { error: 'forbidden' });
+          return;
+        }
+        if (parts[4] === 'devices.pair' && request.method === 'POST') {
+          const input = await bodyOf(request);
+          const registerId = input['register'];
+          const device = input['device'];
+          if (
+            typeof registerId !== 'string' ||
+            !isId(registerId) ||
+            typeof device !== 'string' ||
+            !isId(device)
+          )
+            throw new TypeError('Invalid register or device.');
+          const credential = randomBytes(32).toString('base64url');
+          const paired = await untilCommitted(() =>
+            transactor.run(by, async (uow) => {
+              const register = await organisation.register(
+                by,
+                registerId as Parameters<typeof organisation.register>[1],
+              );
+              if (
+                !register?.active ||
+                register.heldBy !== device ||
+                !(await authority.may(by, SYS_PERMISSIONS.register.edit, {
+                  branch: register.branch,
+                }))
+              )
+                return false;
+              uow.session.put(
+                deviceCredentialKey(authenticated.tenant, device),
+                credentialDigest(credential),
+              );
+              return true;
+            }),
+          );
+          if (!paired) {
+            send(response, 403, { error: 'forbidden' });
+            return;
+          }
+          send(response, 200, { credential });
+          return;
+        }
+        if (parts[4] === 'operations.deliver' && request.method === 'POST') {
+          const input = await bodyOf(request);
+          const envelope = object(input['envelope']) as unknown as OperationEnvelope;
+          if (envelope.tenant !== authenticated.tenant || envelope.actor !== authenticated.user) {
+            send(response, 403, { error: 'forbidden' });
+            return;
+          }
+          const registerId = input['register'];
+          if (
+            typeof registerId !== 'string' ||
+            !isId(registerId) ||
+            typeof envelope.device !== 'string' ||
+            !isId(envelope.device)
+          )
+            throw new TypeError('Invalid register or device.');
+          const operationBy = commandContext({
+            tenant: authenticated.tenant,
+            actor: authenticated.user,
+            device: envelope.device,
+            correlation: envelope.correlation,
+          });
+          if (!options.enableSyn02Fixture || envelope.kind !== 'syn02.fixture-post') {
+            send(response, 422, { error: 'unsupported-operation' });
+            return;
+          }
+          const credential = request.headers['x-vertex-device-token'];
+          if (typeof credential !== 'string') {
+            send(response, 403, { error: 'forbidden' });
+            return;
+          }
+          const receipt = await untilCommitted(() =>
+            transactor.run<Receipt | { status: 'forbidden' }>(operationBy, async (uow) => {
+              const register = await organisation.register(
+                operationBy,
+                registerId as Parameters<typeof organisation.register>[1],
+              );
+              if (
+                !register?.active ||
+                register.heldBy !== envelope.device ||
+                !(await authority.may(operationBy, SYS_PERMISSIONS.register.view, {
+                  branch: register.branch,
+                }))
+              )
+                return { status: 'forbidden' };
+              if (
+                !credentialMatches(
+                  uow.session.get(deviceCredentialKey(authenticated.tenant, envelope.device)),
+                  credential,
+                )
+              )
+                return { status: 'forbidden' };
+              return receiveOperation(uow, envelope, () =>
+                applySyn02Fixture(uow, envelope.payload),
+              );
+            }),
+          );
+          if (receipt.status === 'forbidden') {
+            send(response, 403, { error: 'forbidden' });
+            return;
+          }
+          send(
+            response,
+            receipt.status === 'applied' || receipt.status === 'duplicate' ? 200 : 409,
+            receipt,
+          );
           return;
         }
         const route = routes.get(parts[4] ?? '');

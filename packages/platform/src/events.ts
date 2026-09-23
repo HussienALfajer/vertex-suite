@@ -57,10 +57,10 @@ export interface DomainEvent<Payload = unknown> {
  * queue of SYN-06 in the making: something to be retried or escalated by a host
  * that knows how, and never simply dropped.
  *
- * What it cannot yet promise is delivery across a crash. Events are held in
- * memory between the commit and the dispatch, so a process that dies in that
- * window loses them; closing it is the outbox of `U07`, which writes them in
- * the same transaction as the command that produced them.
+ * This bus is for local module notifications. Its events are held in memory
+ * between commit and dispatch. Any operation that must reach another process
+ * uses the transactional mailbox in `mailboxes.ts` in the same unit of work as
+ * its business data; publishing here is not a delivery guarantee.
  */
 export interface HandlerFailure {
   readonly event: DomainEvent;
