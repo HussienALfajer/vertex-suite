@@ -66,6 +66,14 @@ import {
   sysModule,
 } from '@vertex/sys';
 
+import {
+  applyFixtureSale,
+  MovementConflictError,
+  parseSaleMovement,
+  STOCK_FIXTURE_KIND,
+  stockFixtureMigrations,
+} from './stock-fixture.js';
+
 interface Session {
   readonly authenticated: Authenticated;
 }
@@ -144,6 +152,8 @@ export interface StoreNodeOptions extends PostgresStoreOptions {
   readonly attachmentsDirectory: string;
   /** Only the SYN-02 integration fixture enables this narrow test command. */
   readonly enableSyn02Fixture?: boolean;
+  /** Only the SYN-03 acceptance fixture enables this narrow stock operation. */
+  readonly enableSyn03Fixture?: boolean;
 }
 
 function applySyn02Fixture(uow: UnitOfWork<MemorySession>, payload: unknown): Promise<void> {
@@ -259,6 +269,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     await runMigrations({
       plan: [
         ...operationMailboxMigrations<MemorySession>(),
+        ...(options.enableSyn03Fixture ? stockFixtureMigrations() : []),
         ...registry.migrationPlan('store-node'),
       ],
       transactor,
@@ -816,7 +827,9 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
             device: envelope.device,
             correlation: envelope.correlation,
           });
-          if (!options.enableSyn02Fixture || envelope.kind !== 'syn02.fixture-post') {
+          const syn02 = options.enableSyn02Fixture && envelope.kind === 'syn02.fixture-post';
+          const syn03 = options.enableSyn03Fixture && envelope.kind === STOCK_FIXTURE_KIND;
+          if (!syn02 && !syn03) {
             send(response, 422, { error: 'unsupported-operation' });
             return;
           }
@@ -846,6 +859,26 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
                 )
               )
                 return { status: 'forbidden' };
+              if (syn03) {
+                const movement = parseSaleMovement(envelope.payload);
+                const location = await organisation.location(
+                  operationBy,
+                  movement.location as Parameters<typeof organisation.location>[1],
+                );
+                if (
+                  !location?.active ||
+                  location.branch !== register.branch ||
+                  !(await authority.may(operationBy, SYS_PERMISSIONS.location.view, {
+                    branch: register.branch,
+                    location: location.id,
+                  }))
+                )
+                  return { status: 'forbidden' };
+                return receiveOperation(uow, envelope, () => {
+                  applyFixtureSale(uow, envelope, movement);
+                  return Promise.resolve();
+                });
+              }
               return receiveOperation(uow, envelope, () =>
                 applySyn02Fixture(uow, envelope.payload),
               );
@@ -881,6 +914,10 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         }
         send(response, 200, { value });
       } catch (cause) {
+        if (cause instanceof MovementConflictError) {
+          send(response, 409, { status: 'conflict' });
+          return;
+        }
         if (cause instanceof SyntaxError || cause instanceof TypeError) {
           send(response, 400, { error: 'bad-request' });
           return;
