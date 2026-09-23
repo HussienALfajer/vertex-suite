@@ -25,6 +25,8 @@ export default defineConfig({
       { find: /^@vertex\/ui$/, replacement: source('ui') },
       { find: /^@vertex\/kernel$/, replacement: source('kernel') },
       { find: /^@vertex\/i18n$/, replacement: source('i18n') },
+      { find: /^@vertex\/platform$/, replacement: source('platform') },
+      { find: /^@vertex\/contracts$/, replacement: source('contracts') },
     ],
   },
   server: { port: 5180 },

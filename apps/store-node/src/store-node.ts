@@ -59,6 +59,12 @@ import {
 } from '@vertex/sec';
 import { openPostgresStore, type PostgresStoreOptions } from '@vertex/storage';
 import {
+  DELIVER_ROUTE,
+  DEVICE_CREDENTIAL_HEADER,
+  REFUSAL_STATUS,
+  SESSION_PATH,
+} from '@vertex/store-link';
+import {
   DocumentNumbering,
   Organisation,
   OrganisationAdministration,
@@ -751,6 +757,12 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
           send(response, 401, { error: 'unauthenticated' });
           return;
         }
+        // What a register asks when it has nothing to deliver: is the store
+        // node there, and does it still know this session (SYN-06)?
+        if (path === SESSION_PATH && request.method === 'GET') {
+          send(response, 200, { ok: true });
+          return;
+        }
         if (path === '/v1/sign-out' && request.method === 'POST') {
           sessions.delete(token);
           send(response, 200, { ok: true });
@@ -805,11 +817,11 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
           send(response, 200, { credential });
           return;
         }
-        if (parts[4] === 'operations.deliver' && request.method === 'POST') {
+        if (parts[4] === DELIVER_ROUTE && request.method === 'POST') {
           const input = await bodyOf(request);
           const envelope = object(input['envelope']) as unknown as OperationEnvelope;
           if (envelope.tenant !== authenticated.tenant || envelope.actor !== authenticated.user) {
-            send(response, 403, { error: 'forbidden' });
+            send(response, REFUSAL_STATUS.forbidden, { error: 'forbidden' });
             return;
           }
           const registerId = input['register'];
@@ -829,12 +841,12 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
           const syn02 = options.enableSyn02Fixture && envelope.kind === 'syn02.fixture-post';
           const stock = options.enableStockFixture && STOCK_OPERATION_KINDS.has(envelope.kind);
           if (!syn02 && !stock) {
-            send(response, 422, { error: 'unsupported-operation' });
+            send(response, REFUSAL_STATUS.unsupported, { error: 'unsupported-operation' });
             return;
           }
-          const credential = request.headers['x-vertex-device-token'];
+          const credential = request.headers[DEVICE_CREDENTIAL_HEADER];
           if (typeof credential !== 'string') {
-            send(response, 403, { error: 'forbidden' });
+            send(response, REFUSAL_STATUS.forbidden, { error: 'forbidden' });
             return;
           }
           const receipt = await untilCommitted(() =>
@@ -888,7 +900,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
             }),
           );
           if (receipt.status === 'forbidden') {
-            send(response, 403, { error: 'forbidden' });
+            send(response, REFUSAL_STATUS.forbidden, { error: 'forbidden' });
             return;
           }
           send(
@@ -921,8 +933,13 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
           send(response, 409, { status: 'conflict' });
           return;
         }
+        // For a delivery, this is the wire's `invalid` refusal: the store node
+        // could not read what arrived as an operation it applies. The register
+        // records it against the operation and keeps retrying — a body cut off
+        // on the way clears on the next attempt, and one that never will is
+        // exactly what its escalation is for.
         if (cause instanceof SyntaxError || cause instanceof TypeError) {
-          send(response, 400, { error: 'bad-request' });
+          send(response, REFUSAL_STATUS.invalid, { error: 'bad-request' });
           return;
         }
         console.error('Store-node request failed:', cause);

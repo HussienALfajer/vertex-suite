@@ -97,6 +97,15 @@ const own = {
   'sample.rice': 'أرز ٥ كغ',
   'sample.oil': 'زيت ١ ل',
 
+  'syncDemo.title': 'حالة المزامنة',
+  'syncDemo.description':
+    'صندوق تجريبي يسلّم عمليّاته عبر الساعي الحقيقي إلى عقدة متجر محاكاة في هذه الصفحة. اقطع خطّها، أو اجعلها ترفض الصندوق، وراقب المؤشّر.',
+  'syncDemo.bar': 'شريط حالة الصندوق',
+  'syncDemo.line': 'خطّ عقدة المتجر',
+  'syncDemo.refusing': 'العقدة ترفض هذا الصندوق',
+  'syncDemo.sell': 'سجّل بيعًا',
+  'operation.pos.sale': 'بيع',
+
   'select.unit': 'وحدة القياس',
   'toggle.active': 'صنف فعّال',
   'toggle.track': 'تتبّع الصلاحية',

@@ -23,7 +23,7 @@ const ROOT = process.cwd();
  * here at the moment you believe it is done — `pnpm check:coverage` then tells
  * you immediately whether that is true.
  */
-export const DELIVERED = ['U01', 'U02', 'U03', 'U04', 'U05', 'U06'];
+export const DELIVERED = ['U01', 'U02', 'U03', 'U04', 'U05', 'U06', 'U07'];
 
 export const MODULES = [
   'SYS',
@@ -270,24 +270,85 @@ const NOT_EVIDENCE = new Set(['skip', 'todo', 'fails']);
  */
 export function proofsIn(files) {
   const proofs = new Map();
-  // The name runs to the closing quote, stepping over an escaped one: a name
-  // like 'the tenant\'s own term' is one name, not a name that ends at "tenant".
-  const named = /\b(?:it|test|describe)((?:\.\w+)*)\s*\(\s*(['"`])((?:\\[\s\S]|(?!\2)[^\\])*)\2/g;
-
   for (const { file, source } of files) {
-    for (const match of source.matchAll(named)) {
-      const modifiers = match[1].split('.').filter((one) => one !== '');
+    for (const { modifiers, name, index } of namedTestsIn(source)) {
       if (modifiers.some((one) => NOT_EVIDENCE.has(one))) continue;
-
-      const name = match[3];
-      const line = source.slice(0, match.index).split('\n').length;
+      const line = source.slice(0, index).split('\n').length;
       for (const id of featureIdsIn(name)) {
         proofs.set(id, [...(proofs.get(id) ?? []), { file, line, name }]);
       }
     }
   }
-
   return proofs;
+}
+
+/**
+ * Modifiers that take arguments of their own before the test's name:
+ * `describe.skipIf(!database)('SYN-02 …')`, `it.each(rows)('…')`.
+ *
+ * Read past rather than stopped at. A reader that expected the name straight
+ * after the modifiers saw an argument list instead and moved on without a
+ * word — and the whole of `SYN-02`'s store-node and storage suites, written
+ * behind `skipIf` because they need a database, counted as proof of nothing
+ * while looking, to anybody reading them, like the proof. A condition on the
+ * environment is not `skip`: CI provides the database and those files refuse
+ * to run there without it, so the suite runs where the claim is audited.
+ */
+const TAKES_ARGUMENTS = new Set(['skipIf', 'runIf', 'each', 'for']);
+
+/** The index just past the bracket closing the one at `open`, stepping over strings. */
+function pastBalanced(source, open) {
+  let depth = 0;
+  let quote = null;
+  for (let at = open; at < source.length; at += 1) {
+    const char = source[at];
+    if (quote !== null) {
+      if (char === '\\') at += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') quote = char;
+    else if (char === '(') depth += 1;
+    else if (char === ')') {
+      depth -= 1;
+      if (depth === 0) return at + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Every call to `it`, `test` or `describe` whose name is a string literal: the
+ * modifiers it was called through, the name, and where it begins.
+ *
+ * The name runs to the closing quote, stepping over an escaped one: a name
+ * like 'the tenant\'s own term' is one name, not a name that ends at "tenant".
+ */
+function* namedTestsIn(source) {
+  const head = /\b(?:it|test|describe)\b/g;
+  const modifier = /\s*\.\s*(\w+)/y;
+  const name = /\s*\(\s*(['"`])((?:\\[\s\S]|(?!\1)[^\\])*)\1/y;
+  for (const match of source.matchAll(head)) {
+    let at = match.index + match[0].length;
+    const modifiers = [];
+    for (;;) {
+      modifier.lastIndex = at;
+      const next = modifier.exec(source);
+      if (next === null) break;
+      modifiers.push(next[1]);
+      at = modifier.lastIndex;
+      if (TAKES_ARGUMENTS.has(next[1])) {
+        const open = source.slice(at).search(/\S/) + at;
+        if (source[open] !== '(') break;
+        at = pastBalanced(source, open);
+        if (at === -1) break;
+      }
+    }
+    if (at === -1) continue;
+    name.lastIndex = at;
+    const called = name.exec(source);
+    if (called !== null) yield { modifiers, name: called[2], index: match.index };
+  }
 }
 
 /**

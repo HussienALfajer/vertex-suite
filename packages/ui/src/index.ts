@@ -181,6 +181,14 @@ export {
   type ThemeSwitchProps,
   type TwoToneTheme,
 } from './components/ThemeSwitch.js';
+export {
+  SyncStatus,
+  type SyncConnection,
+  type SyncFailureReason,
+  type SyncOperation,
+  type SyncState,
+  type SyncStatusProps,
+} from './components/SyncStatus.js';
 export { Popover, type PopoverProps } from './components/Popover.js';
 export { WithTooltip, type WithTooltipProps } from './components/Tooltip.js';
 export {

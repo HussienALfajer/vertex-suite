@@ -246,6 +246,32 @@ describe('proofsIn — what counts as proof of a feature', () => {
     expect(found.size).toBe(0);
   });
 
+  it('reads past a modifier that takes arguments of its own before the name', () => {
+    // `SYN-02`'s database suites were written this way and counted as nothing:
+    // the reader expected the name where the condition was.
+    const found = proofs(
+      "describe.skipIf(kind === 'postgres' && !url)(`SYN-02 ${kind} mailboxes`, () => {});\n" +
+        "describe.runIf(check(')'))('SYN-03 deltas', () => {});\n" +
+        "it.each([['a'], ['b']])('SYN-05 survives %s', () => {});\n" +
+        "describe.skipIf(!url).concurrent('SYN-06 status', () => {});",
+    );
+    expect([...found.keys()]).toEqual(['SYN-02', 'SYN-03', 'SYN-05', 'SYN-06']);
+    expect(found.get('SYN-02')?.[0]?.line).toBe(1);
+    expect(found.get('SYN-06')?.[0]?.line).toBe(4);
+  });
+
+  it('still refuses an unconditional skip behind a conditional one', () => {
+    const found = proofs("describe.skipIf(!url).skip('SYN-02 mailboxes', () => {});");
+    expect(found.size).toBe(0);
+  });
+
+  it('ignores a call that is not a test, however it starts', () => {
+    const found = proofs(
+      "test.setTimeout(60_000);\nitems('SYS-02 not a test');\ndescribe.each(rows);",
+    );
+    expect(found.size).toBe(0);
+  });
+
   it('counts a test under a modifier that still runs it', () => {
     const found = proofs(
       "it.concurrent('SYS-02 stores a branch', () => {});\ntest.sequential('SYS-05 profile', () => {});",
