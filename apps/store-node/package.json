@@ -1,0 +1,29 @@
+{
+  "name": "@vertex/store-node",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@vertex/contracts": "workspace:*",
+    "@vertex/fin": "workspace:*",
+    "@vertex/fx": "workspace:*",
+    "@vertex/kernel": "workspace:*",
+    "@vertex/platform": "workspace:*",
+    "@vertex/sec": "workspace:*",
+    "@vertex/storage": "workspace:*",
+    "@vertex/sys": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.4",
+    "@types/pg": "8.16.0",
+    "pg": "8.23.0",
+    "typescript": "6.0.2",
+    "vitest": "4.1.11"
+  }
+}

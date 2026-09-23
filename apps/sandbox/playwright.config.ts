@@ -10,6 +10,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './playwright.setup.ts',
   fullyParallel: true,
   forbidOnly: process.env['CI'] !== undefined,
   retries: process.env['CI'] === undefined ? 0 : 1,
@@ -28,10 +29,4 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], colorScheme: 'dark' },
     },
   ],
-  webServer: {
-    command: 'pnpm vite --port 5180',
-    url: 'http://localhost:5180',
-    reuseExistingServer: process.env['CI'] === undefined,
-    timeout: 120_000,
-  },
 });

@@ -80,5 +80,13 @@ export default defineConfig({
    * Node, never bundled into a browser, which is why `check:policy` scopes that
    * rule to `src/`.
    */
-  server: { port: Number(process.env['PORT']) || 5181 },
+  server: {
+    port: Number(process.env['PORT']) || 5181,
+    proxy: {
+      '/api': {
+        target: process.env['VERTEX_STORE_NODE_URL'] ?? 'http://127.0.0.1:5182',
+        rewrite: (path) => path.replace(/^\/api/u, ''),
+      },
+    },
+  },
 });
