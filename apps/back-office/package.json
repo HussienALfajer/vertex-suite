@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "e2e": "playwright test && playwright test -c playwright.real.config.ts",
+    "install:browsers": "playwright install --with-deps chromium",
     "e2e:ui": "playwright test --ui"
   },
   "dependencies": {

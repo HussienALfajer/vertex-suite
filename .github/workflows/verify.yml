@@ -116,7 +116,7 @@ jobs:
       # at once fight over the dpkg lock — which fails the job with a code that
       # says nothing about browsers at all.
       - name: Install the browser the journeys run in
-        run: pnpm --filter "./apps/*" --workspace-concurrency=1 exec playwright install --with-deps chromium
+        run: pnpm --filter "./apps/*" --workspace-concurrency=1 run install:browsers
 
       # §13: keyboard-only, light and dark. A focus ring that is invisible in
       # one theme is a focus ring that does not exist for half the day.
