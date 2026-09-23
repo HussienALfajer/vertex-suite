@@ -24,11 +24,12 @@ comments reference them.
 
 ```
 packages/kernel      exact money and quantities, identifiers, time, refusals
-packages/platform    module registry, editions, event bus, unit of work
+packages/platform    module registry, editions, event bus, unit of work, outbox and courier
 packages/contracts   the shared vocabulary: identifiers, permission grammar, seeded roles
 packages/i18n        messages, terminology, direction
 packages/ui          the design system, and the map
 packages/modules/…   sys, sec, fx, fin — and the twelve to come
+packages/adapters/…  storage (PostgreSQL and SQLite), and the store link a register delivers over
 apps/back-office     the administration screens, over the authenticated store-node transport
 apps/sandbox         where the components are looked at and keyboard journeys run
 apps/store-node      the PostgreSQL-backed module host and authenticated HTTP transport

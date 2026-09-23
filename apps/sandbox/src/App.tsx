@@ -35,6 +35,7 @@ import {
 } from '@vertex/ui';
 
 import { createTranslator } from './catalogue.js';
+import { SyncDemo } from './sync.js';
 
 const USD = defineCurrency({
   code: 'USD',
@@ -271,6 +272,8 @@ export function App(): ReactNode {
               <Banner tone="danger">{t('banner.danger')}</Banner>
             </div>
           </Panel>
+
+          <SyncDemo timeZone={TIMEZONE} />
 
           <div className="grid gap-[var(--vx-gap-lg)] md:grid-cols-2">
             <Panel title={t('panel.grid')} flush>

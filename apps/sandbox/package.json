@@ -16,6 +16,7 @@
   "dependencies": {
     "@vertex/i18n": "workspace:*",
     "@vertex/kernel": "workspace:*",
+    "@vertex/platform": "workspace:*",
     "@vertex/ui": "workspace:*",
     "react": "19.3.0",
     "react-dom": "19.3.0"

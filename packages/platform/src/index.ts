@@ -72,15 +72,35 @@ export { createRegistry, type Registry, type RegistryOptions } from './registry.
 export {
   acknowledgeOperation,
   deliverOutbox,
+  escalateOperation,
   operationMailboxMigrations,
   outboxEntries,
   receiveOperation,
   stageOperation,
-  type OperationEnvelope,
-  type OutboxEntry,
+  type DeliveryAnswer,
   type DeliveryProgress,
+  type FailureReason,
+  type OperationEnvelope,
+  type OperationEscalation,
+  type OperationFailure,
+  type OutboxEntry,
   type Receipt,
+  type RefusalReason,
 } from './mailboxes.js';
+
+export {
+  backoffDelay,
+  createCourier,
+  type Backoff,
+  type Connection,
+  type Courier,
+  type CourierOptions,
+  type QueuedOperation,
+  type Reach,
+  type StoreLink,
+  type SyncStatus,
+  type Timer,
+} from './courier.js';
 
 export {
   createMemoryStore,

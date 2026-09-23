@@ -123,4 +123,64 @@ export const UI_CATALOGUE = {
     'رُفض إذن الموقع لهذه الصفحة. امنحه من إعدادات المتصفّح، أو حدّده يدويًا.',
   'picker.device.unavailable':
     'تعذّر تحديد موقع الجهاز الآن — جهاز بلا GPS يسأل الإنترنت، وهذا المتجر قد يكون بلا اتصال. حدّده على الخريطة.',
+
+  /**
+   * `SyncStatus` (`POS-18`, `SYN-06`): the register's word on its store node,
+   * and the detail behind it.
+   *
+   * Written for the person at the till, who needs to know two things before
+   * anything technical: whether to keep selling — always yes, and each
+   * sentence that could be read as "stop" says so — and whether somebody else
+   * has to act. A refusal names what is likely wrong in the shop's own terms
+   * (a register withdrawn, another machine on it) rather than in the store
+   * node's, because the supervisor it is escalated to fixes the shop, not the
+   * protocol.
+   */
+  'sync.title': 'المزامنة مع عقدة المتجر',
+  'sync.connection.unknown': 'بانتظار عقدة المتجر',
+  'sync.connection.online': 'متصل',
+  'sync.connection.offline': 'غير متصل',
+  'sync.connection.signed-out': 'الجلسة منتهية',
+  'sync.pending': '{count, number} بانتظار المزامنة',
+  'sync.failed': 'عملية لم تُطبَّق',
+  'sync.retry': 'أعد المحاولة الآن',
+  'sync.escalate': 'صعّدها إلى المشرف',
+  'sync.explain.unknown':
+    'لم تُجب عقدة المتجر بعد. يستمر البيع كالمعتاد، وكل عملية تُحفظ على هذا الصندوق حتى تُرسل.',
+  'sync.explain.online': 'هذا الصندوق متصل بعقدة المتجر، ويرسل كل عملية فور تسجيلها.',
+  'sync.explain.offline':
+    'لا اتصال بعقدة المتجر. يستمر البيع كالمعتاد: كل عملية محفوظة على هذا الصندوق، وتُرسل وحدها حين يعود الاتصال.',
+  'sync.explain.signed-out':
+    'عقدة المتجر تعمل، لكنها لم تعد تعرف هذه الجلسة، فلن يُرسل شيء حتى يُسجَّل الدخول من جديد. يستمر البيع، وكل عملية محفوظة على هذا الصندوق.',
+  'sync.lastContact': 'آخر ردّ من عقدة المتجر',
+  'sync.never': 'لم تردّ بعد',
+  'sync.nextAttempt': 'المحاولة التلقائية التالية',
+  'sync.failure.title': 'لم تُطبَّق: {operation}',
+  'sync.failure.reason.conflict':
+    'عقدة المتجر تحمل عملية أخرى بالمرجع نفسه ومحتوى مختلف، فلا تطبّق هذه فوقها.',
+  'sync.failure.reason.sequence-gap':
+    'عقدة المتجر تنتظر من هذا الصندوق العملية رقم {expected, number} ولم تصلها، كأن عمليات سبقت هذه فُقدت من إحدى الجهتين.',
+  'sync.failure.reason.out-of-order':
+    'عقدة المتجر طبّقت من هذا الصندوق ما بعد هذه العملية، وتنتظر الآن الرقم {expected, number}.',
+  'sync.failure.reason.forbidden':
+    'عقدة المتجر ترفض هذا الصندوق: قد يكون سُحب من الخدمة، أو سُجّل عليه جهاز آخر، أو لم يعد لمن سجّل الدخول حقّ فيه.',
+  'sync.failure.reason.unsupported':
+    'عقدة المتجر لا تعرف هذا النوع من العمليات، والأغلب أنها أقدم إصدارًا من هذا الصندوق.',
+  'sync.failure.reason.invalid':
+    'عقدة المتجر لم تستطع قراءة هذه العملية. تُعاد المحاولة، فإن تكرّر الرفض فالأمر يحتاج إلى الدعم الفني.',
+  'sync.failure.attempts':
+    'رفضتها عقدة المتجر {attempts, plural, one {مرة واحدة} two {مرتين} few {# مرات} other {# مرة}} منذ {since}.',
+  'sync.failure.behind':
+    '{count, plural, zero {ولا شيء بعدها ينتظرها.} one {وعملية واحدة بعدها تنتظرها.} two {وعمليتان بعدها تنتظرانها.} few {و# عمليات بعدها تنتظرها.} other {و# عملية بعدها تنتظرها.}}',
+  'sync.failure.escalateHint':
+    'تُعاد المحاولة تلقائيًا. إن لم يحلّها ذلك، صعّدها إلى المشرف وأعطه المرجع أدناه.',
+  'sync.failure.escalated': 'صُعِّدت إلى المشرف في {at}، وتُعاد المحاولة تلقائيًا حتى تُحلّ.',
+  'sync.failure.reference': 'المرجع',
+  'sync.queue.title': 'بانتظار المزامنة',
+  'sync.queue.empty': 'لا شيء بانتظار المزامنة: كل ما سُجّل على هذا الصندوق وصل إلى عقدة المتجر.',
+  'sync.queue.more': 'و{count, number} غيرها بعدها.',
+  'sync.queue.sequence': 'رقم {sequence, number}',
+  'sync.queue.waiting': 'بانتظار',
+  'sync.queue.failed': 'لم تُطبَّق',
+  'sync.queue.escalated': 'صُعِّدت',
 } as const;

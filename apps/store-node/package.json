@@ -17,6 +17,7 @@
     "@vertex/platform": "workspace:*",
     "@vertex/sec": "workspace:*",
     "@vertex/storage": "workspace:*",
+    "@vertex/store-link": "workspace:*",
     "@vertex/sys": "workspace:*"
   },
   "devDependencies": {

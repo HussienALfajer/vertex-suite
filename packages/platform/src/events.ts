@@ -53,9 +53,10 @@ export interface DomainEvent<Payload = unknown> {
  * A subscriber failed.
  *
  * The transaction that produced the event has already committed — see the
- * dispatch rule below — so this is never an undo. It is the failed-operation
- * queue of SYN-06 in the making: something to be retried or escalated by a host
- * that knows how, and never simply dropped.
+ * dispatch rule below — so this is never an undo: it is something to be
+ * retried or escalated by a host that knows how, and never simply dropped.
+ * SYN-06's queue of failed operations is not this one; it holds what crosses
+ * to another process, on the operation itself (`mailboxes.ts`, `courier.ts`).
  *
  * This bus is for local module notifications. Its events are held in memory
  * between commit and dispatch. Any operation that must reach another process
