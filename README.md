@@ -29,12 +29,13 @@ packages/contracts   the shared vocabulary: identifiers, permission grammar, see
 packages/i18n        messages, terminology, direction
 packages/ui          the design system, and the map
 packages/modules/…   sys, sec, fx, fin — and the twelve to come
-apps/back-office     the administration screens, over a development stand-in until U07
+apps/back-office     the administration screens, over the authenticated store-node transport
 apps/sandbox         where the components are looked at and keyboard journeys run
+apps/store-node      the PostgreSQL-backed module host and authenticated HTTP transport
 ```
 
-Still to come, in the order `docs/modules.md` §7 builds them: `packages/adapters`,
-`apps/store-node`, `apps/register`, `apps/count-app` and `editions/`.
+Still to come, in the order `docs/modules.md` §7 builds them: `apps/register`,
+`apps/count-app` and `editions/`.
 
 ## Working on it
 
@@ -47,6 +48,20 @@ pnpm verify
 
 `pnpm verify` runs the build, then formatting, linting, type-checking and tests — the same command
 CI runs on Windows and Linux. Nothing merges that does not pass it.
+
+To run the store node, set `VERTEX_POSTGRES_URL`, `VERTEX_SCHEMA`,
+`VERTEX_ATTACHMENTS_DIR`, `VERTEX_TENANT` (a tenant UUID),
+`VERTEX_OWNER_HANDLE`, and `VERTEX_OWNER_PASSWORD`, then run
+`pnpm --filter @vertex/store-node start` after `pnpm build`. `PORT` defaults to
+5182 and `HOST` to 127.0.0.1. Startup runs the store-node migrations and seeds
+the named tenant's owner if needed. Start the back office with the same tenant
+as `VITE_VERTEX_TENANT`; its development proxy targets the store node at
+127.0.0.1:5182, or at `VERTEX_STORE_NODE_URL` when set. A production web server
+must forward `/api` to the store node, or set `VITE_VERTEX_API_URL` to its
+reachable API path at build time. `pnpm demo` remains an isolated fixture.
+
+The PostgreSQL integration tests use `VERTEX_TEST_POSTGRES_URL`. They create
+unique schemas and remove them after each journey; CI requires this variable.
 
 The build comes **first** on purpose. A package consumes its neighbours through their built
 `dist/`, so linting or type-checking before the build makes every cross-package import an

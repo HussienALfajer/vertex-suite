@@ -20,38 +20,43 @@ function valid(value: unknown, seen: Set<object>): void {
   }
   if (typeof value !== 'object')
     throw new TypeError('An unsupported or undefined persisted value.');
-  if (seen.has(value))
-    throw new TypeError('A shared or circular persisted reference is unsupported.');
+  if (seen.has(value)) throw new TypeError('A circular persisted reference is unsupported.');
   seen.add(value);
-  if (Array.isArray(value)) {
-    const extra = Reflect.ownKeys(value).filter(
-      (key) =>
-        typeof key !== 'string' ||
-        (key !== 'length' && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= value.length)),
-    );
-    if (extra.length !== 0) throw new TypeError('Extra array properties cannot be persisted.');
-    for (let i = 0; i < value.length; i += 1) {
-      if (!(i in value)) throw new TypeError('A sparse persisted array is unsupported.');
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
-      if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) {
-        throw new TypeError('A persisted array index must be an enumerable value.');
+  try {
+    if (Array.isArray(value)) {
+      const extra = Reflect.ownKeys(value).filter(
+        (key) =>
+          typeof key !== 'string' ||
+          (key !== 'length' && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= value.length)),
+      );
+      if (extra.length !== 0) throw new TypeError('Extra array properties cannot be persisted.');
+      for (let i = 0; i < value.length; i += 1) {
+        if (!(i in value)) throw new TypeError('A sparse persisted array is unsupported.');
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+        if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) {
+          throw new TypeError('A persisted array index must be an enumerable value.');
+        }
+        valid(descriptor.value, seen);
       }
-      valid(descriptor.value, seen);
+    } else {
+      const prototype: unknown = Object.getPrototypeOf(value);
+      if (prototype !== Object.prototype) {
+        throw new TypeError('A persisted value must contain plain objects and arrays only.');
+      }
+      if (Object.getOwnPropertySymbols(value).length !== 0) {
+        throw new TypeError('Symbol properties cannot be persisted.');
+      }
+      for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
+        if (!('value' in descriptor)) throw new TypeError('A persisted accessor is unsupported.');
+        if (!descriptor.enumerable)
+          throw new TypeError('A non-enumerable persisted property is unsupported.');
+        valid(descriptor.value, seen);
+      }
     }
-  } else {
-    const prototype: unknown = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype) {
-      throw new TypeError('A persisted value must contain plain objects and arrays only.');
-    }
-    if (Object.getOwnPropertySymbols(value).length !== 0) {
-      throw new TypeError('Symbol properties cannot be persisted.');
-    }
-    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
-      if (!('value' in descriptor)) throw new TypeError('A persisted accessor is unsupported.');
-      if (!descriptor.enumerable)
-        throw new TypeError('A non-enumerable persisted property is unsupported.');
-      valid(descriptor.value, seen);
-    }
+  } finally {
+    // JSON duplicates a shared child on each path. Only an ancestor still on
+    // the current path is a cycle; SEC roles share their rights and seed arrays.
+    seen.delete(value);
   }
 }
 

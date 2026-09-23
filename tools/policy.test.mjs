@@ -160,6 +160,11 @@ describe('process.env is reached by name, never by bracket', () => {
     const source = "const port = Number(process.env['PORT']);";
     expect(violations('apps/back-office/vite.config.ts', source)).toEqual([]);
   });
+
+  it('allows bracketed environment reads in the Node store-node app', () => {
+    const source = "const port = Number(process.env['PORT']);";
+    expect(violations('apps/store-node/src/main.ts', source)).toEqual([]);
+  });
 });
 
 describe('what counts as shipped', () => {

@@ -216,10 +216,12 @@ export function findPolicyViolations({ files }) {
       //    browser bundle where `process` does not exist and throws. This crashed
       //    the register: on a touch surface a nested compact table took a
       //    development-only branch and brought the whole tree down.
-      //    Scoped to `src/`, which is what a bundler carries into a browser. A
-      //    build or test config runs in Node by definition and is not the hazard.
+      //    Scoped to browser source. The store node also has `src/`, but runs
+      //    in Node and must read bracketed environment variables under the
+      //    workspace's noPropertyAccessFromIndexSignature TypeScript rule.
       if (
         file.includes('/src/') &&
+        !file.startsWith('apps/store-node/') &&
         /\bprocess\s*\.\s*env\s*\[/.test(code) &&
         !isExempt(lines, index, 'env')
       ) {

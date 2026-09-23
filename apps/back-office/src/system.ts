@@ -95,8 +95,8 @@ import type {
  * refusal that changes meaning changes here at compile time rather than at a
  * till.
  *
- * `U07` brings the store node and something to talk to it over, and the adapter
- * behind this interface becomes the real one. The screens do not change.
+ * The production adapter speaks to the store node; isolated browser journeys
+ * still use a development fixture through this same port.
  */
 
 export interface SignInAttempt {
@@ -319,11 +319,9 @@ export interface DeclaredRight {
  * `RoleAdministration` with the same thing taken out as `OrganisationOfRecord`:
  * the `CommandContext`. Everything that remains is `SEC`'s own vocabulary.
  *
- * `SEC` cannot be composed in this browser at all (`dev-system.ts` says why:
- * password hashing needs a runtime no browser has), so unlike `organisation`
- * above — the real `SYS` hosted here — this port is answered by a development
- * stand-in until `U07` brings a transport to the store node, where the real
- * module actually runs. The shape does not change when it does.
+ * `SEC` runs in the store node, which verifies sign-in and resolves the actor
+ * and tenant for every operation. Browser tests may answer this port with a
+ * fixture that has the same shape.
  */
 export interface UsersOfRecord {
   list(listing?: Listing): Promise<readonly User[]>;
