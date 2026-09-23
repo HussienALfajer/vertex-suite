@@ -58,7 +58,7 @@ async function shop() {
     connectionString: database,
     schema,
     attachmentsDirectory: directory,
-    enableSyn03Fixture: true,
+    enableStockFixture: true,
   };
   cleanup.push(async () => {
     const pool = new Pool({ connectionString: database });

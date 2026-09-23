@@ -68,8 +68,11 @@ import {
 
 import {
   applyFixtureSale,
-  MovementConflictError,
+  applyFixtureSaleDocument,
+  IdentityConflictError,
+  parseFixtureSale,
   parseSaleMovement,
+  SALE_FIXTURE_KIND,
   STOCK_FIXTURE_KIND,
   stockFixtureMigrations,
 } from './stock-fixture.js';
@@ -152,8 +155,8 @@ export interface StoreNodeOptions extends PostgresStoreOptions {
   readonly attachmentsDirectory: string;
   /** Only the SYN-02 integration fixture enables this narrow test command. */
   readonly enableSyn02Fixture?: boolean;
-  /** Only the SYN-03 acceptance fixture enables this narrow stock operation. */
-  readonly enableSyn03Fixture?: boolean;
+  /** Only the SYN-03 and SYN-05 acceptance fixtures enable these narrow stock operations. */
+  readonly enableStockFixture?: boolean;
 }
 
 function applySyn02Fixture(uow: UnitOfWork<MemorySession>, payload: unknown): Promise<void> {
@@ -269,7 +272,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     await runMigrations({
       plan: [
         ...operationMailboxMigrations<MemorySession>(),
-        ...(options.enableSyn03Fixture ? stockFixtureMigrations() : []),
+        ...(options.enableStockFixture ? stockFixtureMigrations() : []),
         ...registry.migrationPlan('store-node'),
       ],
       transactor,
@@ -828,8 +831,10 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
             correlation: envelope.correlation,
           });
           const syn02 = options.enableSyn02Fixture && envelope.kind === 'syn02.fixture-post';
-          const syn03 = options.enableSyn03Fixture && envelope.kind === STOCK_FIXTURE_KIND;
-          if (!syn02 && !syn03) {
+          const stock =
+            options.enableStockFixture &&
+            (envelope.kind === STOCK_FIXTURE_KIND || envelope.kind === SALE_FIXTURE_KIND);
+          if (!syn02 && !stock) {
             send(response, 422, { error: 'unsupported-operation' });
             return;
           }
@@ -859,23 +864,41 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
                 )
               )
                 return { status: 'forbidden' };
-              if (syn03) {
-                const movement = parseSaleMovement(envelope.payload);
-                const location = await organisation.location(
-                  operationBy,
-                  movement.location as Parameters<typeof organisation.location>[1],
-                );
-                if (
-                  !location?.active ||
-                  location.branch !== register.branch ||
-                  !(await authority.may(operationBy, SYS_PERMISSIONS.location.view, {
-                    branch: register.branch,
-                    location: location.id,
-                  }))
-                )
-                  return { status: 'forbidden' };
+              if (stock) {
+                let lines: readonly { readonly location: string }[];
+                let apply: () => void;
+                if (envelope.kind === SALE_FIXTURE_KIND) {
+                  const sale = parseFixtureSale(envelope.payload);
+                  lines = sale.lines;
+                  apply = () => {
+                    applyFixtureSaleDocument(uow, envelope, sale);
+                  };
+                } else {
+                  const movement = parseSaleMovement(envelope.payload);
+                  lines = [movement];
+                  apply = () => {
+                    applyFixtureSale(uow, envelope, movement);
+                  };
+                }
+                // Every line of a sale answers to the same check as a lone
+                // movement: a register moves stock only where its own branch is.
+                for (const id of new Set(lines.map((line) => line.location))) {
+                  const location = await organisation.location(
+                    operationBy,
+                    id as Parameters<typeof organisation.location>[1],
+                  );
+                  if (
+                    !location?.active ||
+                    location.branch !== register.branch ||
+                    !(await authority.may(operationBy, SYS_PERMISSIONS.location.view, {
+                      branch: register.branch,
+                      location: location.id,
+                    }))
+                  )
+                    return { status: 'forbidden' };
+                }
                 return receiveOperation(uow, envelope, () => {
-                  applyFixtureSale(uow, envelope, movement);
+                  apply();
                   return Promise.resolve();
                 });
               }
@@ -914,7 +937,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         }
         send(response, 200, { value });
       } catch (cause) {
-        if (cause instanceof MovementConflictError) {
+        if (cause instanceof IdentityConflictError) {
           send(response, 409, { status: 'conflict' });
           return;
         }
