@@ -388,6 +388,11 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     read('catalogue.barcode', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.barcode(by, string(args[0])),
     );
+    // Passed as sent: a term or a limit of the wrong shape is refused by CAT
+    // with a code a screen can say, rather than failed here as a bad request.
+    read('catalogue.search', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.search(by, args[0] as string, args[1] as number | undefined),
+    );
     write('catalogue.createCategory', (by, args) =>
       catAdmin.createCategory(
         by,

@@ -3,7 +3,16 @@ import { dirname, isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { recordJournal, type MemorySession } from '@vertex/platform';
 import type { PersistentStore } from './index.js';
-import { conflict, snapshot, type Snapshot, type StoredRow } from './records.js';
+import {
+  advance,
+  committed,
+  conflict,
+  newEpoch,
+  revisions,
+  snapshot,
+  type Snapshot,
+  type StoredRow,
+} from './records.js';
 
 /** Opens a terminal database at an explicit absolute filesystem path. */
 export async function openSqliteStore(path: string): Promise<PersistentStore> {
@@ -22,6 +31,10 @@ export async function openSqliteStore(path: string): Promise<PersistentStore> {
       db.exec(
         'CREATE TABLE IF NOT EXISTS vertex_records (key TEXT PRIMARY KEY, value TEXT NOT NULL, digest TEXT NOT NULL);',
       );
+      // Added to stores created before it existed; see `Committed.epoch`.
+      const columns = db.prepare('PRAGMA table_info(vertex_revision)').all() as { name: string }[];
+      if (!columns.some((column) => column.name === 'epoch'))
+        db.exec("ALTER TABLE vertex_revision ADD COLUMN epoch TEXT NOT NULL DEFAULT '';");
       db.exec('INSERT OR IGNORE INTO vertex_revision (id, version) VALUES (1, 0);');
       db.exec('COMMIT');
     } catch (cause) {
@@ -48,6 +61,7 @@ export async function openSqliteStore(path: string): Promise<PersistentStore> {
     one?.end();
     active.delete(session);
   };
+  const held = revisions();
   return {
     journal: recordJournal(),
     driver: {
@@ -56,16 +70,30 @@ export async function openSqliteStore(path: string): Promise<PersistentStore> {
       async begin() {
         await Promise.resolve();
         check();
+        // One statement, so one consistent reading of the counter; the rows
+        // are read only when it names a revision this store does not hold.
+        const current = db
+          .prepare('SELECT version, epoch FROM vertex_revision WHERE id = 1')
+          .get() as { version: number; epoch: string } | undefined;
+        const cached = current === undefined ? null : held.at(current.version, current.epoch);
+        if (cached !== null) {
+          const one = snapshot(cached);
+          active.set(one.session, one);
+          return one.session;
+        }
         db.exec('BEGIN');
         try {
-          const revision = db.prepare('SELECT version FROM vertex_revision WHERE id = 1').get() as
-            { version: number } | undefined;
+          const revision = db
+            .prepare('SELECT version, epoch FROM vertex_revision WHERE id = 1')
+            .get() as { version: number; epoch: string } | undefined;
           if (!revision) throw new Error('The store revision is missing.');
           const rows = db
-            .prepare('SELECT key, value, digest FROM vertex_records ORDER BY key')
+            .prepare('SELECT key, value, digest FROM vertex_records')
             .all() as unknown as StoredRow[];
-          const one = snapshot(revision.version, rows);
+          const loaded = committed(revision.version, revision.epoch, rows);
           db.exec('COMMIT');
+          held.loaded(loaded);
+          const one = snapshot(loaded);
           active.set(one.session, one);
           return one.session;
         } catch (cause) {
@@ -96,8 +124,12 @@ export async function openSqliteStore(path: string): Promise<PersistentStore> {
               if (row === null) remove.run(key);
               else put.run(key, row.value, row.digest);
             }
-            db.prepare('UPDATE vertex_revision SET version = version + 1 WHERE id = 1').run();
+            const epoch = newEpoch();
+            db.prepare(
+              'UPDATE vertex_revision SET version = version + 1, epoch = ? WHERE id = 1',
+            ).run(epoch);
             db.exec('COMMIT');
+            held.advanced(advance(one.base, changes, epoch));
           } catch (cause) {
             if (started) db.exec('ROLLBACK');
             if (isBusy(cause)) throw conflict();

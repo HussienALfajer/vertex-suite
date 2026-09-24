@@ -33,6 +33,54 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
+describe.skipIf(!database)('CAT-15 authenticated catalogue search', () => {
+  it('finds an item by any spelling of its name for its own tenant, and answers no one else', async () => {
+    const shop = await fixture();
+    const token = await shop.signIn();
+    const rootPath = `/v1/tenants/${shop.tenant}/catalogue`;
+    const post = async (path: string, args: unknown[]) => {
+      const response = await shop.request(`${rootPath}.${path}`, token, { args }, 'POST');
+      expect(response.status, path).toBe(200);
+      return ((await response.json()) as { value: { value: { id: string } } }).value.value;
+    };
+    const category = await post('createCategory', [
+      { name: 'ألبان', parent: null, defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 } },
+    ]);
+    const item = await post('createItem', [
+      { name: 'حَلِيبٌ طَازَجٌ', category: category.id, code: 'MLK-1' },
+    ]);
+    const search = (args: unknown[], as?: string, tenant = shop.tenant) =>
+      shop.request(
+        `/v1/tenants/${tenant}/catalogue.search?args=${encodeURIComponent(JSON.stringify(args))}`,
+        as,
+      );
+    for (const term of ['حليب', 'الحليب', 'mlk-1', 'البان']) {
+      const response = await search([term], token);
+      expect(response.status, term).toBe(200);
+      const body = (await response.json()) as {
+        value: { ok: true; value: { items: { id: string }[]; total: number } };
+      };
+      expect(
+        body.value.value.items.map((one) => one.id),
+        term,
+      ).toEqual([item.id]);
+    }
+    const refused = await search(['', 500], token);
+    expect(((await refused.json()) as { value: unknown }).value).toMatchObject({
+      ok: false,
+      error: { code: 'cat.search-limit-invalid' },
+    });
+    expect((await search(['حليب'])).status).toBe(401);
+    expect((await search(['حليب'], token, shop.otherTenant)).status).toBe(403);
+    // Signed in to the other shop, its owner finds nothing of this one's.
+    const theirs = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+    const elsewhere = await search(['حليب'], theirs, shop.otherTenant);
+    expect(
+      ((await elsewhere.json()) as { value: { value: { total: number } } }).value.value.total,
+    ).toBe(0);
+  });
+});
+
 describe.skipIf(!database)('CAT-01 authenticated catalogue transport', () => {
   it('creates and reads an item for its tenant, and refuses another tenant or an unsigned read', async () => {
     const shop = await fixture();

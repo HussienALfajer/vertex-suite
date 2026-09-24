@@ -535,6 +535,9 @@ const own = {
   'catalogue.item.new': 'صنف جديد',
   'catalogue.item.created': 'تم إنشاء الصنف.',
   'catalogue.item.category': 'فئة الصنف',
+  'catalogue.item.code': 'رمز الصنف',
+  'catalogue.item.code.hint':
+    'اختياري: رقم الصنف لدى المتجر، ولا يتكرر لصنفين مهما اختلف حجم الأحرف.',
   'catalogue.item.unit': 'وحدة الأساس',
   'catalogue.item.kind': 'نوع التتبع',
   'catalogue.kind.standard': 'قياسي',
@@ -559,6 +562,14 @@ const own = {
   'catalogue.item.create': 'إنشاء صنف',
   'catalogue.items': 'الأصناف',
   'catalogue.items.empty': 'لا توجد أصناف بعد.',
+  'catalogue.search.label': 'ابحث في الأصناف',
+  'catalogue.search.placeholder': 'الاسم أو الرمز أو الباركود أو الفئة',
+  'catalogue.search.result': 'نتيجة البحث في الأصناف',
+  'catalogue.search.count':
+    '{total, plural, zero {لا نتائج} one {نتيجة واحدة} two {نتيجتان} few {# نتائج} many {# نتيجة} other {# نتيجة}}',
+  'catalogue.search.shown':
+    'يُعرض أفضل {shown, number} من {total, number} نتيجة؛ أضف كلمة لتضييق البحث.',
+  'catalogue.search.none': 'لا يوجد صنف يطابق هذا البحث.',
   'catalogue.units.title': 'وحدات الصنف',
   'catalogue.units.base': 'وحدة المخزون الأساسية',
   'catalogue.units.code': 'رمز الوحدة الجديدة',
@@ -622,6 +633,11 @@ const own = {
   'refusal.cat.barcode-not-found': 'لا يوجد صنف مسجّل بالباركود «{code}».',
   'refusal.cat.barcode-inactive': 'الباركود «{code}» مسحوب من الاستخدام.',
   'refusal.cat.barcode-active': 'الباركود «{code}» فعّال بالفعل.',
+  'refusal.cat.code-invalid':
+    'رمز الصنف غير صالح: يُقبل حتى {max, number} خانة من الأرقام والحروف اللاتينية والرموز، دون مسافات.',
+  'refusal.cat.code-taken': 'رمز الصنف «{code}» مستخدم بالفعل للصنف «{item}».',
+  'refusal.cat.search-invalid': 'عبارة البحث أطول من {max, number} حرفًا.',
+  'refusal.cat.search-limit-invalid': 'لا يُعرض أكثر من {max, number} نتيجة في المرة الواحدة.',
   'permission.cat.category.view': 'الاطلاع على الفئات',
   'permission.cat.category.create': 'إنشاء فئة',
   'permission.cat.category.edit': 'تعديل الفئات',

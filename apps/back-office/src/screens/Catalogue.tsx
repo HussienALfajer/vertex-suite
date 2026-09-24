@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type {
-  BarcodeResolution,
-  Category,
-  CategoryId,
-  Item,
-  ItemBarcode,
-  ItemKind,
-  ItemStatus,
-  ItemUnitId,
+import {
+  SEARCH_LENGTH,
+  type BarcodeResolution,
+  type Category,
+  type CategoryId,
+  type Item,
+  type ItemBarcode,
+  type ItemKind,
+  type ItemSearch,
+  type ItemStatus,
+  type ItemUnitId,
 } from '@vertex/cat/contract';
 import { quantity, toDate, type Refusal, type UnitKind } from '@vertex/kernel';
 import {
@@ -19,6 +21,7 @@ import {
   PageHeader,
   Panel,
   Quantity,
+  SearchInput,
   Select,
   TextArea,
   TextInput,
@@ -28,6 +31,7 @@ import {
   type TreeNode,
 } from '@vertex/ui';
 import { messageForRefusal } from '../catalogue.js';
+import { useLoaded } from '../organisation.js';
 import type { SystemOfRecord } from '../system.js';
 
 const NONE = 'none';
@@ -46,15 +50,16 @@ function treeOf(
 export function CatalogueScreen({ system }: { readonly system: SystemOfRecord }): ReactNode {
   const t = useTranslator();
   const [categories, setCategories] = useState<readonly Category[]>([]);
-  const [items, setItems] = useState<readonly Item[]>([]);
+  const [term, setTerm] = useState('');
   const [parent, setParent] = useState(NONE);
   const [category, setCategory] = useState('');
   const [categoryName, setCategoryName] = useState('');
   const [itemName, setItemName] = useState('');
+  const [itemCode, setItemCode] = useState('');
   const [defaultUnit, setDefaultUnit] = useState(NONE);
   const [itemUnit, setItemUnit] = useState(NONE);
   const [itemKind, setItemKind] = useState<ItemKind>('standard');
-  const [selectedItem, setSelectedItem] = useState<Item['id'] | null>(null);
+  const [selected, setSelected] = useState<Item | null>(null);
   const [nextStatus, setNextStatus] = useState<ItemStatus>('suspended');
   const [reason, setReason] = useState('');
   const [newUnitCode, setNewUnitCode] = useState('');
@@ -78,12 +83,10 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
 
   useEffect(() => {
     let live = true;
-    void Promise.all([system.catalogue.categories(), system.catalogue.items()])
-      .then(([nextCategories, nextItems]) => {
-        if (live) {
-          setCategories(nextCategories);
-          setItems(nextItems);
-        }
+    void system.catalogue
+      .categories()
+      .then((next) => {
+        if (live) setCategories(next);
       })
       .catch(() => {
         if (live) setMessage(t.format('data.unreachable'));
@@ -93,6 +96,23 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
     };
   }, [system, t]);
 
+  // The list is a search, never the catalogue: at thirty thousand items the
+  // whole of it is neither something to send nor something to read (`CAT-15`).
+  // Asked on every keystroke and not debounced, for `Numbering`'s reason — the
+  // store node is in the same room and answers in tens of milliseconds — and
+  // an answer overtaken by a newer term is dropped rather than shown under it.
+  const found = useLoaded(term, (asked) => system.catalogue.search(asked));
+  const answer = found.value?.ok === true ? found.value.value : null;
+  const searchRefusal = found.value?.ok === false ? found.value.error : null;
+  // What stays on screen while the next answer is on its way: the last one,
+  // rather than an empty list and a silent count on every keystroke. It is
+  // replaced the moment the answer to the current term arrives.
+  const [shown, setShown] = useState<ItemSearch | null>(null);
+  useEffect(() => {
+    if (answer !== null) setShown(answer);
+  }, [answer]);
+  const results = answer ?? shown;
+
   const nodes = useMemo(() => treeOf(categories), [categories]);
   const choices = categories.map((one) => ({ id: one.id, label: one.name }));
   const unitChoices = [
@@ -101,12 +121,19 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
     { id: 'kg', label: t.format('catalogue.unit.kg') },
   ];
   const unitFor = (value: string) => (value === 'pc' ? PIECE : value === 'kg' ? KILOGRAM : null);
-  const selected = items.find((one) => one.id === selectedItem) ?? null;
   const target =
     selected?.barcodes.find((one) => one.code === barcodeTarget) ?? selected?.barcodes[0] ?? null;
   const refused = (refusal: Refusal): void => {
     setMessage(messageForRefusal(t, refusal));
   };
+  /**
+   * After a write: the list asked again, and the item open below read again,
+   * since the write may have changed what the list finds it by.
+   */
+  async function refreshItems(): Promise<void> {
+    found.reload();
+    if (selected !== null) setSelected(await system.catalogue.item(selected.id));
+  }
   const kinds: readonly ItemKind[] = ['standard', 'weighed', 'batch-tracked', 'variant-bearing'];
   const statuses: readonly ItemStatus[] = ['active', 'suspended', 'discontinued'];
 
@@ -142,10 +169,12 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         category: category as CategoryId,
         kind: itemKind,
         ...(unit === null ? {} : { baseUnit: unit }),
+        ...(itemCode.trim() === '' ? {} : { code: itemCode }),
       });
       if (result.ok) {
-        setItems(await system.catalogue.items());
+        await refreshItems();
         setItemName('');
+        setItemCode('');
         setMessage(t.format('catalogue.item.created'));
       } else refused(result.error);
     } catch {
@@ -161,7 +190,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
     try {
       const result = await system.catalogue.changeItemStatus(selected.id, nextStatus, reason);
       if (result.ok) {
-        setItems(await system.catalogue.items());
+        await refreshItems();
         setReason('');
         setMessage(t.format('catalogue.status.changed'));
       } else refused(result.error);
@@ -181,7 +210,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         basePerUnit,
       });
       if (result.ok) {
-        setItems(await system.catalogue.items());
+        await refreshItems();
         setNewUnitCode('');
         setBasePerUnit('');
         setPreview(null);
@@ -227,7 +256,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         ...(barcodeUnit === '' ? {} : { unit: barcodeUnit as ItemUnitId }),
       });
       if (result.ok) {
-        setItems(await system.catalogue.items());
+        await refreshItems();
         setNewBarcode('');
         setMessage(t.format('catalogue.barcodes.added'));
       } else refused(result.error);
@@ -246,7 +275,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         ? await system.catalogue.deactivateBarcode(target.code, barcodeReason)
         : await system.catalogue.reactivateBarcode(target.code, barcodeReason);
       if (result.ok) {
-        setItems(await system.catalogue.items());
+        await refreshItems();
         setBarcodeReason('');
         setLookup(null);
         setMessage(t.format('catalogue.barcodes.changed'));
@@ -380,6 +409,13 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
             onChange={setItemName}
             isRequired
           />
+          <TextInput
+            label={t.format('catalogue.item.code')}
+            description={t.format('catalogue.item.code.hint')}
+            value={itemCode}
+            onChange={setItemCode}
+            isMachineText
+          />
           <Select
             label={t.format('catalogue.item.category')}
             options={choices}
@@ -414,11 +450,40 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         </form>
       </Panel>
       <Panel title={t.format('catalogue.items')}>
-        {items.length === 0 ? (
-          t.format('catalogue.items.empty')
+        <SearchInput
+          label={t.format('catalogue.search.label')}
+          placeholder={t.format('catalogue.search.placeholder')}
+          value={term}
+          onChange={setTerm}
+          maxLength={SEARCH_LENGTH}
+          isLabelVisible
+        />
+        {/* Present before it has anything to say, so that the count is read
+            out as it changes and a person who cannot see the list still
+            hears whether the term found anything. */}
+        <p role="status" aria-label={t.format('catalogue.search.result')}>
+          {results === null
+            ? null
+            : results.total > results.items.length
+              ? t.format('catalogue.search.shown', {
+                  shown: results.items.length,
+                  total: results.total,
+                })
+              : t.format('catalogue.search.count', { total: results.total })}
+        </p>
+        {searchRefusal === null ? null : (
+          <Banner tone="warning">{messageForRefusal(t, searchRefusal)}</Banner>
+        )}
+        {found.unreachable ? <Banner tone="warning">{t.format('data.unreachable')}</Banner> : null}
+        {results === null || results.items.length === 0 ? (
+          results === null ? null : (
+            <p>
+              {t.format(term.trim() === '' ? 'catalogue.items.empty' : 'catalogue.search.none')}
+            </p>
+          )
         ) : (
           <ul>
-            {items.map((one) => (
+            {results.items.map((one) => (
               <li key={one.id}>
                 {one.name} — {categories.find((cat) => cat.id === one.category)?.name} —{' '}
                 <UnitLabel code={one.baseUnit.code} />{' '}
@@ -434,10 +499,15 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
                 >
                   {t.format(`catalogue.status.${one.status}`)}
                 </Badge>{' '}
+                {one.code === null ? null : (
+                  <>
+                    <Code>{one.code}</Code>{' '}
+                  </>
+                )}
                 <Button
                   tone="secondary"
                   onPress={() => {
-                    setSelectedItem(one.id);
+                    setSelected(one);
                     setNextStatus(one.status === 'suspended' ? 'active' : 'suspended');
                     setPreview(null);
                     setPreviewFrom('');

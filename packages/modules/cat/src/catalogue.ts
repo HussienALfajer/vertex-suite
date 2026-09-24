@@ -25,6 +25,7 @@ import type {
   ItemUnit,
   ItemUnitId,
   ItemTrade,
+  ItemSearch,
   ConvertedItemQuantity,
   NewItemBarcode,
   NewItemUnit,
@@ -32,10 +33,21 @@ import type {
   NewItem,
   RecordSession,
 } from './contract.js';
+import { SEARCH_LENGTH, SEARCH_LIMIT, SEARCH_LIMIT_MAX } from './contract.js';
+import {
+  lineOf,
+  match,
+  searchable,
+  shardNames,
+  shardOf,
+  withLine,
+  type IndexEntry,
+  type IndexShard,
+} from './search.js';
 
 type Outcome<T> = Result<T, CatRefusal>;
 type Stored = Category | Item;
-type Later = 'status' | 'statusReason' | 'statusHistory' | 'units' | 'barcodes';
+type Later = 'code' | 'status' | 'statusReason' | 'statusHistory' | 'units' | 'barcodes';
 type StoredItem = Omit<Item, Later> & Partial<Pick<Item, Later>>;
 /**
  * A barcode's entry in the tenant's index: the one thing that makes a code
@@ -47,7 +59,12 @@ interface BarcodeEntry {
   readonly tenant: TenantId;
   readonly item: ItemId;
 }
-type Kind = 'category' | 'item' | 'barcode';
+/** An item code's entry in the tenant's index: what makes the code unique, as for a barcode. */
+interface CodeEntry {
+  readonly tenant: TenantId;
+  readonly item: ItemId;
+}
+type Kind = 'category' | 'item' | 'barcode' | 'code' | 'search';
 const key = (type: Kind, tenant: TenantId, id: string): string =>
   `cat/${type}/${encodeURIComponent(tenant)}/${encodeURIComponent(id)}`;
 const prefix = (type: 'category' | 'item', tenant: TenantId): string =>
@@ -67,9 +84,12 @@ function records(
   type: 'category' | 'item',
   tenant: TenantId,
 ): readonly Stored[] {
+  // Once, not per key: the store holds every module's records, and this runs
+  // over all of them.
+  const within = prefix(type, tenant);
   return session
     .keys()
-    .filter((one) => one.startsWith(prefix(type, tenant)))
+    .filter((one) => one.startsWith(within))
     .map((one) => session.get(one) as Stored)
     .filter((one) => one.tenant === tenant);
 }
@@ -90,6 +110,7 @@ function normaliseItem(item: StoredItem | null): Item | null {
     : {
         ...item,
         kind: item.kind,
+        code: item.code ?? null,
         status: item.status ?? 'active',
         statusReason: item.statusReason ?? null,
         statusHistory: item.statusHistory ?? [],
@@ -201,6 +222,15 @@ export function moveCategory(
 export function createItem(s: RecordSession, t: TenantId, input: NewItem): Outcome<Item> {
   const name = named(input.name);
   if (name === null) return refuse('cat.name-required');
+  const given = itemCode(input.code);
+  if (!given.ok) return given;
+  const code = given.value;
+  const holder = code === null ? null : codeEntryIn(s, t, code);
+  if (code !== null && holder !== null) {
+    // Named, as a taken barcode is: the next question is which item has it.
+    const owner = itemIn(s, t, holder.item);
+    return refuse('cat.code-taken', { code, item: owner?.name ?? '' });
+  }
   let kind: unknown = input.kind;
   if (kind === undefined) kind = 'standard';
   if (!isItemKind(kind)) return refuse('cat.tracking-unsupported');
@@ -224,6 +254,7 @@ export function createItem(s: RecordSession, t: TenantId, input: NewItem): Outco
     tenant: t,
     id: newId<'item'>(),
     name,
+    code,
     category: input.category,
     kind,
     baseUnit: unit.value,
@@ -234,7 +265,9 @@ export function createItem(s: RecordSession, t: TenantId, input: NewItem): Outco
     statusHistory: [],
   };
   const withBase = { ...item, units: [baseItemUnit(item)] };
-  s.put(key('item', t, item.id), withBase);
+  if (code !== null)
+    s.put(key('code', t, codeKey(code)), { tenant: t, item: item.id } satisfies CodeEntry);
+  storeItem(s, withBase);
   return ok(withBase);
 }
 
@@ -274,7 +307,7 @@ export function addItemUnit(
     unit: unit.value,
     basePerUnit: canonicalDecimal(input.basePerUnit),
   };
-  s.put(key('item', t, id), { ...item, units: [...item.units, added] });
+  storeItem(s, { ...item, units: [...item.units, added] });
   return ok(added);
 }
 
@@ -358,7 +391,7 @@ export function changeItemStatus(
       { from: old.status, to: status, reason: why, by: by.actor, at },
     ],
   };
-  s.put(key('item', by.tenant, id), next);
+  storeItem(s, next);
   return ok(next);
 }
 
@@ -402,6 +435,16 @@ const BARCODE_LENGTH = 48;
  * but a message to parse, which is `CAT-05`'s.
  */
 function barcodeText(value: unknown): string | null {
+  return machineText(value, BARCODE_LENGTH);
+}
+
+/**
+ * A code as a person copies it off a label or a price list: the invisible
+ * formatting an Arabic document wraps round it removed, surrounding space
+ * trimmed, Arabic-Indic digits read as digits — then printable ASCII without
+ * spaces, and no longer than `max`, or not a code at all.
+ */
+function machineText(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
   const text = value
     .replace(/\p{Cf}/gu, '')
@@ -410,7 +453,7 @@ function barcodeText(value: unknown): string | null {
       const point = digit.codePointAt(0) ?? 0;
       return String(point - (point >= 0x6f0 ? 0x6f0 : 0x660));
     });
-  return text.length <= BARCODE_LENGTH && /^[\x21-\x7e]+$/u.test(text) ? text : null;
+  return text.length <= max && /^[\x21-\x7e]+$/u.test(text) ? text : null;
 }
 
 /**
@@ -511,7 +554,7 @@ export function addItemBarcode(
     tenant: by.tenant,
     item: id,
   } satisfies BarcodeEntry);
-  s.put(key('item', by.tenant, id), { ...item, barcodes: [...item.barcodes, added] });
+  storeItem(s, { ...item, barcodes: [...item.barcodes, added] });
   return ok(added);
 }
 
@@ -559,9 +602,121 @@ export function changeBarcodeState(
     active,
     history: [...barcode.history, { active, reason: why, by: by.actor, at }],
   };
-  s.put(key('item', by.tenant, item.id), {
-    ...item,
-    barcodes: item.barcodes.map((one) => (one === barcode ? next : one)),
-  });
+  storeItem(s, { ...item, barcodes: item.barcodes.map((one) => (one === barcode ? next : one)) });
   return ok(next);
+}
+
+const CODE_LENGTH = 32;
+
+/**
+ * An item's own code, read as `machineText` reads a barcode and for the same
+ * reasons: it is copied off a label, or typed on whichever keyboard is there.
+ * Omitted or blank means the item has none; anything else must be a code.
+ */
+function itemCode(value: unknown): Outcome<string | null> {
+  if (value === undefined || value === null) return ok(null);
+  if (typeof value === 'string' && value.replace(/\p{Cf}/gu, '').trim() === '') return ok(null);
+  const code = machineText(value, CODE_LENGTH);
+  return code === null ? refuse('cat.code-invalid', { max: CODE_LENGTH }) : ok(code);
+}
+
+/**
+ * The form an item code is unique in. Case is not part of it: unlike a
+ * barcode, which a scanner reads and Code 128 distinguishes by case, an item
+ * code is read aloud and typed by people, and `a-100` and `A-100` said over
+ * the counter are one item.
+ */
+function codeKey(code: string): string {
+  return code.toUpperCase();
+}
+
+function codeEntryIn(s: RecordSession, t: TenantId, code: string): CodeEntry | null {
+  const found = s.get(key('code', t, codeKey(code))) as CodeEntry | undefined;
+  return found?.tenant === t ? found : null;
+}
+
+/**
+ * Every write of an item comes through here, and writes the item's line in
+ * the search index in the same unit of work (`CAT-15`). The index is a copy of
+ * what the record says; kept anywhere else, it would one day say something the
+ * record does not, and a search would find an item by a name it no longer has.
+ */
+function storeItem(s: RecordSession, item: Item): void {
+  s.put(key('item', item.tenant, item.id), item);
+  const at = key('search', item.tenant, shardOf(item.id));
+  const shard = s.get(at) as IndexShard | undefined;
+  const entries = shard?.tenant === item.tenant ? shard.entries : '';
+  s.put(at, {
+    tenant: item.tenant,
+    entries: withLine(entries, item.id, lineOf(entryOf(item))),
+  } satisfies IndexShard);
+}
+
+/**
+ * What a search may find an item by. Only active codes: a withdrawn one is a
+ * question about history, which `barcode` answers, and finding an item by it
+ * at the till would sell by a code the shop has retired.
+ */
+function entryOf(item: Item): IndexEntry {
+  const codes = item.barcodes
+    .filter((one) => one.active)
+    .flatMap((one) => [searchable(one.code), searchable(barcodeKey(one.code))]);
+  return {
+    id: item.id,
+    category: item.category,
+    name: searchable(item.name),
+    code: searchable(item.code ?? ''),
+    barcodes: [...new Set(codes)].join('|'),
+  };
+}
+
+export function searchIn(
+  s: RecordSession,
+  t: TenantId,
+  term: unknown,
+  limit: unknown,
+  throughCategories: boolean,
+): Outcome<ItemSearch> {
+  if (typeof term !== 'string' || term.length > SEARCH_LENGTH)
+    return refuse('cat.search-invalid', { max: SEARCH_LENGTH });
+  const size = limit ?? SEARCH_LIMIT;
+  if (typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > SEARCH_LIMIT_MAX)
+    return refuse('cat.search-limit-invalid', { max: SEARCH_LIMIT_MAX });
+  const shards: string[] = [];
+  for (const name of shardNames()) {
+    const shard = s.get(key('search', t, name)) as IndexShard | undefined;
+    if (shard?.tenant === t && shard.entries !== '') shards.push(shard.entries);
+  }
+  const found = match(shards, throughCategories ? categoriesIn(s, t) : [], term, size);
+  const items = found.ids.map((id) => {
+    const item = itemIn(s, t, id);
+    // Written in one unit of work with the item and never without it, so an
+    // entry naming no item is corruption rather than an empty result.
+    if (item === null) throw new Error(`Search index entry without its item record: ${id}`);
+    return item;
+  });
+  return ok({ items, total: found.total });
+}
+
+/**
+ * Builds every tenant's search index from the items themselves: the index for
+ * items stored before it existed, and a statement that the index is only ever
+ * a function of the records — rebuilt, it says exactly what they say.
+ */
+export function rebuildSearchIndex(s: RecordSession): void {
+  const shards = new Map<string, { tenant: TenantId; lines: string[] }>();
+  for (const one of s.keys()) {
+    if (one.startsWith('cat/search/')) {
+      const shard = s.get(one) as IndexShard;
+      if (!shards.has(one)) shards.set(one, { tenant: shard.tenant, lines: [] });
+    }
+    if (!one.startsWith('cat/item/')) continue;
+    const item = normaliseItem(s.get(one) as StoredItem);
+    const at = key('search', item.tenant, shardOf(item.id));
+    const shard = shards.get(at) ?? { tenant: item.tenant, lines: [] };
+    shard.lines.push(lineOf(entryOf(item)));
+    shards.set(at, shard);
+  }
+  for (const [at, shard] of shards)
+    s.put(at, { tenant: shard.tenant, entries: shard.lines.join('\n') } satisfies IndexShard);
 }

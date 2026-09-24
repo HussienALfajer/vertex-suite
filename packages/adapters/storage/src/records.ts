@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { SerialisationConflictError, type MemorySession } from '@vertex/platform';
 
 export interface StoredRow {
@@ -90,29 +90,197 @@ export function decode(row: StoredRow): unknown {
   return value;
 }
 
-interface State {
+/**
+ * What is committed at one revision of the store, read and verified once, and
+ * shared by every transaction that begins at that revision.
+ *
+ * A transaction used to begin by reading and verifying every row in the store:
+ * the digest recomputed, the JSON parsed, the shape walked. That is a cost in
+ * proportion to the whole store paid by every command, however little it
+ * touched — at thirty thousand items (`CAT-15`) it alone was more than the
+ * register's whole budget for a search. The revision counter is what makes it
+ * unnecessary. Every commit through these drivers advances it in the same
+ * database transaction as its rows, so two readings of the same revision are
+ * readings of the same rows, and the second can be the first one's memory.
+ *
+ * Verification moves with the read, not away: a row is still checked against
+ * its digest before anything is served from it — when it is loaded, which is
+ * when the store is opened and whenever another process has committed since.
+ * What changes is that a row corrupted on disk behind a running store is
+ * found by the next load rather than by the next command; until then the
+ * running store serves the value it verified, never the damaged one.
+ *
+ * Immutable once built: a commit produces the next revision as a new value
+ * (`advance`), so a transaction that began earlier goes on reading exactly
+ * the revision it began at.
+ */
+export interface Committed {
   readonly version: number;
-  readonly records: Map<string, StoredRow>;
-  readonly changes: Map<string, StoredRow | null>;
-  active: boolean;
+  /**
+   * Written with the counter by every commit, and never the same twice. The
+   * counter alone can repeat: restore a backup under a running store and let
+   * another process commit back up to the number this one holds, and the same
+   * number names different rows. The pair cannot.
+   */
+  readonly epoch: string;
+  readonly records: ReadonlyMap<string, StoredRow>;
+  /** The keys, sorted: computed once per revision, on the first listing that asks. */
+  keys(): readonly string[];
 }
 
-export interface Snapshot {
-  readonly session: MemorySession;
-  readonly version: number;
-  changes(): readonly Change[];
-  end(): void;
-}
-
-export function snapshot(version: number, rows: readonly StoredRow[]): Snapshot {
+function committedFrom(
+  version: number,
+  epoch: string,
+  records: ReadonlyMap<string, StoredRow>,
+  sortedKeys: () => readonly string[],
+): Committed {
   if (!Number.isSafeInteger(version) || version < 0) throw new Error('Corrupted store revision.');
+  let keys: readonly string[] | undefined;
+  return {
+    version,
+    epoch,
+    records,
+    keys() {
+      keys ??= Object.freeze([...sortedKeys()]);
+      return keys;
+    },
+  };
+}
+
+/** A fresh epoch for a commit to write beside the counter it advances. */
+export function newEpoch(): string {
+  return randomBytes(16).toString('hex');
+}
+
+/** Verifies every row read at one revision; a single bad row refuses the whole load. */
+export function committed(version: number, epoch: string, rows: readonly StoredRow[]): Committed {
   const records = new Map<string, StoredRow>();
   for (const row of rows) {
     decode(row);
     if (records.has(row.key)) throw new Error(`Duplicate persisted record at ${row.key}.`);
     records.set(row.key, row);
   }
-  const state: State = { version, records, changes: new Map(), active: true };
+  return committedFrom(version, epoch, records, () => [...records.keys()].sort());
+}
+
+/**
+ * A sorted listing with keys added and removed, without sorting it again:
+ * the few changed keys are sorted and merged into the many that were already
+ * in order. A commit that creates an item adds three keys to a store of a
+ * hundred thousand, and re-sorting all of them for that was most of its cost.
+ */
+function reshape(
+  sorted: readonly string[],
+  added: ReadonlySet<string>,
+  removed: ReadonlySet<string>,
+): readonly string[] {
+  const incoming = [...added].sort();
+  const merged: string[] = [];
+  let at = 0;
+  for (const key of sorted) {
+    while (at < incoming.length && (incoming[at] ?? '') < key) merged.push(incoming[at++] ?? '');
+    if (!removed.has(key)) merged.push(key);
+  }
+  while (at < incoming.length) merged.push(incoming[at++] ?? '');
+  return merged;
+}
+
+/** Which keys a set of changes adds to, or removes from, what is already there. */
+function delta(
+  has: (key: string) => boolean,
+  changes: Iterable<readonly [string, StoredRow | null]>,
+): { added: Set<string>; removed: Set<string> } {
+  const added = new Set<string>();
+  const removed = new Set<string>();
+  for (const [key, row] of changes) {
+    if (row === null) {
+      added.delete(key);
+      if (has(key)) removed.add(key);
+    } else if (!has(key)) added.add(key);
+    else removed.delete(key);
+  }
+  return { added, removed };
+}
+
+/**
+ * The revision a successful commit produced: the one it began at, with its
+ * changes applied, under the epoch the commit wrote. Only a driver that has
+ * just committed may call this — the commit's own revision check is what
+ * proves that nothing else came between.
+ */
+export function advance(base: Committed, changes: readonly Change[], epoch: string): Committed {
+  const records = new Map(base.records);
+  const { added, removed } = delta(
+    (key) => base.records.has(key),
+    changes.map(({ key, row }) => [key, row] as const),
+  );
+  for (const { key, row } of changes) {
+    if (row === null) records.delete(key);
+    else records.set(key, row);
+  }
+  // Most commits only update; they keep the listing as it was. The listing is
+  // derived lazily either way, so a revision nobody lists never pays for it.
+  return committedFrom(base.version + 1, epoch, records, () =>
+    added.size === 0 && removed.size === 0 ? base.keys() : reshape(base.keys(), added, removed),
+  );
+}
+
+/**
+ * The one revision a store keeps in memory: the latest it has read or written.
+ *
+ * It answers only for the exact revision and epoch it holds. A revision read
+ * from the database always replaces it, because the database is the truth —
+ * including after a restore that moved the counter backwards.
+ * One produced by a commit replaces it only when it is newer, so two commands
+ * finishing out of order cannot leave the older behind.
+ */
+export interface Revisions {
+  at(version: number, epoch: string): Committed | null;
+  loaded(revision: Committed): void;
+  advanced(revision: Committed): void;
+}
+
+export function revisions(): Revisions {
+  let latest: Committed | null = null;
+  return {
+    at: (version, epoch) => (latest?.version === version && latest.epoch === epoch ? latest : null),
+    loaded(revision) {
+      latest = revision;
+    },
+    advanced(revision) {
+      if (latest === null || latest.version < revision.version) latest = revision;
+    },
+  };
+}
+
+interface State {
+  readonly base: Committed;
+  readonly changes: Map<string, StoredRow | null>;
+  /** This transaction's listing, until it next writes. */
+  listed: readonly string[] | null;
+  active: boolean;
+}
+
+export interface Snapshot {
+  readonly session: MemorySession;
+  readonly version: number;
+  /** The revision this transaction reads, and the one its commit advances. */
+  readonly base: Committed;
+  changes(): readonly Change[];
+  end(): void;
+}
+
+/**
+ * Parses a row that has already been verified — on load, or by `encode` when
+ * this transaction wrote it. A fresh value every time, as a database would
+ * return: a command that edits what it read has not edited the store.
+ */
+function parse(row: StoredRow): unknown {
+  return JSON.parse(row.value) as unknown;
+}
+
+export function snapshot(base: Committed): Snapshot {
+  const state: State = { base, changes: new Map(), listed: null, active: true };
   const check = (): void => {
     if (!state.active) throw new Error('This transaction has already ended.');
   };
@@ -120,29 +288,34 @@ export function snapshot(version: number, rows: readonly StoredRow[]): Snapshot 
     put(key, value) {
       check();
       state.changes.set(key, encode(key, value));
+      state.listed = null;
     },
     get(key) {
       check();
-      const row = state.changes.has(key) ? state.changes.get(key) : state.records.get(key);
-      return row === null || row === undefined ? undefined : decode(row);
+      const row = state.changes.has(key) ? state.changes.get(key) : state.base.records.get(key);
+      return row === null || row === undefined ? undefined : parse(row);
     },
     remove(key) {
       check();
       state.changes.set(key, null);
+      state.listed = null;
     },
     keys() {
       check();
-      const keys = new Set(state.records.keys());
-      for (const [key, row] of state.changes) {
-        if (row === null) keys.delete(key);
-        else keys.add(key);
+      if (state.changes.size === 0) return state.base.keys();
+      // Kept until this transaction next writes, so a command that lists twice
+      // after a write merges its changes once.
+      if (state.listed === null) {
+        const { added, removed } = delta((key) => state.base.records.has(key), state.changes);
+        state.listed = Object.freeze([...reshape(state.base.keys(), added, removed)]);
       }
-      return [...keys].sort();
+      return state.listed;
     },
   };
   return {
     session,
-    version: state.version,
+    version: state.base.version,
+    base: state.base,
     changes() {
       check();
       return [...state.changes].map(([key, row]) => ({ key, row }));

@@ -200,3 +200,63 @@ test('CAT-04 registers barcodes per unit, finds an item by any of them, and with
   await expect(result).toContainText('شاي — كرتون');
   await expect(result.getByText('مسحوب')).toBeVisible();
 });
+
+test('CAT-15 finds items by any spelling of a name, by code and by category, by keyboard', async ({
+  page,
+}) => {
+  await gotoThemed(page);
+  await page.keyboard.type('owner');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('till-morning-1');
+  await page.keyboard.press('Enter');
+  await page.getByRole('link', { name: 'الأصناف والفئات' }).focus();
+  await page.keyboard.press('Enter');
+  await enter(page, 'الاسم', 'ألبان');
+  await choose(page, 'وحدة الأساس الافتراضية', 'قطعة');
+  await page.getByRole('button', { name: 'إنشاء فئة' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('row', { name: 'ألبان' })).toBeVisible();
+  for (const [name, code] of [
+    ['حَلِيبٌ طَازَجٌ', 'MLK-1'],
+    ['أرز بسمتي', ''],
+    ['زبدة', ''],
+  ] as const) {
+    await enter(page, 'الاسم', name, 1);
+    if (code !== '') await enter(page, 'رمز الصنف', code);
+    await choose(page, 'فئة الصنف', 'ألبان');
+    await page.getByRole('button', { name: 'إنشاء صنف' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('listitem').filter({ hasText: name })).toBeVisible();
+  }
+  const count = page.getByRole('status', { name: 'نتيجة البحث في الأصناف' });
+  await expect(count).toHaveText('3 نتائج');
+  await expect(page.locator('li code').filter({ hasText: 'MLK-1' })).toHaveAttribute('dir', 'ltr');
+
+  const results = page.getByRole('listitem').filter({
+    has: page.getByRole('button', { name: 'عرض الحالة والسجل' }),
+  });
+  // Without the vowels the label was printed with; with the article it was
+  // printed without; in the hamza form it was not; by code in lower case.
+  for (const [term, name] of [
+    ['حليب', 'حَلِيبٌ طَازَجٌ'],
+    ['الحليب', 'حَلِيبٌ طَازَجٌ'],
+    ['ارز', 'أرز بسمتي'],
+    ['زبده', 'زبدة'],
+    ['mlk-1', 'حَلِيبٌ طَازَجٌ'],
+  ] as const) {
+    await retype(page, 'ابحث في الأصناف', term);
+    await expect(results, term).toHaveCount(1);
+    await expect(results.first(), term).toContainText(name);
+    await expect(count, term).toHaveText('نتيجة واحدة');
+  }
+  // A category finds everything filed under it.
+  await retype(page, 'ابحث في الأصناف', 'البان');
+  await expect(results).toHaveCount(3);
+  await retype(page, 'ابحث في الأصناف', 'قهوة');
+  await expect(results).toHaveCount(0);
+  await expect(page.getByText('لا يوجد صنف يطابق هذا البحث.')).toBeVisible();
+  // Escape clears the field, and the whole list returns.
+  await page.keyboard.press('Escape');
+  await expect(results).toHaveCount(3);
+  await expect(page.getByLabel('ابحث في الأصناف', { exact: true })).toBeFocused();
+});

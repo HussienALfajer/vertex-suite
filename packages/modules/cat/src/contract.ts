@@ -82,6 +82,13 @@ export interface Item {
   readonly tenant: TenantId;
   readonly id: ItemId;
   readonly name: string;
+  /**
+   * The shop's own number for the item — what a shelf label, a supplier's
+   * price list or a scale's PLU calls it — unique within the tenant whatever
+   * its case. Null for an item that has none, which every item stored before
+   * codes existed is.
+   */
+  readonly code: string | null;
   readonly category: CategoryId;
   readonly kind: ItemKind;
   /** A snapshot, resolved when created; category changes do not rewrite it. */
@@ -103,6 +110,8 @@ export interface CategoryRevision {
 }
 export interface NewItem {
   readonly name: string;
+  /** Omitted or blank, the item has no code. */
+  readonly code?: string;
   readonly category: CategoryId;
   readonly baseUnit?: Unit;
   /** Omission is standard for U08.1 callers and records. */
@@ -134,7 +143,27 @@ export type CatRefusal = Refusal<
   | 'cat.barcode-not-found'
   | 'cat.barcode-inactive'
   | 'cat.barcode-active'
+  | 'cat.code-invalid'
+  | 'cat.code-taken'
+  | 'cat.search-invalid'
+  | 'cat.search-limit-invalid'
 >;
+/**
+ * The longest term a search accepts: a name and a code, not a paragraph. A
+ * screen limits its field to this, so that typing never reaches the refusal.
+ */
+export const SEARCH_LENGTH = 100;
+/** How many items one answer carries, unless the caller asks for fewer. */
+export const SEARCH_LIMIT = 50;
+/** The most one answer may carry: a screen of results, not the catalogue. */
+export const SEARCH_LIMIT_MAX = 200;
+/** What a search found (`CAT-15`): the best matches, and how many there were in all. */
+export interface ItemSearch {
+  /** Best match first, and never more than the limit the search was given. */
+  readonly items: readonly Item[];
+  /** Every item that matched, so a screen can say its list was cut short. */
+  readonly total: number;
+}
 export interface RecordSession {
   get(key: string): unknown;
   put(key: string, value: unknown): void;
@@ -174,6 +203,18 @@ export interface Catalogue {
    * withdrawn codes alike, which is what keeps a historical document readable.
    */
   barcode(by: CommandContext, code: string): Promise<Result<BarcodeResolution, CatRefusal>>;
+  /**
+   * The items a person means by what they typed (`CAT-15`): every word found
+   * in the item's name, code or active barcodes, or its category's name, with
+   * diacritics, hamza and alef forms, taa marbuta and a missing definite
+   * article all forgiven, and a part of a word enough to find the whole.
+   *
+   * Every status is found, as by `item`: whether a found item may be sold or
+   * bought is `eligibility`'s question, asked of the one the cashier picks.
+   * An empty term finds everything, in name order. `limit` defaults to 50 and
+   * may not exceed 200.
+   */
+  search(by: CommandContext, term: string, limit?: number): Promise<Result<ItemSearch, CatRefusal>>;
 }
 export interface CatalogueAdministration {
   createCategory(by: CommandContext, input: NewCategory): Promise<Result<Category, CatRefusal>>;
