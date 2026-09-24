@@ -3,7 +3,15 @@ import { dirname, isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { recordJournal, type MemorySession } from '@vertex/platform';
 import type { PersistentStore } from './index.js';
-import { conflict, snapshot, type Snapshot, type StoredRow } from './records.js';
+import {
+  advance,
+  committed,
+  conflict,
+  revisions,
+  snapshot,
+  type Snapshot,
+  type StoredRow,
+} from './records.js';
 
 /** Opens a terminal database at an explicit absolute filesystem path. */
 export async function openSqliteStore(path: string): Promise<PersistentStore> {
@@ -48,6 +56,7 @@ export async function openSqliteStore(path: string): Promise<PersistentStore> {
     one?.end();
     active.delete(session);
   };
+  const held = revisions();
   return {
     journal: recordJournal(),
     driver: {
@@ -56,16 +65,28 @@ export async function openSqliteStore(path: string): Promise<PersistentStore> {
       async begin() {
         await Promise.resolve();
         check();
+        // One statement, so one consistent reading of the counter; the rows
+        // are read only when it names a revision this store does not hold.
+        const current = db.prepare('SELECT version FROM vertex_revision WHERE id = 1').get() as
+          { version: number } | undefined;
+        const cached = current === undefined ? null : held.at(current.version);
+        if (cached !== null) {
+          const one = snapshot(cached);
+          active.set(one.session, one);
+          return one.session;
+        }
         db.exec('BEGIN');
         try {
           const revision = db.prepare('SELECT version FROM vertex_revision WHERE id = 1').get() as
             { version: number } | undefined;
           if (!revision) throw new Error('The store revision is missing.');
           const rows = db
-            .prepare('SELECT key, value, digest FROM vertex_records ORDER BY key')
+            .prepare('SELECT key, value, digest FROM vertex_records')
             .all() as unknown as StoredRow[];
-          const one = snapshot(revision.version, rows);
+          const loaded = committed(revision.version, rows);
           db.exec('COMMIT');
+          held.loaded(loaded);
+          const one = snapshot(loaded);
           active.set(one.session, one);
           return one.session;
         } catch (cause) {
@@ -98,6 +119,7 @@ export async function openSqliteStore(path: string): Promise<PersistentStore> {
             }
             db.prepare('UPDATE vertex_revision SET version = version + 1 WHERE id = 1').run();
             db.exec('COMMIT');
+            held.advanced(advance(one.base, changes));
           } catch (cause) {
             if (started) db.exec('ROLLBACK');
             if (isBusy(cause)) throw conflict();

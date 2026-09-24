@@ -111,6 +111,7 @@ const READS = new Set([
   'catalogue.eligibility',
   'catalogue.scan',
   'catalogue.barcode',
+  'catalogue.search',
   'currencies.functional',
   'rates.board',
   'users.roles.rights',

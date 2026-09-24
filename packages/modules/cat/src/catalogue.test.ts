@@ -3,6 +3,8 @@ import { instant, newId, orThrow, type Result } from '@vertex/kernel';
 import {
   commandContext,
   composeEdition,
+  recordJournal,
+  runMigrations,
   createEventBus,
   createMemoryStore,
   createRegistry,
@@ -13,6 +15,7 @@ import {
 } from '@vertex/platform';
 import type { Authoriser, MemorySession } from '@vertex/platform';
 import { catModule, Catalogue, CatalogueAdministration, CAT_PERMISSIONS } from './index.js';
+import { searchable } from './search.js';
 
 const unwrap = <T, E>(result: Result<T, E>): T =>
   orThrow(result, (error) => new Error(JSON.stringify(error)));
@@ -67,6 +70,7 @@ function installed() {
     },
     store,
     registry,
+    transactor,
     at,
   };
 }
@@ -630,5 +634,310 @@ describe('CAT-04 multiple barcodes per item', () => {
       ...((await h.read.item(h.by, other.id))?.barcodes ?? []),
     ];
     expect(holders.map((one) => one.code)).toEqual(['RACE-1']);
+  });
+});
+
+describe('CAT-15 Arabic search', () => {
+  async function shelves(h: ReturnType<typeof installed>) {
+    const dairy = unwrap(
+      await h.admin.createCategory(h.by, { name: 'ألبان', parent: null, defaultBaseUnit: piece }),
+    );
+    const fresh = unwrap(await h.admin.createCategory(h.by, { name: 'طازجة', parent: dairy.id }));
+    const pantry = unwrap(
+      await h.admin.createCategory(h.by, {
+        name: 'مواد غذائية',
+        parent: null,
+        defaultBaseUnit: piece,
+      }),
+    );
+    const add = async (name: string, category = pantry.id, code?: string) =>
+      unwrap(
+        await h.admin.createItem(h.by, { name, category, ...(code === undefined ? {} : { code }) }),
+      );
+    return { dairy, fresh, pantry, add };
+  }
+  const names = (found: { items: readonly { name: string }[] }) =>
+    found.items.map((one) => one.name);
+
+  it('finds a diacritised name from a term typed without diacritics, and the reverse', async () => {
+    const h = installed();
+    const { add, fresh } = await shelves(h);
+    await add('حَلِيبٌ طَازَجٌ', fresh.id);
+    await add('لبن كامل الدسم', fresh.id);
+    expect(names(unwrap(await h.read.search(h.by, 'حليب')))).toEqual(['حَلِيبٌ طَازَجٌ']);
+    expect(names(unwrap(await h.read.search(h.by, 'لَبَنٌ')))).toEqual(['لبن كامل الدسم']);
+    // The dagger alef and the tatweel are marks of the page, not of the word.
+    await add('هٰذا الـمنتج');
+    expect(names(unwrap(await h.read.search(h.by, 'هذا المنتج')))).toEqual(['هٰذا الـمنتج']);
+  });
+
+  it('finds every alef form from a term with any alef form', async () => {
+    const h = installed();
+    const { add } = await shelves(h);
+    const spellings = ['أرز بسمتي', 'إرز مصري', 'آرز حبة طويلة', 'ارز أبيض', 'ٱرز بني'];
+    for (const name of spellings) await add(name);
+    await add('برغل');
+    for (const term of ['أرز', 'إرز', 'آرز', 'ارز', 'ٱرز']) {
+      const found = unwrap(await h.read.search(h.by, term));
+      expect(new Set(names(found)), term).toEqual(new Set(spellings));
+      expect(found.total, term).toBe(spellings.length);
+    }
+  });
+
+  it('forgives taa marbuta, alef maqsura, hamza seats, keyboards and the definite article', async () => {
+    const h = installed();
+    const { add } = await shelves(h);
+    await add('زبدة');
+    await add('حلوى');
+    await add('مؤشر حرارة');
+    await add('مسائل');
+    await add('ماء معدني');
+    await add('شاي أخضر 100 كيس');
+    await add('Café Crème');
+    for (const [term, name] of [
+      ['زبده', 'زبدة'],
+      ['حلوي', 'حلوى'],
+      ['حلوی', 'حلوى'], // a Persian yeh from a Persian keyboard
+      ['موشر', 'مؤشر حرارة'],
+      ['مسايل', 'مسائل'],
+      ['ما معدني', 'ماء معدني'],
+      ['شاي ١٠٠', 'شاي أخضر 100 كيس'], // Arabic-Indic digits
+      ['الزبدة', 'زبدة'], // the definite article, which the label left off
+      ['cafe creme', 'Café Crème'],
+    ] as const)
+      expect(names(unwrap(await h.read.search(h.by, term))), term).toEqual([name]);
+    // Stripped of its article, a word must still be a word: `الة` does not
+    // become the one letter that is in half the catalogue.
+    expect(unwrap(await h.read.search(h.by, 'الة')).total).toBe(0);
+  });
+
+  it('finds part of a word in the name, the code, an active barcode and the category', async () => {
+    const h = installed();
+    const { add, fresh, dairy } = await shelves(h);
+    const milk = await add('حليب طازج', fresh.id, 'SKU-1042');
+    const cheese = await add('جبنة بيضاء', dairy.id);
+    const rice = await add('أرز بسمتي');
+    unwrap(await h.admin.addBarcode(h.by, milk.id, { code: '4006381333931' }));
+    unwrap(await h.admin.addBarcode(h.by, rice.id, { code: '036000291452' }));
+    for (const [term, expected] of [
+      ['حلي', [milk]], // part of the name
+      ['1042', [milk]], // part of the code
+      ['sku-1042', [milk]], // the code in another case
+      ['333931', [milk]], // part of a barcode
+      ['0036000291452', [rice]], // a barcode in another spelling of the same GTIN
+      ['ألبان', [cheese, milk]], // the category, and every category beneath it
+      ['طازجة', [milk]],
+      ['حليب البان', [milk]], // one word from the name, one from the category
+    ] as const) {
+      const found = unwrap(await h.read.search(h.by, term));
+      expect(
+        found.items.map((one) => one.id),
+        term,
+      ).toEqual(expected.map((one) => one.id));
+    }
+    expect(unwrap(await h.read.search(h.by, 'حليب جبنة')).total).toBe(0);
+  });
+
+  it('ranks an exact code first, then a name that begins with the term, then the rest', async () => {
+    const h = installed();
+    const { add } = await shelves(h);
+    const infant = unwrap(
+      await h.admin.createCategory(h.by, {
+        name: 'حليب الأطفال',
+        parent: null,
+        defaultBaseUnit: piece,
+      }),
+    );
+    const powder = await add('بودرة', infant.id);
+    const chocolate = await add('شوكولاتة بالحليب');
+    const milk = await add('حليب مجفف');
+    expect(unwrap(await h.read.search(h.by, 'حليب')).items.map((one) => one.id)).toEqual([
+      milk.id,
+      chocolate.id,
+      powder.id,
+    ]);
+    const box = await add('علبة 1042 غرام');
+    const coded = await add('مشروب', undefined, '1042');
+    expect(unwrap(await h.read.search(h.by, '1042')).items.map((one) => one.id)).toEqual([
+      coded.id,
+      box.id,
+    ]);
+  });
+
+  it('lists every item in name order for an empty term, cut to the limit with the total kept', async () => {
+    const h = installed();
+    const { add } = await shelves(h);
+    for (const name of ['ياسمين', 'بسكويت', 'تمر', 'أرز', 'خبز']) await add(name);
+    const all = unwrap(await h.read.search(h.by, ''));
+    expect(names(all)).toEqual(['أرز', 'بسكويت', 'تمر', 'خبز', 'ياسمين']);
+    expect(all.total).toBe(5);
+    const first = unwrap(await h.read.search(h.by, '  ', 2));
+    expect(names(first)).toEqual(['أرز', 'بسكويت']);
+    expect(first.total).toBe(5);
+  });
+
+  it('follows every write of an item: a new code, a withdrawn one, a restored one, a changed status', async () => {
+    const h = installed();
+    const { add } = await shelves(h);
+    const tea = await add('شاي');
+    expect(unwrap(await h.read.search(h.by, 'OLD-7')).total).toBe(0);
+    unwrap(await h.admin.addBarcode(h.by, tea.id, { code: 'OLD-7' }));
+    expect(names(unwrap(await h.read.search(h.by, 'OLD-7')))).toEqual(['شاي']);
+    // Withdrawn, a code is history — `barcode` still answers for it, the
+    // search does not sell by it.
+    unwrap(await h.admin.deactivateBarcode(h.by, 'OLD-7', 'Relabelled'));
+    expect(unwrap(await h.read.search(h.by, 'OLD-7')).total).toBe(0);
+    unwrap(await h.admin.reactivateBarcode(h.by, 'OLD-7', 'Old stock found'));
+    expect(unwrap(await h.read.search(h.by, 'OLD-7')).total).toBe(1);
+    // Every status is found, and says what it is; selling it is eligibility's question.
+    unwrap(await h.admin.changeItemStatus(h.by, tea.id, 'suspended', 'Recall'));
+    const suspended = unwrap(await h.read.search(h.by, 'شاي'));
+    expect(suspended.items[0]).toMatchObject({ id: tea.id, status: 'suspended' });
+    unwrap(
+      await h.admin.addUnit(h.by, tea.id, {
+        unit: { code: 'carton', kind: 'count', decimals: 0 },
+        basePerUnit: '24',
+      }),
+    );
+    expect(unwrap(await h.read.search(h.by, 'شاي')).items[0]?.units).toHaveLength(2);
+  });
+
+  it("never finds another tenant's items, whatever the term", async () => {
+    const h = installed();
+    const { add } = await shelves(h);
+    await add('حليب', undefined, 'SHARED-1');
+    const theirs = await shelves({ ...h, by: h.other });
+    unwrap(await h.admin.createItem(h.other, { name: 'حليب', category: theirs.pantry.id }));
+    for (const term of ['', 'حليب', 'SHARED-1']) {
+      const found = unwrap(await h.read.search(h.other, term));
+      expect(
+        found.items.every((one) => one.tenant === h.other.tenant),
+        term,
+      ).toBe(true);
+      expect(
+        found.items.map((one) => one.code),
+        term,
+      ).not.toContain('SHARED-1');
+    }
+    expect(unwrap(await h.read.search(h.by, '')).total).toBe(1);
+  });
+
+  it('refuses a term that is not one, a limit out of range, and a caller without the right', async () => {
+    const h = installed();
+    await shelves(h);
+    for (const term of ['x'.repeat(101), 42, null, undefined])
+      expect(await h.read.search(h.by, term as string), String(term)).toMatchObject({
+        ok: false,
+        error: { code: 'cat.search-invalid', values: { max: 100 } },
+      });
+    expect((await h.read.search(h.by, 'x'.repeat(100))).ok).toBe(true);
+    for (const limit of [0, 201, 1.5, -1, '10'])
+      expect(await h.read.search(h.by, '', limit as number), String(limit)).toMatchObject({
+        ok: false,
+        error: { code: 'cat.search-limit-invalid', values: { max: 200 } },
+      });
+    expect((await h.read.search(h.by, '', 200)).ok).toBe(true);
+    h.deny();
+    expect(await h.read.search(h.by, '')).toMatchObject({
+      ok: false,
+      error: { code: 'cat.not-permitted', values: { right: CAT_PERMISSIONS.item.view } },
+    });
+  });
+
+  it('indexes an item stored before the index existed when the migration runs, once', async () => {
+    const h = installed();
+    const { pantry } = await shelves(h);
+    const id = newId<'item'>();
+    const session = await h.store.driver.begin(h.by);
+    session.put(`cat/item/${encodeURIComponent(h.by.tenant)}/${encodeURIComponent(id)}`, {
+      tenant: h.by.tenant,
+      id,
+      name: 'عَسَل',
+      category: pantry.id,
+      kind: 'standard',
+      baseUnit: piece,
+    });
+    await h.store.driver.commit(session);
+    expect(unwrap(await h.read.search(h.by, 'عسل')).total).toBe(0);
+    const journal = recordJournal();
+    const plan = h.registry.migrationPlan('terminal');
+    expect(plan.map((one) => one.id)).toEqual(['cat.0001-search-index']);
+    const migrate = () => runMigrations({ plan, transactor: h.transactor, context: h.by, journal });
+    expect((await migrate()).applied).toEqual(['cat.0001-search-index']);
+    expect(unwrap(await h.read.search(h.by, 'عسل')).items).toMatchObject([
+      { id, name: 'عَسَل', code: null, status: 'active' },
+    ]);
+    expect((await migrate()).alreadyApplied).toEqual(['cat.0001-search-index']);
+  });
+
+  it('folds every spelling of a word to one, and keeps nothing a word is not made of', () => {
+    for (const [typed, folded] of [
+      ['أإآٱا', 'ااااا'],
+      ['ؤ ئ ء', 'و ي'],
+      ['مَدْرَسَةٌ', 'مدرسه'],
+      ['مستشفى', 'مستشفي'],
+      ['ﻻ ﷲ', 'لا الله'],
+      ['\u200fرمز\u200e-٤٢\t۷', 'رمز 42 7'],
+      ['İSTANBUL Ünlü', 'istanbul unlu'],
+      ['  |\n  ', ''],
+    ] as const)
+      expect(searchable(typed), typed).toBe(folded);
+  });
+});
+
+describe('CAT-15 item codes, which the search reads', () => {
+  it('keeps a code on the item, unique within the tenant whatever its case or digits', async () => {
+    const h = installed();
+    const category = unwrap(
+      await h.admin.createCategory(h.by, { name: 'Goods', parent: null, defaultBaseUnit: piece }),
+    );
+    const tea = unwrap(
+      await h.admin.createItem(h.by, { name: 'Tea', category: category.id, code: ' A-١٠٠ ' }),
+    );
+    expect(tea.code).toBe('A-100');
+    expect((await h.read.item(h.by, tea.id))?.code).toBe('A-100');
+    for (const code of ['A-100', 'a-100', 'a-١٠٠'])
+      expect(
+        await h.admin.createItem(h.by, { name: 'Other', category: category.id, code }),
+        code,
+      ).toMatchObject({ ok: false, error: { code: 'cat.code-taken', values: { item: 'Tea' } } });
+    for (const code of ['TWO WORDS', 'رمز', 'x'.repeat(33), 42])
+      expect(
+        await h.admin.createItem(h.by, {
+          name: 'Other',
+          category: category.id,
+          code: code as string,
+        }),
+        String(code),
+      ).toMatchObject({ ok: false, error: { code: 'cat.code-invalid', values: { max: 32 } } });
+    const plain = unwrap(
+      await h.admin.createItem(h.by, { name: 'Plain', category: category.id, code: '  ' }),
+    );
+    expect(plain.code).toBeNull();
+    // Another shop numbers its own shelves.
+    const theirs = unwrap(
+      await h.admin.createCategory(h.other, {
+        name: 'Goods',
+        parent: null,
+        defaultBaseUnit: piece,
+      }),
+    );
+    expect(
+      unwrap(await h.admin.createItem(h.other, { name: 'Tea', category: theirs.id, code: 'A-100' }))
+        .code,
+    ).toBe('A-100');
+  });
+
+  it('gives a code to exactly one item when two managers race for it', async () => {
+    const h = installed();
+    const category = unwrap(
+      await h.admin.createCategory(h.by, { name: 'Goods', parent: null, defaultBaseUnit: piece }),
+    );
+    const results = await Promise.all([
+      h.admin.createItem(h.by, { name: 'One', category: category.id, code: 'RACE' }),
+      h.admin.createItem(h.by, { name: 'Two', category: category.id, code: 'race' }),
+    ]);
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(unwrap(await h.read.search(h.by, 'race')).total).toBe(1);
   });
 });

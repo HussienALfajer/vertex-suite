@@ -34,11 +34,11 @@ export interface SearchInputProps extends Omit<
  * announces itself as a search to anybody who navigates by landmark. None of
  * that is reproducible with a magnifying glass and a placeholder.
  *
- * It filters what is already on screen rather than asking the store node
- * anything, which is why there is no submit: a list that answers on the next
- * keystroke needs no button, and a button here would suggest a round trip that
- * is not happening. `SYS-07`'s global search is a different thing, arrives with
- * `U24`, and will have one.
+ * There is no submit, because the list it narrows answers on the next
+ * keystroke — whether by filtering what is already on screen, or by asking the
+ * store node as the catalogue does (`CAT-15`), whose answer is back before the
+ * next key is. A button would suggest a wait that is not there. `SYS-07`'s
+ * global search is a different thing, arrives with `U24`, and will have one.
  */
 export function SearchInput({
   label,

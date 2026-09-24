@@ -33,6 +33,8 @@ import {
   unitsIn,
   moveCategory,
   scanIn,
+  searchIn,
+  rebuildSearchIndex,
   reviseCategory,
 } from './catalogue.js';
 
@@ -77,6 +79,19 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
     labelKey: 'module.cat',
     dependsOn: ['SYS', 'SEC', 'FX'],
     permissions: seeds,
+    // On both nodes, because both search: the store node for the back office
+    // and the register at the till. Items stored before the index existed are
+    // indexed here, once; from then on every item write keeps its own line.
+    migrations: [
+      {
+        id: 'cat.0001-search-index',
+        target: 'both',
+        up: (session) => {
+          rebuildSearchIndex(session);
+          return Promise.resolve();
+        },
+      },
+    ],
     provides: [
       provideContract(Catalogue, (context: ModuleContext<Session>): Catalogue => {
         const read = async <T>(
@@ -116,6 +131,7 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
             answer(by, (s) => itemEligibility(s, by.tenant, id, trade)),
           scan: (by, code) => answer(by, (s) => scanIn(s, by.tenant, code)),
           barcode: (by, code) => answer(by, (s) => barcodeIn(s, by.tenant, code)),
+          search: (by, term, limit) => answer(by, (s) => searchIn(s, by.tenant, term, limit)),
         };
       }),
       provideContract(

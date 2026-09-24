@@ -7,6 +7,7 @@ import type {
   CatRefusal,
   Item,
   ItemBarcode,
+  ItemSearch,
   ItemId,
   ItemStatus,
   ItemTrade,
@@ -565,6 +566,7 @@ export interface SystemOfRecord {
     ): Promise<Result<Item, CatRefusal>>;
     scan(code: string): Promise<Result<BarcodeResolution, CatRefusal>>;
     barcode(code: string): Promise<Result<BarcodeResolution, CatRefusal>>;
+    search(term: string, limit?: number): Promise<Result<ItemSearch, CatRefusal>>;
     addBarcode(id: ItemId, input: NewItemBarcode): Promise<Result<ItemBarcode, CatRefusal>>;
     deactivateBarcode(code: string, reason: string): Promise<Result<ItemBarcode, CatRefusal>>;
     reactivateBarcode(code: string, reason: string): Promise<Result<ItemBarcode, CatRefusal>>;

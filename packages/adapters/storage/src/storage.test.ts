@@ -353,7 +353,101 @@ for (const kind of ['terminal', 'store-node'] as const) {
           await admin.end();
         }
       }
+      // A row is verified when it is loaded, not on every command. The store
+      // already running serves the value it verified — never the damaged one —
+      // and the next load of that row, here a restart, refuses it.
+      await f.transact().run(f.context, (uow) => {
+        expect(uow.session.get('integrity/1')).toEqual({ amount: '1.0001' });
+        return Promise.resolve();
+      });
+      await expect(f.reopen()).resolves.toBeDefined();
       await expect(f.store.driver.begin(f.context)).rejects.toThrow(/Corrupted persisted record/u);
+    });
+
+    it('reads a revision it holds without reading the rows again, and a newer one in full', async () => {
+      const f = await fixture(kind);
+      const peer = await f.peer();
+      await f.transact().run(f.context, (uow) => {
+        uow.session.put('held/a', { n: '1' });
+        uow.session.put('held/b', { n: '2' });
+        return Promise.resolve();
+      });
+      // Begun before the next commits, and reading the revision it began at.
+      const earlier = await f.store.driver.begin(f.context);
+      await f.transact().run(f.context, (uow) => {
+        uow.session.put('held/a', { n: '10' });
+        uow.session.remove('held/b');
+        uow.session.put('held/c', { n: '3' });
+        return Promise.resolve();
+      });
+      expect(earlier.get('held/a')).toEqual({ n: '1' });
+      expect(earlier.keys().filter((key) => key.startsWith('held/'))).toEqual(['held/a', 'held/b']);
+      await f.store.driver.rollback(earlier);
+
+      // What this store committed, it reads back from memory: the update, the
+      // removal and the addition, with the listing re-sorted.
+      await f.transact().run(f.context, (uow) => {
+        expect(uow.session.get('held/a')).toEqual({ n: '10' });
+        expect(uow.session.get('held/b')).toBeUndefined();
+        expect(uow.session.keys().filter((key) => key.startsWith('held/'))).toEqual([
+          'held/a',
+          'held/c',
+        ]);
+        return Promise.resolve();
+      });
+
+      // What another connection committed moves the revision past the one
+      // held, and the next command reads every row again.
+      const theirs = await peer.driver.begin(f.context);
+      theirs.put('held/d', { n: '4' });
+      theirs.put('held/a', { n: '11' });
+      await peer.driver.commit(theirs);
+      await f.transact().run(f.context, (uow) => {
+        expect(uow.session.get('held/a')).toEqual({ n: '11' });
+        expect(uow.session.keys().filter((key) => key.startsWith('held/'))).toEqual([
+          'held/a',
+          'held/c',
+          'held/d',
+        ]);
+        return Promise.resolve();
+      });
+    });
+
+    it('hands every command its own copy of what it reads', async () => {
+      const f = await fixture(kind);
+      await f.transact().run(f.context, (uow) => {
+        uow.session.put('copy/1', { lines: ['a'] });
+        return Promise.resolve();
+      });
+      await f.transact().run(f.context, (uow) => {
+        (uow.session.get('copy/1') as { lines: string[] }).lines.push('edited, never put');
+        return Promise.resolve();
+      });
+      await f.transact().run(f.context, (uow) => {
+        expect(uow.session.get('copy/1')).toEqual({ lines: ['a'] });
+        return Promise.resolve();
+      });
+    });
+
+    it('commits a write of thousands of records in one command', async () => {
+      const f = await fixture(kind);
+      const count = 2500;
+      await f.transact().run(f.context, (uow) => {
+        for (let at = 0; at < count; at += 1)
+          uow.session.put(`bulk/${String(at).padStart(5, '0')}`, { at });
+        return Promise.resolve();
+      });
+      await f.transact().run(f.context, (uow) => {
+        for (let at = 0; at < count; at += 2)
+          uow.session.remove(`bulk/${String(at).padStart(5, '0')}`);
+        return Promise.resolve();
+      });
+      const reopened = await f.reopen();
+      const session = await reopened.driver.begin(f.context);
+      const kept = session.keys().filter((key) => key.startsWith('bulk/'));
+      expect(kept).toHaveLength(count / 2);
+      expect(session.get(kept.at(-1)!)).toEqual({ at: count - 1 });
+      await reopened.driver.rollback(session);
     });
 
     it('keeps tenant records separate and rejects unsupported values', async () => {

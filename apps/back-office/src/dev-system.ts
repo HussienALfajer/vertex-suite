@@ -1250,6 +1250,7 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
       changeItemStatus: (id, status, reason) => catAdmin.changeItemStatus(by(), id, status, reason),
       scan: (code) => catRead.scan(by(), code),
       barcode: (code) => catRead.barcode(by(), code),
+      search: (term, limit) => catRead.search(by(), term, limit),
       addBarcode: (id, input) => catAdmin.addBarcode(by(), id, input),
       deactivateBarcode: (code, reason) => catAdmin.deactivateBarcode(by(), code, reason),
       reactivateBarcode: (code, reason) => catAdmin.reactivateBarcode(by(), code, reason),
