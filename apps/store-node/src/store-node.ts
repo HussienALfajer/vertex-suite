@@ -31,6 +31,7 @@ import {
 import { Dec, isDecimalString, isId, isOk, orThrow, systemClock } from '@vertex/kernel';
 import {
   prcModule,
+  DisplayPrices,
   PriceLists,
   PriceListAdministration,
   UsdPrices,
@@ -321,6 +322,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     const priceLists = registry.require(PriceLists);
     const priceAdmin = registry.require(PriceListAdministration);
     const usdPrices = registry.require(UsdPrices);
+    const displayPrices = registry.require(DisplayPrices);
     const sessions = new Map<string, Session>();
     const servers = new Set<Server>();
 
@@ -495,6 +497,59 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     );
     securedWrite('usdPrices.set', PRC_PERMISSIONS.price.edit, (by, args) =>
       usdPrices.set(by, args[0] as Parameters<typeof usdPrices.set>[1]),
+    );
+    // A display price is one branch's, so each right is asked at the branch the
+    // request names (`SEC-04`) — here, and again inside PRC. A request that
+    // names no branch is asked at the tenant-wide place, which only an
+    // unconfined grant reaches.
+    const branchOf = (value: unknown): { branch?: string } => {
+      const branch =
+        typeof value === 'object' && value !== null
+          ? (Reflect.get(value, 'branch') as unknown)
+          : value;
+      return typeof branch === 'string' ? { branch } : {};
+    };
+    read(
+      'displayPrices.get',
+      PRC_PERMISSIONS.display.view,
+      (by, args) => displayPrices.get(by, args[0] as Parameters<typeof displayPrices.get>[1]),
+      (args) => branchOf(args[0]),
+    );
+    read(
+      'displayPrices.forItem',
+      PRC_PERMISSIONS.display.view,
+      (by, args) =>
+        displayPrices.forItem(
+          by,
+          args[0] as Parameters<typeof displayPrices.forItem>[1],
+          args[1] as Parameters<typeof displayPrices.forItem>[2],
+        ),
+      (args) => branchOf(args[0]),
+    );
+    read(
+      'displayPrices.history',
+      PRC_PERMISSIONS.price.history,
+      (by, args) =>
+        displayPrices.history(by, args[0] as Parameters<typeof displayPrices.history>[1]),
+      (args) => branchOf(args[0]),
+    );
+    // A read in effect — it writes nothing — asked under the approving right,
+    // because a preview is the first half of an approval.
+    read(
+      'displayPrices.preview',
+      PRC_PERMISSIONS.display.edit,
+      (by, args) =>
+        displayPrices.preview(by, args[0] as Parameters<typeof displayPrices.preview>[1]),
+      (args) => branchOf(args[0]),
+    );
+    write('displayPrices.approve', async (by, args) =>
+      (await authority.may(
+        by,
+        PRC_PERMISSIONS.display.edit,
+        branchOf(args[0]) as Parameters<typeof authority.may>[2],
+      ))
+        ? displayPrices.approve(by, args[0] as Parameters<typeof displayPrices.approve>[1])
+        : { forbidden: true },
     );
 
     read('companies.list', SYS_PERMISSIONS.company.view, (by, args) =>

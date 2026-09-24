@@ -817,6 +817,312 @@ describe.skipIf(!database)(
   },
 );
 
+describe.skipIf(!database)(
+  'PRC-02 PRC-03 PRC-11 frozen SYP display prices over authenticated PostgreSQL transport',
+  () => {
+    it('freezes a reviewed SYP price that neither a rate correction nor a restart re-derives, atomically with its audit', async () => {
+      const shop = await fixture();
+      const owner = await shop.signIn();
+      const root = `/v1/tenants/${shop.tenant}`;
+      interface Answer {
+        value: { ok: boolean; value: Record<string, unknown>; error: { code: string } };
+      }
+      const post = async (method: string, args: unknown[], token = owner) => {
+        const response = await shop.request(`${root}/${method}`, token, { args }, 'POST');
+        expect(response.status, method).toBe(200);
+        return (await response.json()) as Answer;
+      };
+      const made = async (method: string, args: unknown[]) => {
+        const answer = await post(method, args);
+        expect(answer.value.ok, `${method} ${JSON.stringify(answer)}`).toBe(true);
+        return answer.value.value;
+      };
+      const get = (method: string, args: unknown[], token = owner, tenant = shop.tenant) =>
+        shop.request(
+          `/v1/tenants/${tenant}/${method}?args=${encodeURIComponent(JSON.stringify(args))}`,
+          token,
+        );
+      const read = async (method: string, args: unknown[], token = owner) => {
+        const response = await get(method, args, token);
+        expect(response.status, method).toBe(200);
+        return ((await response.json()) as Answer).value;
+      };
+
+      const company = await made('companies.register', [{ name: 'Shop' }]);
+      const aleppo = (await made('branches.open', [{ company: company['id'], name: 'Aleppo' }]))[
+        'id'
+      ] as string;
+      const damascus = (
+        await made('branches.open', [{ company: company['id'], name: 'Damascus' }])
+      )['id'] as string;
+      const quote = (buy: string) => ({ form: 'units-per-functional', buy, sell: '12900' });
+      const first = await made('rates.record', [aleppo, 'SYP', quote('13100')]);
+      await made('rates.record', [damascus, 'SYP', quote('13300')]);
+      const lists = (
+        (await (await get('priceLists.list', [])).json()) as { value: { id: string }[] }
+      ).value;
+      const category = await made('catalogue.createCategory', [
+        {
+          name: 'Goods',
+          parent: null,
+          defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+        },
+      ]);
+      const item = (await made('catalogue.createItem', [
+        { name: 'Box', category: category['id'] },
+      ])) as unknown as { id: string; units: { id: string }[] };
+      const subject = { list: lists[0]!.id, item: item.id, unit: item.units[0]!.id };
+      const target = { branch: aleppo, subject };
+
+      // No dollar price yet: nothing to derive from.
+      expect(await read('displayPrices.preview', [target])).toMatchObject({
+        ok: false,
+        error: { code: 'prc.usd-price-missing' },
+      });
+      await made('usdPrices.set', [
+        {
+          subject,
+          amount: { amount: '1.25', currency: 'USD' },
+          expectedRevision: 0,
+          reason: 'Initial',
+          operation: newId<'price-operation'>(),
+        },
+      ]);
+
+      // The real FX: 1.25 × 13,100 = 16,375 at the buy side, settled half-up
+      // onto the seeded ten-pound note.
+      const preview = (await read('displayPrices.preview', [target])).value as {
+        proposed: string;
+        basis: { usdRevision: number; exact: string; rate: { revision: string; rate: string } };
+      };
+      expect(preview).toMatchObject({
+        proposed: '16380',
+        currency: 'SYP',
+        current: null,
+        basis: { usdRevision: 1, exact: '16375', rate: { revision: first['id'], side: 'buy' } },
+      });
+      expect(await read('displayPrices.get', [target])).toMatchObject({
+        value: { price: null, status: 'not-frozen' },
+      });
+      const approval = (overrides: Record<string, unknown> = {}) => ({
+        ...target,
+        expectedRevision: 0,
+        proposed: preview.proposed,
+        usdRevision: preview.basis.usdRevision,
+        rateRevision: preview.basis.rate.revision,
+        reason: 'First shelf price',
+        operation: newId<'price-operation'>(),
+        ...overrides,
+      });
+      const command = approval();
+      expect((await post('displayPrices.approve', [command])).value).toMatchObject({
+        ok: true,
+        value: { amount: '16380', revision: 1 },
+      });
+      expect((await post('displayPrices.approve', [command])).value.value).toMatchObject({
+        revision: 1,
+      });
+      expect(
+        (await post('displayPrices.approve', [{ ...command, reason: 'Different' }])).value.error
+          .code,
+      ).toBe('prc.operation-reused');
+      expect((await post('displayPrices.approve', [approval()])).value.error.code).toBe(
+        'prc.revision-stale',
+      );
+
+      // A correction of today's rate, and a new dollar price: the frozen figure
+      // stays, and says it was frozen from an older dollar revision.
+      const corrected = await made('rates.record', [aleppo, 'SYP', quote('15000')]);
+      await made('usdPrices.set', [
+        {
+          subject,
+          amount: { amount: '2.00', currency: 'USD' },
+          expectedRevision: 1,
+          reason: 'Supplier price',
+          operation: newId<'price-operation'>(),
+        },
+      ]);
+      expect(await read('displayPrices.get', [target])).toMatchObject({
+        value: {
+          price: {
+            amount: '16380',
+            revision: 1,
+            basis: { usdRevision: 1, rate: { rate: '13100' } },
+          },
+          usd: { revision: 2 },
+          status: 'usd-changed',
+        },
+      });
+
+      // The audit is refused at the database mid-commit: the price must not
+      // move without its entry.
+      const admin = new Pool({ connectionString: database });
+      cleanup.push(() => admin.end());
+      const schema = `"${shop.options.schema}"`;
+      await admin.query(
+        `CREATE FUNCTION ${schema}.refuse_display_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.key LIKE 'prc/display/%/history/%' THEN RAISE EXCEPTION 'audit refused'; END IF; RETURN NEW; END $$`,
+      );
+      await admin.query(
+        `CREATE TRIGGER refuse_display_audit BEFORE INSERT ON ${schema}.vertex_records FOR EACH ROW EXECUTE FUNCTION ${schema}.refuse_display_audit()`,
+      );
+      const reviewed = (await read('displayPrices.preview', [target])).value as typeof preview;
+      expect(reviewed).toMatchObject({ proposed: '30000', basis: { usdRevision: 2 } });
+      const recalculation = approval({
+        expectedRevision: 1,
+        proposed: reviewed.proposed,
+        usdRevision: reviewed.basis.usdRevision,
+        rateRevision: corrected['id'],
+        reason: 'Dollar price moved',
+      });
+      const failed = await shop.request(
+        `${root}/displayPrices.approve`,
+        owner,
+        { args: [recalculation] },
+        'POST',
+      );
+      expect(failed.status).not.toBe(200);
+      expect(await read('displayPrices.get', [target])).toMatchObject({
+        value: { price: { amount: '16380', revision: 1 } },
+      });
+      expect(await read('displayPrices.history', [{ branch: aleppo }])).toMatchObject({
+        value: { entries: [{ revision: 1 }] },
+      });
+      await admin.query(`DROP TRIGGER refuse_display_audit ON ${schema}.vertex_records`);
+      expect((await post('displayPrices.approve', [recalculation])).value).toMatchObject({
+        ok: true,
+        value: { amount: '30000', revision: 2 },
+      });
+
+      // Damascus has its own rate and its own frozen price for the same subject.
+      const there = (await read('displayPrices.preview', [{ branch: damascus, subject }]))
+        .value as typeof preview;
+      expect(there.proposed).toBe('26600');
+
+      // Tenant and HTTP boundaries.
+      expect((await get('displayPrices.get', [target], '')).status).toBe(401);
+      const other = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+      const foreign = await get('displayPrices.get', [target], other, shop.otherTenant);
+      expect(foreign.status).toBe(200);
+      expect(await foreign.json()).toMatchObject({
+        value: { ok: false, error: { code: 'prc.branch-not-found' } },
+      });
+      const enrol = async (handle: string, seeded: string, confinement: unknown) => {
+        const user = await made('users.enrol', [
+          { handle, name: handle, password: 'till-morning-5' },
+        ]);
+        const roles = (
+          (await (await get('users.roles.list', [])).json()) as {
+            value: { id: string; seeded: string }[];
+          }
+        ).value;
+        await made('users.assignments.assign', [
+          { user: user['id'], role: roles.find((one) => one.seeded === seeded)!.id, confinement },
+        ]);
+        return shop.signIn(shop.tenant, handle, 'till-morning-5');
+      };
+      const cashier = await enrol('display-cashier', 'cashier', { kind: 'tenant' });
+      expect((await get('displayPrices.get', [target], cashier)).status).toBe(403);
+      expect((await get('displayPrices.preview', [target], cashier)).status).toBe(403);
+      expect(
+        (
+          await shop.request(
+            `${root}/displayPrices.approve`,
+            cashier,
+            { args: [approval({ expectedRevision: 2 })] },
+            'POST',
+          )
+        ).status,
+      ).toBe(403);
+      // A manager of Damascus reads and approves Damascus, and not Aleppo.
+      const manager = await enrol('damascus-manager', 'manager', {
+        kind: 'branches',
+        branches: [damascus],
+        locations: [],
+      });
+      expect((await get('displayPrices.get', [target], manager)).status).toBe(403);
+      expect((await get('displayPrices.history', [{}], manager)).status).toBe(403);
+      expect(
+        (
+          await shop.request(
+            `${root}/displayPrices.approve`,
+            manager,
+            { args: [approval({ expectedRevision: 2 })] },
+            'POST',
+          )
+        ).status,
+      ).toBe(403);
+      // The HTTP gate admits Damascus for them. What CAT then shows a
+      // branch-confined person is CAT's own tenant-wide guard, outside this slice.
+      expect(
+        (await get('displayPrices.get', [{ branch: damascus, subject }], manager)).status,
+      ).toBe(200);
+      expect(
+        (
+          await post('displayPrices.approve', [
+            {
+              branch: damascus,
+              subject,
+              expectedRevision: 0,
+              proposed: there.proposed,
+              usdRevision: there.basis.usdRevision,
+              rateRevision: there.basis.rate.revision,
+              reason: 'Damascus shelf price',
+              operation: newId<'price-operation'>(),
+            },
+          ])
+        ).value,
+      ).toMatchObject({ ok: true, value: { branch: damascus, amount: '26600' } });
+
+      // After a restart the stored figures come back as they were written:
+      // today's rate is 15,000, and nothing re-derives 16,380 or 30,000 from it.
+      await shop.close();
+      const restarted = await startProcess(shop.options, shop.tenant);
+      const login = await fetch(`${restarted.base}/v1/sign-in`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenant: shop.tenant, handle: 'owner', password: 'till-morning-1' }),
+      });
+      const token = ((await login.json()) as { token: string }).token;
+      const after = async (method: string, args: unknown[]) =>
+        (
+          (await (
+            await fetch(
+              `${restarted.base}${root}/${method}?args=${encodeURIComponent(JSON.stringify(args))}`,
+              { headers: { authorization: `Bearer ${token}` } },
+            )
+          ).json()) as Answer
+        ).value;
+      expect(await after('displayPrices.get', [target])).toMatchObject({
+        value: {
+          price: {
+            amount: '30000',
+            revision: 2,
+            basis: { usdAmount: '2', usdRevision: 2, rate: { revision: corrected['id'] } },
+          },
+          status: 'frozen',
+        },
+      });
+      expect(await after('displayPrices.history', [{ item: item.id }])).toMatchObject({
+        value: {
+          entries: [
+            { branch: damascus, newAmount: '26600' },
+            {
+              branch: aleppo,
+              revision: 2,
+              oldAmount: '16380',
+              newAmount: '30000',
+              oldBasis: { usdRevision: 1, rate: { revision: first['id'] } },
+              reason: 'Dollar price moved',
+            },
+            { branch: aleppo, revision: 1, oldAmount: null, newAmount: '16380' },
+          ],
+        },
+      });
+      await restarted.stop();
+    });
+  },
+);
+
 async function startProcess(
   options: { connectionString: string; schema: string; attachmentsDirectory: string },
   tenant: string,
