@@ -22,6 +22,7 @@ const unwrap = <T, E>(result: Result<T, E>): T =>
 
 function installed() {
   let allowed = true;
+  let confined = false;
   const withheld = new Set<string>();
   const at = instant(1_780_000_000_000);
   const clock = { now: () => at };
@@ -33,7 +34,13 @@ function installed() {
       labelKey: 'module.sec',
       provides: [
         provideContract(Authority, () => ({
-          may: (_by, right) => Promise.resolve(allowed && !withheld.has(right)),
+          // Confined, the stand-in answers as SEC-04 does for a grant held in
+          // one branch: yes where it is said to be anywhere, and no at the
+          // tenant-wide place that an absent branch asks about.
+          may: (_by, right, where) =>
+            Promise.resolve(
+              allowed && !withheld.has(right) && (!confined || where?.anywhere === true),
+            ),
         })),
       ],
     }),
@@ -72,6 +79,9 @@ function installed() {
     other,
     deny: () => {
       allowed = false;
+    },
+    confine: () => {
+      confined = true;
     },
     withhold: (right: string) => {
       withheld.add(right);
@@ -984,5 +994,95 @@ describe('CAT-15 item codes, which the search reads', () => {
     ]);
     expect(results.filter((result) => result.ok)).toHaveLength(1);
     expect(unwrap(await h.read.search(h.by, 'race')).total).toBe(1);
+  });
+});
+
+describe('CAT-01 CAT-04 CAT-08 CAT-12 CAT-15 the catalogue read by somebody confined to a branch', () => {
+  // An item is one record across the shop group: the manager of one branch
+  // reads the same name, units and codes as the owner. So a read is asked
+  // wherever the right is held (SEC-04), and a write — which changes that
+  // record for every branch at once — still at the tenant-wide place.
+  async function stocked(h: ReturnType<typeof installed>) {
+    const dairy = unwrap(
+      await h.admin.createCategory(h.by, { name: 'ألبان', parent: null, defaultBaseUnit: piece }),
+    );
+    const item = unwrap(await h.admin.createItem(h.by, { name: 'حليب', category: dairy.id }));
+    const carton = unwrap(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'carton', kind: 'count', decimals: 0 },
+        basePerUnit: '12',
+      }),
+    );
+    unwrap(await h.admin.addBarcode(h.by, item.id, { code: '4006381333931' }));
+    return { dairy, item, base: item.units[0]!, carton };
+  }
+
+  it('answers every read to a manager whose grant reaches only their own branch', async () => {
+    const h = installed();
+    const { dairy, item, base, carton } = await stocked(h);
+    h.confine();
+
+    expect((await h.read.categories(h.by)).map((one) => one.id)).toEqual([dairy.id]);
+    expect((await h.read.category(h.by, dairy.id))?.id).toBe(dairy.id);
+    expect((await h.read.items(h.by)).map((one) => one.id)).toEqual([item.id]);
+    expect((await h.read.item(h.by, item.id))?.id).toBe(item.id);
+    expect(unwrap(await h.read.units(h.by, item.id))).toHaveLength(2);
+    expect(unwrap(await h.read.convert(h.by, item.id, '2', carton.id, base.id)).amount).toBe('24');
+    expect(unwrap(await h.read.stockQuantity(h.by, item.id, '1', carton.id)).amount).toBe('12');
+    expect((await h.read.eligibility(h.by, item.id, 'sale')).ok).toBe(true);
+    expect(unwrap(await h.read.scan(h.by, '4006381333931')).item.id).toBe(item.id);
+    expect(unwrap(await h.read.barcode(h.by, '4006381333931')).item.id).toBe(item.id);
+    expect(unwrap(await h.read.search(h.by, 'حليب')).items.map((one) => one.id)).toEqual([item.id]);
+    // Through the category's name as well: category view is tenant-wide data
+    // too, and asking it at the tenant-wide place would quietly narrow the
+    // ranking for everybody confined to a branch.
+    expect(unwrap(await h.read.search(h.by, 'ألبان')).items.map((one) => one.id)).toEqual([
+      item.id,
+    ]);
+  });
+
+  it('still refuses that manager every write, which would change the item in every branch', async () => {
+    const h = installed();
+    const { dairy, item, carton } = await stocked(h);
+    h.confine();
+    const refused = { ok: false, error: { code: 'cat.not-permitted' } };
+
+    expect(
+      await h.admin.createCategory(h.by, { name: 'خبز', parent: null, defaultBaseUnit: piece }),
+    ).toMatchObject(refused);
+    expect(await h.admin.reviseCategory(h.by, dairy.id, { name: 'حليب ومشتقاته' })).toMatchObject(
+      refused,
+    );
+    expect(await h.admin.moveCategory(h.by, dairy.id, null)).toMatchObject(refused);
+    expect(await h.admin.createItem(h.by, { name: 'جبن', category: dairy.id })).toMatchObject(
+      refused,
+    );
+    expect(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'pack', kind: 'count', decimals: 0 },
+        basePerUnit: '6',
+      }),
+    ).toMatchObject(refused);
+    expect(await h.admin.changeItemStatus(h.by, item.id, 'discontinued', 'آخر دفعة')).toMatchObject(
+      refused,
+    );
+    expect(
+      await h.admin.addBarcode(h.by, item.id, { code: '96385074', unit: carton.id }),
+    ).toMatchObject(refused);
+    expect(await h.admin.deactivateBarcode(h.by, '4006381333931', 'تالف')).toMatchObject(refused);
+    expect(await h.admin.reactivateBarcode(h.by, '4006381333931', 'عاد')).toMatchObject(refused);
+  });
+
+  it('answers nothing to somebody who holds no grant of the right anywhere', async () => {
+    const h = installed();
+    const { item } = await stocked(h);
+    h.confine();
+    h.withhold(CAT_PERMISSIONS.item.view);
+
+    expect(await h.read.item(h.by, item.id)).toBeNull();
+    expect(await h.read.units(h.by, item.id)).toMatchObject({
+      ok: false,
+      error: { code: 'cat.not-permitted' },
+    });
   });
 });

@@ -37,6 +37,7 @@ import {
   PRC_PERMISSIONS,
 } from '@vertex/prc';
 import {
+  ANYWHERE,
   commandContext,
   composeEdition,
   createEventBus,
@@ -337,7 +338,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
       path: string,
       right: string,
       dispatch: Dispatch,
-      scope?: (args: readonly unknown[]) => { branch?: string },
+      scope?: (args: readonly unknown[]) => { branch?: string } | typeof ANYWHERE,
     ): void => {
       routes.set(path, {
         read: true,
@@ -357,19 +358,26 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     };
     const tenantWide = async (by: CommandContext, right: string): Promise<boolean> =>
       authority.may(by, right as Parameters<typeof authority.may>[1]);
+    // The catalogue is one set of records for every branch, and CAT asks its
+    // reads wherever the right is held; the gate in front of it asks the same,
+    // or a manager confined to one branch would be refused here what CAT would
+    // answer them. Its writes stay behind the tenant-wide place.
+    const shared = (path: string, right: string, dispatch: Dispatch): void => {
+      read(path, right, dispatch, () => ANYWHERE);
+    };
 
-    read('catalogue.categories', CAT_PERMISSIONS.category.view, (by) => catRead.categories(by));
-    read('catalogue.category', CAT_PERMISSIONS.category.view, (by, args) =>
+    shared('catalogue.categories', CAT_PERMISSIONS.category.view, (by) => catRead.categories(by));
+    shared('catalogue.category', CAT_PERMISSIONS.category.view, (by, args) =>
       catRead.category(by, string(args[0]) as Parameters<typeof catRead.category>[1]),
     );
-    read('catalogue.items', CAT_PERMISSIONS.item.view, (by) => catRead.items(by));
-    read('catalogue.item', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.items', CAT_PERMISSIONS.item.view, (by) => catRead.items(by));
+    shared('catalogue.item', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.item(by, string(args[0]) as Parameters<typeof catRead.item>[1]),
     );
-    read('catalogue.units', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.units', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.units(by, string(args[0]) as Parameters<typeof catRead.units>[1]),
     );
-    read('catalogue.convert', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.convert', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.convert(
         by,
         string(args[0]) as Parameters<typeof catRead.convert>[1],
@@ -378,7 +386,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         string(args[3]) as Parameters<typeof catRead.convert>[4],
       ),
     );
-    read('catalogue.stockQuantity', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.stockQuantity', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.stockQuantity(
         by,
         string(args[0]) as Parameters<typeof catRead.stockQuantity>[1],
@@ -386,22 +394,22 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         string(args[2]) as Parameters<typeof catRead.stockQuantity>[3],
       ),
     );
-    read('catalogue.eligibility', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.eligibility', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.eligibility(
         by,
         args[0] as Parameters<typeof catRead.eligibility>[1],
         args[1] as Parameters<typeof catRead.eligibility>[2],
       ),
     );
-    read('catalogue.scan', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.scan', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.scan(by, string(args[0])),
     );
-    read('catalogue.barcode', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.barcode', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.barcode(by, string(args[0])),
     );
     // Passed as sent: a term or a limit of the wrong shape is refused by CAT
     // with a code a screen can say, rather than failed here as a bad request.
-    read('catalogue.search', CAT_PERMISSIONS.item.view, (by, args) =>
+    shared('catalogue.search', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.search(by, args[0] as string, args[1] as number | undefined),
     );
     write('catalogue.createCategory', (by, args) =>

@@ -126,6 +126,102 @@ describe.skipIf(!database)('CAT-01 authenticated catalogue transport', () => {
   });
 });
 
+describe.skipIf(!database)(
+  'CAT-01 CAT-08 CAT-15 SEC-04 the catalogue over PostgreSQL for a manager confined to a branch',
+  () => {
+    it('answers the manager of Damascus every catalogue read, and still refuses them writes and Aleppo', async () => {
+      const shop = await fixture();
+      const owner = await shop.signIn();
+      const root = `/v1/tenants/${shop.tenant}`;
+      const post = async (path: string, args: unknown[], token = owner) => {
+        const response = await shop.request(`${root}/${path}`, token, { args }, 'POST');
+        expect(response.status, path).toBe(200);
+        return (
+          (await response.json()) as {
+            value: { ok: boolean; value: { id: string }; error: { code: string } };
+          }
+        ).value;
+      };
+      const get = (path: string, args: unknown[], token: string) =>
+        shop.request(`${root}/${path}?args=${encodeURIComponent(JSON.stringify(args))}`, token);
+      const company = (await post('companies.register', [{ name: 'Shop' }])).value.id;
+      const damascus = (await post('branches.open', [{ company, name: 'دمشق' }])).value.id;
+      const aleppo = (await post('branches.open', [{ company, name: 'حلب' }])).value.id;
+      const category = (
+        await post('catalogue.createCategory', [
+          {
+            name: 'ألبان',
+            parent: null,
+            defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+          },
+        ])
+      ).value.id;
+      const item = (await post('catalogue.createItem', [{ name: 'حليب', category }])).value.id;
+      const user = (
+        await post('users.enrol', [
+          { handle: 'damascus', name: 'مدير دمشق', password: 'till-morning-5' },
+        ])
+      ).value.id;
+      const roles = await shop.request(`${root}/users.roles.list`, owner);
+      const manager = (
+        (await roles.json()) as { value: { id: string; seeded: string }[] }
+      ).value.find((one) => one.seeded === 'manager')!;
+      expect(
+        (
+          await post('users.assignments.assign', [
+            {
+              user,
+              role: manager.id,
+              confinement: { kind: 'branches', branches: [damascus], locations: [] },
+            },
+          ])
+        ).ok,
+      ).toBe(true);
+      const them = await shop.signIn(shop.tenant, 'damascus', 'till-morning-5');
+
+      // The item is the same record in every branch, so the manager of one
+      // reads it as the owner does — through the route's gate and CAT's alike.
+      const read = await get('catalogue.item', [item], them);
+      expect(read.status).toBe(200);
+      expect(((await read.json()) as { value: { id: string } }).value.id).toBe(item);
+      const listed = await get('catalogue.items', [], them);
+      expect(
+        ((await listed.json()) as { value: { id: string }[] }).value.map((one) => one.id),
+      ).toEqual([item]);
+      const units = await get('catalogue.units', [item], them);
+      expect(((await units.json()) as { value: { ok: boolean } }).value.ok).toBe(true);
+      const found = await get('catalogue.search', ['حليب'], them);
+      expect(
+        (
+          (await found.json()) as { value: { value: { items: { id: string }[] } } }
+        ).value.value.items.map((one) => one.id),
+      ).toEqual([item]);
+
+      // Writing it would change it for every branch, which is not the act of
+      // somebody who runs one: refused by CAT, and by the route's own gate.
+      expect(await post('catalogue.createItem', [{ name: 'جبن', category }], them)).toMatchObject({
+        ok: false,
+        error: { code: 'cat.not-permitted' },
+      });
+      expect(
+        (
+          await shop.request(
+            `${root}/catalogue.changeItemStatus`,
+            them,
+            { args: [item, 'suspended', 'تجربة'] },
+            'POST',
+          )
+        ).status,
+      ).toBe(403);
+
+      // And the confinement still confines: a branch-scoped read answers in
+      // Damascus and not in Aleppo.
+      expect((await get('registers.list', [damascus], them)).status).toBe(200);
+      expect((await get('registers.list', [aleppo], them)).status).toBe(403);
+    });
+  },
+);
+
 describe.skipIf(!database)('CAT-02 CAT-12 authenticated catalogue transport', () => {
   it('serves tracking, status and eligibility through signed tenant-scoped routes', async () => {
     const shop = await fixture();

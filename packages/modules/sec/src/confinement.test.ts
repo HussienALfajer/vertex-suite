@@ -1,9 +1,11 @@
 import type { BranchId, LocationId, PermissionId, UserId } from '@vertex/contracts';
 import { newId } from '@vertex/kernel';
 import { SYS_PERMISSIONS } from '@vertex/sys/contract';
+import { ANYWHERE } from '@vertex/platform';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { SEC_PERMISSIONS, TENANT_WIDE, type Confinement, type RoleId } from './contract.js';
+import { decideFor } from './decide.js';
 import {
   aShopWithAnOwner,
   installSec,
@@ -11,6 +13,7 @@ import {
   taken,
   type Installed,
 } from './edition.fixture.js';
+import { assignmentsIn, writeAssignment } from './records.js';
 
 let sec: Installed;
 let owner: ReturnType<Installed['as']>;
@@ -417,5 +420,81 @@ describe('Location- and branch-scoped permissions — SEC-04', () => {
         }),
       ),
     ).toBe('sec.right-not-held');
+  });
+});
+
+describe('Reading what every branch shares — SEC-04', () => {
+  it('admits a grant confined to one branch when the question is asked anywhere, and only then', async () => {
+    const { user } = await someoneHolding([SYS_PERMISSIONS.branch.view], {
+      kind: 'branches',
+      branches: [aleppo],
+      locations: [],
+    });
+    const them = sec.as(user);
+
+    expect(await sec.auth.decide(them, SYS_PERMISSIONS.branch.view, ANYWHERE)).toEqual({
+      granted: true,
+      grounds: 'granted',
+    });
+    // The absent branch keeps its meaning. A command that forgets to say where
+    // it acts still asks at the tenant-wide place, and still fails closed.
+    expect(await sec.auth.may(them, SYS_PERMISSIONS.branch.view)).toBe(false);
+    expect(await sec.auth.may(them, SYS_PERMISSIONS.branch.view, { branch: homs })).toBe(false);
+  });
+
+  it('admits a keeper narrowed to one store room, because the grant still reaches a place', async () => {
+    const { user } = await someoneHolding([SYS_PERMISSIONS.location.view], {
+      kind: 'branches',
+      branches: [aleppo],
+      locations: [storeRoom],
+    });
+
+    expect(await sec.auth.may(sec.as(user), SYS_PERMISSIONS.location.view, ANYWHERE)).toBe(true);
+  });
+
+  it('is not a way to hold a right nobody gave: no grant of it, no answer anywhere', async () => {
+    const { user } = await someoneHolding([SYS_PERMISSIONS.location.view], {
+      kind: 'branches',
+      branches: [aleppo],
+      locations: [],
+    });
+    const them = sec.as(user);
+
+    expect(await sec.auth.decide(them, SYS_PERMISSIONS.branch.edit, ANYWHERE)).toEqual({
+      granted: false,
+      grounds: 'no-actor-rights',
+    });
+    taken(await sec.users.deactivate(owner, user));
+    expect(await sec.auth.may(them, SYS_PERMISSIONS.location.view, ANYWHERE)).toBe(false);
+  });
+
+  it('refuses a grant whose confinement names no branch, however it came to be stored', async () => {
+    const { user, role } = await someoneHolding([SYS_PERMISSIONS.branch.view], {
+      kind: 'branches',
+      branches: [aleppo],
+      locations: [],
+    });
+    // `assign` refuses an empty confinement, so the row is written underneath
+    // it: the decision is the last line, and a grant that reaches nowhere must
+    // not become one that reaches everything the moment somebody asks
+    // "anywhere".
+    const rows = new Map(sec.store.committed());
+    const session = {
+      get: (key: string) => rows.get(key),
+      put: (key: string, value: unknown) => void rows.set(key, value),
+      keys: () => [...rows.keys()],
+    };
+    const held = assignmentsIn(session, sec.tenant).find((one) => one.user === user);
+    writeAssignment(session, sec.tenant, {
+      ...held!,
+      role,
+      confinement: { kind: 'branches', branches: [], locations: [] },
+    });
+    const right = SYS_PERMISSIONS.branch.view;
+
+    expect(decideFor(session, sec.as(user), new Set([right]), right, ANYWHERE)).toEqual({
+      granted: false,
+      grounds: 'outside-confinement',
+    });
   });
 });

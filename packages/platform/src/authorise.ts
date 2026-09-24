@@ -30,10 +30,39 @@ import type { CommandContext } from './context.js';
  * "anywhere" — that reading is how somebody who runs one shop comes to edit the
  * tax number printed on every receipt in the group.
  */
-export interface AuthorisationScope {
+export type AuthorisationScope = Place | Anywhere;
+
+interface Place {
   readonly branch?: BranchId;
   readonly location?: LocationId;
+  readonly anywhere?: never;
 }
+
+interface Anywhere {
+  readonly anywhere: true;
+  readonly branch?: never;
+  readonly location?: never;
+}
+
+/**
+ * Wherever the caller holds the right — for **reading records that are the
+ * same in every branch**, and for nothing else.
+ *
+ * A catalogue item is one record across the whole shop group: the manager of
+ * Damascus and the owner read the same name, the same units, the same codes.
+ * Asking such a read at the tenant-wide place refused everybody confined to a
+ * branch, so a Damascus manager could not see the item whose Damascus price
+ * they were approving. Asking it at "a branch" would protect nothing — any
+ * branch the caller names answers with the identical record — and would make
+ * every caller invent one.
+ *
+ * Said out loud, as a value, rather than read into an absent branch: the absent
+ * branch keeps its meaning (the tenant-wide place, only unconfined grants), so
+ * a command that forgets its scope still fails closed. **A write never asks
+ * this.** Changing a record every branch shares is an act at the tenant-wide
+ * place, whoever is only reading it.
+ */
+export const ANYWHERE: AuthorisationScope = Object.freeze({ anywhere: true });
 
 /**
  * Whatever this edition uses to answer "may they".

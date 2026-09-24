@@ -9,7 +9,7 @@ import {
   type UserId,
 } from '@vertex/contracts';
 import type { Id, Instant, Refusal, Result } from '@vertex/kernel';
-import { contractKey, type CommandContext } from '@vertex/platform';
+import { contractKey, type AuthorisationScope, type CommandContext } from '@vertex/platform';
 
 /**
  * What `SEC` lets the rest of the system see: who may do what, and where.
@@ -139,11 +139,11 @@ export interface Assignment extends TenantOwned {
  * and only somebody unconfined may take one. The other reading, "anywhere at
  * all", is how a supervisor confined to one shop comes to edit the tax number
  * that prints on every receipt in the group.
+ *
+ * The platform's shape, not a second copy of it: the one explicit wildcard,
+ * `ANYWHERE`, is defined once and means the same to every module that asks.
  */
-export interface Where {
-  readonly branch?: BranchId;
-  readonly location?: LocationId;
-}
+export type Where = AuthorisationScope;
 
 /**
  * Why the answer was what it was.
