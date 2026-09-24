@@ -18,7 +18,10 @@ import {
 } from './contract.js';
 import {
   categoriesIn,
+  addItemBarcode,
   addItemUnit,
+  barcodeIn,
+  changeBarcodeState,
   categoryIn,
   changeItemStatus,
   createCategory,
@@ -29,6 +32,7 @@ import {
   itemsIn,
   unitsIn,
   moveCategory,
+  scanIn,
   reviseCategory,
 } from './catalogue.js';
 
@@ -84,6 +88,15 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
           (await context.authorise(by, right))
             ? context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)))
             : empty;
+        // Every item read that can be refused rather than answered empty: the
+        // right it needs is item view, and a caller without it is told so.
+        const answer = async <T>(
+          by: CommandContext,
+          work: (s: Session) => Result<T, CatRefusal>,
+        ): Promise<Result<T, CatRefusal>> =>
+          (await context.authorise(by, CAT_PERMISSIONS.item.view))
+            ? context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)))
+            : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view });
         return {
           categories: (by) =>
             read(by, CAT_PERMISSIONS.category.view, [], (s) => categoriesIn(s, by.tenant)),
@@ -92,41 +105,17 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
           items: (by) => read(by, CAT_PERMISSIONS.item.view, [], (s) => itemsIn(s, by.tenant)),
           item: (by, id) =>
             read(by, CAT_PERMISSIONS.item.view, null, (s) => itemIn(s, by.tenant, id)),
-          units: async (by, id) =>
-            (await context.authorise(by, CAT_PERMISSIONS.item.view))
-              ? context.transactor.run(by, (uow) =>
-                  Promise.resolve(unitsIn(uow.session, by.tenant, id)),
-                )
-              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
-          convert: async (by, id, amount, from, to) =>
-            (await context.authorise(by, CAT_PERMISSIONS.item.view))
-              ? context.transactor.run(by, (uow) =>
-                  Promise.resolve(
-                    convertItemQuantity(uow.session, by.tenant, id, amount, from, to),
-                  ),
-                )
-              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
-          stockQuantity: async (by, id, amount, from) =>
-            (await context.authorise(by, CAT_PERMISSIONS.item.view))
-              ? context.transactor.run(by, (uow) =>
-                  Promise.resolve(
-                    convertItemQuantity(
-                      uow.session,
-                      by.tenant,
-                      id,
-                      amount,
-                      from,
-                      id as unknown as ItemUnitId,
-                    ),
-                  ),
-                )
-              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
-          eligibility: async (by, id, trade) =>
-            (await context.authorise(by, CAT_PERMISSIONS.item.view))
-              ? context.transactor.run(by, (uow) =>
-                  Promise.resolve(itemEligibility(uow.session, by.tenant, id, trade)),
-                )
-              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
+          units: (by, id) => answer(by, (s) => unitsIn(s, by.tenant, id)),
+          convert: (by, id, amount, from, to) =>
+            answer(by, (s) => convertItemQuantity(s, by.tenant, id, amount, from, to)),
+          stockQuantity: (by, id, amount, from) =>
+            answer(by, (s) =>
+              convertItemQuantity(s, by.tenant, id, amount, from, id as unknown as ItemUnitId),
+            ),
+          eligibility: (by, id, trade) =>
+            answer(by, (s) => itemEligibility(s, by.tenant, id, trade)),
+          scan: (by, code) => answer(by, (s) => scanIn(s, by.tenant, code)),
+          barcode: (by, code) => answer(by, (s) => barcodeIn(s, by.tenant, code)),
         };
       }),
       provideContract(
@@ -162,6 +151,18 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
             changeItemStatus: (by, id, status, reason) =>
               write(by, CAT_PERMISSIONS.item.edit, (s) =>
                 changeItemStatus(s, by, context.clock.now(), id, status, reason),
+              ),
+            addBarcode: (by, id, input) =>
+              write(by, CAT_PERMISSIONS.item.edit, (s) =>
+                addItemBarcode(s, by, context.clock.now(), id, input),
+              ),
+            deactivateBarcode: (by, code, reason) =>
+              write(by, CAT_PERMISSIONS.item.edit, (s) =>
+                changeBarcodeState(s, by, context.clock.now(), code, false, reason),
+              ),
+            reactivateBarcode: (by, code, reason) =>
+              write(by, CAT_PERMISSIONS.item.edit, (s) =>
+                changeBarcodeState(s, by, context.clock.now(), code, true, reason),
               ),
           };
         },

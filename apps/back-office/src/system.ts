@@ -1,16 +1,19 @@
 import type { Result } from '@vertex/kernel';
 import type {
+  BarcodeResolution,
   Category,
   CategoryId,
   CategoryRevision,
   CatRefusal,
   Item,
+  ItemBarcode,
   ItemId,
   ItemStatus,
   ItemTrade,
   ItemUnit,
   ItemUnitId,
   ConvertedItemQuantity,
+  NewItemBarcode,
   NewItemUnit,
   NewCategory,
   NewItem,
@@ -560,6 +563,11 @@ export interface SystemOfRecord {
       status: ItemStatus,
       reason: string,
     ): Promise<Result<Item, CatRefusal>>;
+    scan(code: string): Promise<Result<BarcodeResolution, CatRefusal>>;
+    barcode(code: string): Promise<Result<BarcodeResolution, CatRefusal>>;
+    addBarcode(id: ItemId, input: NewItemBarcode): Promise<Result<ItemBarcode, CatRefusal>>;
+    deactivateBarcode(code: string, reason: string): Promise<Result<ItemBarcode, CatRefusal>>;
+    reactivateBarcode(code: string, reason: string): Promise<Result<ItemBarcode, CatRefusal>>;
   };
   /**
    * A password verified against a sign-in, and nothing more.

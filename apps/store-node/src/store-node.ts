@@ -382,6 +382,12 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         args[1] as Parameters<typeof catRead.eligibility>[2],
       ),
     );
+    read('catalogue.scan', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.scan(by, string(args[0])),
+    );
+    read('catalogue.barcode', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.barcode(by, string(args[0])),
+    );
     write('catalogue.createCategory', (by, args) =>
       catAdmin.createCategory(
         by,
@@ -422,6 +428,19 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         args[1] as Parameters<typeof catAdmin.changeItemStatus>[2],
         args[2] as Parameters<typeof catAdmin.changeItemStatus>[3],
       ),
+    );
+    securedWrite('catalogue.addBarcode', CAT_PERMISSIONS.item.edit, (by, args) =>
+      catAdmin.addBarcode(
+        by,
+        string(args[0]) as Parameters<typeof catAdmin.addBarcode>[1],
+        object(args[1]) as unknown as Parameters<typeof catAdmin.addBarcode>[2],
+      ),
+    );
+    securedWrite('catalogue.deactivateBarcode', CAT_PERMISSIONS.item.edit, (by, args) =>
+      catAdmin.deactivateBarcode(by, string(args[0]), string(args[1])),
+    );
+    securedWrite('catalogue.reactivateBarcode', CAT_PERMISSIONS.item.edit, (by, args) =>
+      catAdmin.reactivateBarcode(by, string(args[0]), string(args[1])),
     );
 
     read('companies.list', SYS_PERMISSIONS.company.view, (by, args) =>
