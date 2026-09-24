@@ -16,6 +16,7 @@ import {
   type PermissionDeclaration,
 } from '@vertex/platform';
 import { OWNER, SEEDED_ROLES, type PermissionId } from '@vertex/contracts';
+import { catModule, Catalogue, CatalogueAdministration } from '@vertex/cat';
 import {
   ChartAdministration,
   ChartOfAccounts,
@@ -264,9 +265,10 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     authorityStandIn(),
     fxModule<MemorySession>(),
     finModule<MemorySession>({ attachments }),
+    catModule<MemorySession>(),
   ];
   const plan = orThrow(
-    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN'] }),
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN', 'CAT'] }),
     (refusal) => new Error(`The edition would not compose: ${refusal.code}`),
   );
 
@@ -313,6 +315,8 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const exceptionsRead = registry.require(PostingExceptions);
   const exceptionsAdmin = registry.require(PostingExceptionAdministration);
   const statementsRead = registry.require(Statements);
+  const catRead = registry.require(Catalogue);
+  const catAdmin = registry.require(CatalogueAdministration);
 
   /**
    * Who is asking, which is the transport's business and not a screen's.
@@ -1229,6 +1233,16 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     },
 
     organisation,
+    catalogue: {
+      categories: () => catRead.categories(by()),
+      category: (id) => catRead.category(by(), id),
+      items: () => catRead.items(by()),
+      item: (id) => catRead.item(by(), id),
+      createCategory: (input) => catAdmin.createCategory(by(), input),
+      reviseCategory: (id, revision) => catAdmin.reviseCategory(by(), id, revision),
+      moveCategory: (id, parent) => catAdmin.moveCategory(by(), id, parent),
+      createItem: (input) => catAdmin.createItem(by(), input),
+    },
     users: usersPort,
     currencies,
     rates,

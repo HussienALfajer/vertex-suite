@@ -1,5 +1,15 @@
 import type { Result } from '@vertex/kernel';
 import type {
+  Category,
+  CategoryId,
+  CategoryRevision,
+  CatRefusal,
+  Item,
+  ItemId,
+  NewCategory,
+  NewItem,
+} from '@vertex/cat/contract';
+import type {
   CurrencyRefusal,
   CurrencyRevision,
   Listing as CurrencyListing,
@@ -513,6 +523,19 @@ export interface StatementsOfRecord {
 }
 
 export interface SystemOfRecord {
+  readonly catalogue: {
+    categories(): Promise<readonly Category[]>;
+    category(id: CategoryId): Promise<Category | null>;
+    items(): Promise<readonly Item[]>;
+    item(id: ItemId): Promise<Item | null>;
+    createCategory(input: NewCategory): Promise<Result<Category, CatRefusal>>;
+    reviseCategory(
+      id: CategoryId,
+      revision: CategoryRevision,
+    ): Promise<Result<Category, CatRefusal>>;
+    moveCategory(id: CategoryId, parent: CategoryId | null): Promise<Result<Category, CatRefusal>>;
+    createItem(input: NewItem): Promise<Result<Item, CatRefusal>>;
+  };
   /**
    * A password verified against a sign-in, and nothing more.
    *

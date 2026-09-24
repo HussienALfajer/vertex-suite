@@ -88,7 +88,7 @@ function Screen({
             <ChartProvider system={system}>
               <CalendarProvider system={system}>
                 <LedgerProvider system={system}>
-                  <Shell themeSwitch={themeSwitch} />
+                  <Shell themeSwitch={themeSwitch} system={system} />
                 </LedgerProvider>
               </CalendarProvider>
             </ChartProvider>
