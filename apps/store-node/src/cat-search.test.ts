@@ -56,7 +56,12 @@ if (process.env['CI'] && !pgUrl)
   throw new Error('CI must provide VERTEX_TEST_POSTGRES_URL for the CAT-15 measurement.');
 
 const SKUS = 30_000;
-const BUDGET_MS = 150;
+// `CAT-15`'s acceptance says under 150 ms; this gate is 200 ms by the owner's
+// decision, so it no longer proves that figure. Raised when U09.4's PostgreSQL
+// suites began running beside this one: on CI's four-core Windows runner a
+// SQLite median reached 150.37 ms under that load, against about 100 ms on main
+// alone. The measured figures are printed on every run: read them for 150 ms.
+const BUDGET_MS = 200;
 const RUNS = 7;
 const unwrap = <T, E>(result: Result<T, E>): T =>
   orThrow(result, (error) => new Error(JSON.stringify(error)));
@@ -295,7 +300,7 @@ describe('CAT-15 Arabic search at 30,000 SKUs', () => {
     for (const dispose of cleanup.splice(0).reverse()) await dispose();
   });
 
-  it('answers on the register’s SQLite within 150 ms, warm and after a restart', async () => {
+  it('answers on the register’s SQLite within 200 ms, warm and after a restart', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'vertex-cat-15-'));
     cleanup.push(() => rm(directory, { recursive: true, force: true }));
     const path = join(directory, 'register.sqlite');
@@ -332,7 +337,7 @@ describe('CAT-15 Arabic search at 30,000 SKUs', () => {
   }, 300_000);
 
   it.skipIf(!pgUrl)(
-    'answers over the store node’s HTTP within 150 ms, warm and after a restart',
+    'answers over the store node’s HTTP within 200 ms, warm and after a restart',
     async () => {
       const schema = `vertex_cat15_${newId<'schema'>().replaceAll('-', '')}`;
       const attachmentsDirectory = await mkdtemp(join(tmpdir(), 'vertex-cat-15-attachments-'));
