@@ -2,6 +2,7 @@ import { refuse, type Result } from '@vertex/kernel';
 import {
   defineModule,
   provideContract,
+  untilCommitted,
   type CommandContext,
   type ModuleContext,
   type ModuleDefinition,
@@ -17,9 +18,11 @@ import {
 import {
   categoriesIn,
   categoryIn,
+  changeItemStatus,
   createCategory,
   createItem,
   itemIn,
+  itemEligibility,
   itemsIn,
   moveCategory,
   reviseCategory,
@@ -53,6 +56,11 @@ const seeds: readonly PermissionDeclaration[] = [
     labelKey: `permission.${CAT_PERMISSIONS.item.create}`,
     seededFor: ['manager'],
   },
+  {
+    id: CAT_PERMISSIONS.item.edit,
+    labelKey: `permission.${CAT_PERMISSIONS.item.edit}`,
+    seededFor: ['manager'],
+  },
 ];
 
 export function catModule<Session extends RecordSession>(): ModuleDefinition<Session> {
@@ -80,6 +88,12 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
           items: (by) => read(by, CAT_PERMISSIONS.item.view, [], (s) => itemsIn(s, by.tenant)),
           item: (by, id) =>
             read(by, CAT_PERMISSIONS.item.view, null, (s) => itemIn(s, by.tenant, id)),
+          eligibility: async (by, id, trade) =>
+            (await context.authorise(by, CAT_PERMISSIONS.item.view))
+              ? context.transactor.run(by, (uow) =>
+                  Promise.resolve(itemEligibility(uow.session, by.tenant, id, trade)),
+                )
+              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
         };
       }),
       provideContract(
@@ -91,7 +105,9 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
             work: (s: Session) => Result<T, CatRefusal>,
           ): Promise<Result<T, CatRefusal>> =>
             (await context.authorise(by, right))
-              ? context.transactor.run(by, (uow) => Promise.resolve(work(uow.session)))
+              ? untilCommitted(() =>
+                  context.transactor.run(by, (uow) => Promise.resolve(work(uow.session))),
+                )
               : refuse('cat.not-permitted', { right });
           return {
             createCategory: (by, input) =>
@@ -108,6 +124,10 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
               ),
             createItem: (by, input) =>
               write(by, CAT_PERMISSIONS.item.create, (s) => createItem(s, by.tenant, input)),
+            changeItemStatus: (by, id, status, reason) =>
+              write(by, CAT_PERMISSIONS.item.edit, (s) =>
+                changeItemStatus(s, by, context.clock.now(), id, status, reason),
+              ),
           };
         },
       ),
