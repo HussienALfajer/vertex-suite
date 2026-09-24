@@ -818,6 +818,135 @@ describe.skipIf(!database)(
 );
 
 describe.skipIf(!database)(
+  'PRC-03 SEC-04 a display price approved by a manager confined to their branch, over PostgreSQL',
+  () => {
+    it('lets the manager of Damascus freeze a Damascus price, and refuses them Aleppo', async () => {
+      const shop = await fixture();
+      const owner = await shop.signIn();
+      const root = `/v1/tenants/${shop.tenant}`;
+      interface Answer {
+        value: { ok: boolean; value: Record<string, unknown>; error: { code: string } };
+      }
+      const post = async (method: string, args: unknown[], token = owner) => {
+        const response = await shop.request(`${root}/${method}`, token, { args }, 'POST');
+        expect(response.status, method).toBe(200);
+        return ((await response.json()) as Answer).value;
+      };
+      const made = async (method: string, args: unknown[]) => {
+        const answer = await post(method, args);
+        expect(answer.ok, `${method} ${JSON.stringify(answer)}`).toBe(true);
+        return answer.value;
+      };
+      const get = (method: string, args: unknown[], token: string) =>
+        shop.request(`${root}/${method}?args=${encodeURIComponent(JSON.stringify(args))}`, token);
+
+      const company = (await made('companies.register', [{ name: 'Shop' }]))['id'] as string;
+      const damascus = (await made('branches.open', [{ company, name: 'Damascus' }]))[
+        'id'
+      ] as string;
+      const aleppo = (await made('branches.open', [{ company, name: 'Aleppo' }]))['id'] as string;
+      for (const branch of [damascus, aleppo]) {
+        await made('rates.record', [
+          branch,
+          'SYP',
+          { form: 'units-per-functional', buy: '13300', sell: '12900' },
+        ]);
+      }
+      const lists = (
+        (await (await get('priceLists.list', [], owner)).json()) as { value: { id: string }[] }
+      ).value;
+      const category = await made('catalogue.createCategory', [
+        {
+          name: 'Goods',
+          parent: null,
+          defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+        },
+      ]);
+      const item = (await made('catalogue.createItem', [
+        { name: 'Box', category: category['id'] },
+      ])) as unknown as { id: string; units: { id: string }[] };
+      const subject = { list: lists[0]!.id, item: item.id, unit: item.units[0]!.id };
+      await made('usdPrices.set', [
+        {
+          subject,
+          amount: { amount: '1.25', currency: 'USD' },
+          expectedRevision: 0,
+          reason: 'Initial',
+          operation: newId<'price-operation'>(),
+        },
+      ]);
+
+      const user = (
+        await made('users.enrol', [
+          { handle: 'damascus', name: 'Damascus manager', password: 'till-morning-6' },
+        ])
+      )['id'] as string;
+      const roles = await shop.request(`${root}/users.roles.list`, owner);
+      const manager = (
+        (await roles.json()) as { value: { id: string; seeded: string }[] }
+      ).value.find((one) => one.seeded === 'manager')!;
+      await made('users.assignments.assign', [
+        {
+          user,
+          role: manager.id,
+          confinement: { kind: 'branches', branches: [damascus], locations: [] },
+        },
+      ]);
+      const them = await shop.signIn(shop.tenant, 'damascus', 'till-morning-6');
+
+      // At their own branch: the preview reads the item through CAT, which
+      // once answered this manager that the item did not exist.
+      const here = { branch: damascus, subject };
+      const previewed = await get('displayPrices.preview', [here], them);
+      expect(previewed.status).toBe(200);
+      const preview = ((await previewed.json()) as Answer).value;
+      expect(preview, JSON.stringify(preview)).toMatchObject({ ok: true });
+      const basis = preview.value as {
+        proposed: string;
+        basis: { usdRevision: number; rate: { revision: string } };
+      };
+      const approval = (branch: string) => ({
+        branch,
+        subject,
+        expectedRevision: 0,
+        proposed: basis.proposed,
+        usdRevision: basis.basis.usdRevision,
+        rateRevision: basis.basis.rate.revision,
+        reason: 'Shelf price',
+        operation: newId<'price-operation'>(),
+      });
+      expect(await post('displayPrices.approve', [approval(damascus)], them)).toMatchObject({
+        ok: true,
+        value: { amount: basis.proposed, revision: 1 },
+      });
+
+      // At another branch the confinement still confines, at the route's gate
+      // and at PRC's own, before anything about Aleppo is read.
+      expect((await get('displayPrices.preview', [{ branch: aleppo, subject }], them)).status).toBe(
+        403,
+      );
+      expect(
+        (
+          await shop.request(
+            `${root}/displayPrices.approve`,
+            them,
+            { args: [approval(aleppo)] },
+            'POST',
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          (await (
+            await get('displayPrices.get', [{ branch: aleppo, subject }], owner)
+          ).json()) as Answer
+        ).value,
+      ).toMatchObject({ value: { price: null, status: 'not-frozen' } });
+    });
+  },
+);
+
+describe.skipIf(!database)(
   'PRC-02 PRC-03 PRC-11 frozen SYP display prices over authenticated PostgreSQL transport',
   () => {
     it('freezes a reviewed SYP price that neither a rate correction nor a restart re-derives, atomically with its audit', async () => {
