@@ -15,6 +15,7 @@ import {
 import { messageForRefusal } from '../catalogue.js';
 import type { SystemOfRecord } from '../system.js';
 import { StatusBadge } from './structure.js';
+import { UsdPricesScreen } from './UsdPrices.js';
 
 /** PRC-01: small tenant-owned list administration, with every write read back through the port. */
 export function PriceListsScreen({ system }: { readonly system: SystemOfRecord }): ReactNode {
@@ -183,6 +184,7 @@ export function PriceListsScreen({ system }: { readonly system: SystemOfRecord }
           emptyMessage={t.format('priceLists.empty')}
         />
       </Panel>
+      <UsdPricesScreen system={system} lists={lists} />
       {editing === null ? null : (
         <Panel title={t.format('priceLists.rename')}>
           <form

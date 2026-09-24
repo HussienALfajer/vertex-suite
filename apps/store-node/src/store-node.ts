@@ -29,7 +29,13 @@ import {
   fxModule,
 } from '@vertex/fx';
 import { Dec, isDecimalString, isId, isOk, orThrow, systemClock } from '@vertex/kernel';
-import { prcModule, PriceLists, PriceListAdministration, PRC_PERMISSIONS } from '@vertex/prc';
+import {
+  prcModule,
+  PriceLists,
+  PriceListAdministration,
+  UsdPrices,
+  PRC_PERMISSIONS,
+} from '@vertex/prc';
 import {
   commandContext,
   composeEdition,
@@ -312,6 +318,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     const catAdmin = registry.require(CatalogueAdministration);
     const priceLists = registry.require(PriceLists);
     const priceAdmin = registry.require(PriceListAdministration);
+    const usdPrices = registry.require(UsdPrices);
     const sessions = new Map<string, Session>();
     const servers = new Set<Server>();
 
@@ -467,6 +474,18 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     );
     securedWrite('priceLists.deactivate', PRC_PERMISSIONS.list.edit, (by, args) =>
       priceAdmin.deactivate(by, args[0] as Parameters<typeof priceAdmin.deactivate>[1]),
+    );
+    read('usdPrices.get', PRC_PERMISSIONS.price.view, (by, args) =>
+      usdPrices.get(by, args[0] as Parameters<typeof usdPrices.get>[1]),
+    );
+    read('usdPrices.forItem', PRC_PERMISSIONS.price.view, (by, args) =>
+      usdPrices.forItem(by, args[0] as Parameters<typeof usdPrices.forItem>[1]),
+    );
+    read('usdPrices.history', PRC_PERMISSIONS.price.history, (by, args) =>
+      usdPrices.history(by, args[0] as Parameters<typeof usdPrices.history>[1]),
+    );
+    securedWrite('usdPrices.set', PRC_PERMISSIONS.price.edit, (by, args) =>
+      usdPrices.set(by, args[0] as Parameters<typeof usdPrices.set>[1]),
     );
 
     read('companies.list', SYS_PERMISSIONS.company.view, (by, args) =>

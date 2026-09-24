@@ -1,5 +1,14 @@
 import type { Result } from '@vertex/kernel';
-import type { PriceList, PriceListId, PriceSubject, PrcRefusal } from '@vertex/prc/contract';
+import type {
+  PriceList,
+  PriceListId,
+  PriceSubject,
+  PrcRefusal,
+  UsdPrice,
+  UsdPriceCommand,
+  PriceHistoryFilter,
+  PriceHistoryPage,
+} from '@vertex/prc/contract';
 import type {
   BarcodeResolution,
   Category,
@@ -534,6 +543,12 @@ export interface StatementsOfRecord {
 }
 
 export interface SystemOfRecord {
+  readonly usdPrices: {
+    get(subject: PriceSubject): Promise<Result<UsdPrice | null, PrcRefusal>>;
+    forItem(item: ItemId): Promise<Result<readonly UsdPrice[], PrcRefusal>>;
+    history(filter: PriceHistoryFilter): Promise<Result<PriceHistoryPage, PrcRefusal>>;
+    set(command: UsdPriceCommand): Promise<Result<UsdPrice, PrcRefusal>>;
+  };
   readonly priceLists: {
     list(): Promise<readonly PriceList[]>;
     get(id: PriceListId): Promise<PriceList | null>;

@@ -27,6 +27,7 @@
   "dependencies": {
     "@vertex/cat": "workspace:*",
     "@vertex/contracts": "workspace:*",
+    "@vertex/fx": "workspace:*",
     "@vertex/kernel": "workspace:*",
     "@vertex/platform": "workspace:*"
   },

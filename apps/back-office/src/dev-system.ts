@@ -17,7 +17,7 @@ import {
 } from '@vertex/platform';
 import { OWNER, SEEDED_ROLES, type PermissionId } from '@vertex/contracts';
 import { catModule, Catalogue, CatalogueAdministration } from '@vertex/cat';
-import { prcModule, PriceLists, PriceListAdministration } from '@vertex/prc';
+import { prcModule, PriceLists, PriceListAdministration, UsdPrices } from '@vertex/prc';
 import {
   ChartAdministration,
   ChartOfAccounts,
@@ -321,6 +321,7 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const catAdmin = registry.require(CatalogueAdministration);
   const priceRead = registry.require(PriceLists);
   const priceAdmin = registry.require(PriceListAdministration);
+  const usdPrices = registry.require(UsdPrices);
 
   let priceSeed: Promise<void> | null = null;
   function ensurePriceLists(): Promise<void> {
@@ -1297,6 +1298,12 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
         await ensurePriceLists();
         return priceAdmin.deactivate(by(), id);
       },
+    },
+    usdPrices: {
+      get: (subject) => usdPrices.get(by(), subject),
+      forItem: (item) => usdPrices.forItem(by(), item),
+      history: (filter) => usdPrices.history(by(), filter),
+      set: (command) => usdPrices.set(by(), command),
     },
     users: usersPort,
     currencies,
