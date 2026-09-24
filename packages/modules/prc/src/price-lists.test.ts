@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Catalogue, type Item, type ItemId } from '@vertex/cat/contract';
+import { Currencies } from '@vertex/fx/contract';
 import type { TenantId } from '@vertex/contracts';
 import { instant, newId, orThrow, type Result } from '@vertex/kernel';
 import {
@@ -17,7 +18,13 @@ import {
   type CommandContext,
   type MemorySession,
 } from '@vertex/platform';
-import { prcModule, PriceLists, PriceListAdministration, PRC_PERMISSIONS } from './index.js';
+import {
+  prcModule,
+  PriceLists,
+  PriceListAdministration,
+  PRC_PERMISSIONS,
+  UsdPrices,
+} from './index.js';
 
 const value = <T, E>(result: Result<T, E>): T =>
   orThrow(result, (error) => new Error(JSON.stringify(error)));
@@ -25,7 +32,10 @@ const value = <T, E>(result: Result<T, E>): T =>
 function installed() {
   const tenant = newId<'tenant'>();
   const otherTenant = newId<'tenant'>();
-  const permitted = new Set<string>(Object.values(PRC_PERMISSIONS.list));
+  const permitted = new Set<string>([
+    ...Object.values(PRC_PERMISSIONS.list),
+    ...Object.values(PRC_PERMISSIONS.price),
+  ]);
   permitted.add('cat.item.view');
   const items = new Map<string, Item>();
   const Authority = contractKey<Authoriser>('sec.authorisation');
@@ -40,7 +50,28 @@ function installed() {
         })),
       ],
     }),
-    defineModule<MemorySession>({ code: 'FX', labelKey: 'module.fx' }),
+    defineModule<MemorySession>({
+      code: 'FX',
+      labelKey: 'module.fx',
+      provides: [
+        provideContract(Currencies, (): Currencies => {
+          const usd = (by: CommandContext) => ({
+            tenant: by.tenant,
+            code: 'USD',
+            symbol: '$',
+            decimals: 2,
+            roundingIncrement: '0.01',
+            roundingMode: 'half-up' as const,
+            enabled: true,
+          });
+          return {
+            currency: (by, code) => Promise.resolve(code === 'USD' ? usd(by) : null),
+            currencies: (by) => Promise.resolve([usd(by)]),
+            functional: (by) => Promise.resolve(usd(by)),
+          };
+        }),
+      ],
+    }),
     defineModule<MemorySession>({
       code: 'CAT',
       labelKey: 'module.cat',
@@ -84,6 +115,7 @@ function installed() {
   });
   return {
     read: registry.require(PriceLists),
+    prices: registry.require(UsdPrices),
     admin: registry.require(PriceListAdministration),
     registerItem: (forTenant: TenantId): Item => {
       const id = newId<'item'>();
@@ -110,6 +142,23 @@ function installed() {
       };
       items.set(`${forTenant}/${id}`, item);
       return item;
+    },
+    registerCarton: (item: Item): Item => {
+      const carton = newId<'item-unit'>();
+      const revised = {
+        ...item,
+        units: [
+          ...item.units,
+          {
+            id: carton,
+            item: item.id,
+            unit: { code: 'carton', kind: 'count' as const, decimals: 0 },
+            basePerUnit: '12',
+          },
+        ],
+      };
+      items.set(`${item.tenant}/${item.id}`, revised);
+      return revised;
     },
     primeExistingTenant: () =>
       transactor.run(systemContext(tenant), (uow) => {
@@ -211,6 +260,202 @@ describe('PRC-01 price lists and price subject foundation', () => {
     ).toMatchObject({ ok: false });
     h.withhold(PRC_PERMISSIONS.list.create);
     expect(await h.admin.create(h.by, 'ممنوع')).toMatchObject({
+      ok: false,
+      error: { code: 'prc.not-permitted' },
+    });
+  });
+});
+
+describe('PRC-01 PRC-02 PRC-11 USD unit pricing and audit', () => {
+  it('keeps piece and carton independent in three seeded and a fourth list; absent prices stay null', async () => {
+    const h = installed();
+    const lists = [
+      ...value(await h.admin.seed(h.system)),
+      value(await h.admin.create(h.by, 'شركاء')),
+    ];
+    const item = h.registerCarton(h.registerItem(h.by.tenant));
+    for (const [index, list] of lists.entries()) {
+      for (const [unitIndex, unit] of item.units.entries()) {
+        const subject = { list: list.id, item: item.id, unit: unit.id };
+        expect(value(await h.prices.get(h.by, subject))).toBeNull();
+        const result = value(
+          await h.prices.set(h.by, {
+            subject,
+            amount: { amount: `${String(index + 1)}${String(unitIndex)}.25`, currency: 'USD' },
+            expectedRevision: 0,
+            reason: 'Initial',
+            operation: newId<'price-operation'>(),
+          }),
+        );
+        expect(result.revision).toBe(1);
+      }
+    }
+    expect(value(await h.prices.forItem(h.by, item.id))).toHaveLength(8);
+    expect(
+      value(
+        await h.prices.get(h.by, { list: lists[0]!.id, item: item.id, unit: item.units[0]!.id }),
+      )?.amount,
+    ).toBe('10.25');
+    expect(
+      value(
+        await h.prices.get(h.by, { list: lists[0]!.id, item: item.id, unit: item.units[1]!.id }),
+      )?.amount,
+    ).toBe('11.25');
+  });
+
+  it('records immutable ordered revisions, refuses stale updates and deduplicates retries', async () => {
+    const h = installed();
+    const list = value(await h.admin.seed(h.system))[0]!;
+    const item = h.registerItem(h.by.tenant);
+    const subject = { list: list.id, item: item.id, unit: item.units[0]!.id };
+    const command = {
+      subject,
+      amount: { amount: '1.25', currency: 'USD' as const },
+      expectedRevision: 0,
+      reason: 'Initial',
+      operation: newId<'price-operation'>(),
+    };
+    expect(value(await h.prices.set(h.by, command)).revision).toBe(1);
+    expect(value(await h.prices.set(h.by, command)).revision).toBe(1);
+    expect(await h.prices.set(h.by, { ...command, reason: 'Changed' })).toMatchObject({
+      ok: false,
+      error: { code: 'prc.operation-reused' },
+    });
+    const second = {
+      ...command,
+      amount: { amount: '2.50', currency: 'USD' as const },
+      expectedRevision: 1,
+      reason: 'Revision',
+      operation: newId<'price-operation'>(),
+    };
+    const third = {
+      ...second,
+      amount: { amount: '2.25', currency: 'USD' as const },
+      reason: 'Correction',
+      operation: newId<'price-operation'>(),
+    };
+    const concurrent = await Promise.all([h.prices.set(h.by, second), h.prices.set(h.by, third)]);
+    expect(concurrent.filter((one) => one.ok)).toHaveLength(1);
+    expect(concurrent.filter((one) => !one.ok)).toHaveLength(1);
+    expect(concurrent.find((one) => !one.ok)).toMatchObject({
+      error: { code: 'prc.revision-stale' },
+    });
+    const winner = concurrent.find((one) => one.ok)!;
+    value(
+      await h.prices.set(h.by, {
+        ...third,
+        amount: { amount: '3.00', currency: 'USD' },
+        expectedRevision: 2,
+        operation: newId<'price-operation'>(),
+      }),
+    );
+    const history = value(await h.prices.history(h.by, { item: item.id, limit: 2 }));
+    expect(history.entries).toHaveLength(2);
+    expect(history.entries.map((entry) => entry.revision)).toEqual([3, 2]);
+    expect(history.entries[0]).toMatchObject({
+      actor: h.by.actor,
+      at: instant(1_780_000_000_000),
+      oldAmount: winner.value.amount,
+      newAmount: '3',
+      reason: 'Correction',
+      sequence: 3,
+    });
+    expect(history.next).not.toBeNull();
+    expect(
+      value(
+        await h.prices.history(h.by, {
+          list: list.id,
+          unit: subject.unit,
+          from: instant(1_780_000_000_000),
+          to: instant(1_780_000_000_000),
+          limit: 1,
+        }),
+      ).entries,
+    ).toHaveLength(1);
+    expect(
+      value(await h.prices.history(h.by, { item: item.id, from: instant(1_780_000_000_001) }))
+        .entries,
+    ).toHaveLength(0);
+    expect(await h.prices.history(h.by, { limit: 101 })).toMatchObject({
+      ok: false,
+      error: { code: 'prc.history-query-invalid' },
+    });
+    expect(
+      value(await h.prices.history(h.by, { item: item.id, before: history.next!, limit: 2 }))
+        .entries,
+    ).toMatchObject([
+      { revision: 1, oldAmount: null, newAmount: '1.25', reason: 'Initial', sequence: 1 },
+    ]);
+    expect(value(await h.prices.get(h.by, subject))?.revision).toBe(3);
+    expect(winner.value.revision).toBe(2);
+  });
+
+  it('refuses invalid values and subjects without partial state, and isolates tenants and rights', async () => {
+    const h = installed();
+    const list = value(await h.admin.seed(h.system))[0]!;
+    const item = h.registerItem(h.by.tenant);
+    const other = h.registerItem(h.by.tenant);
+    const subject = { list: list.id, item: item.id, unit: item.units[0]!.id };
+    const base = {
+      subject,
+      amount: { amount: '1.00', currency: 'USD' as const },
+      expectedRevision: 0,
+      reason: 'Initial',
+      operation: newId<'price-operation'>(),
+    };
+    for (const amount of ['0', '-1', '1.234', 'NaN'])
+      expect(
+        await h.prices.set(h.by, {
+          ...base,
+          amount: { amount, currency: 'USD' },
+          operation: newId<'price-operation'>(),
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'prc.amount-invalid' } });
+    expect(
+      await h.prices.set(h.by, { ...base, amount: { amount: '1.00', currency: 'EUR' as 'USD' } }),
+    ).toMatchObject({ ok: false, error: { code: 'prc.amount-invalid' } });
+    expect(await h.prices.set(h.by, { ...base, reason: '' })).toMatchObject({
+      ok: false,
+      error: { code: 'prc.reason-required' },
+    });
+    expect(
+      await h.prices.set(h.by, { ...base, subject: { ...subject, unit: other.units[0]!.id } }),
+    ).toMatchObject({ ok: false, error: { code: 'prc.unit-not-on-item' } });
+    expect(value(await h.prices.get(h.by, subject))).toBeNull();
+    expect(value(await h.prices.history(h.by, { item: item.id })).entries).toHaveLength(0);
+    value(await h.prices.set(h.by, base));
+    expect(await h.prices.get(h.other, subject)).toMatchObject({
+      ok: false,
+      error: { code: 'prc.list-not-found' },
+    });
+    expect(value(await h.prices.history(h.other, { item: item.id })).entries).toHaveLength(0);
+    expect(
+      await h.prices.set(h.other, { ...base, operation: newId<'price-operation'>() }),
+    ).toMatchObject({ ok: false, error: { code: 'prc.list-not-found' } });
+    value(await h.admin.deactivate(h.by, list.id));
+    expect(value(await h.prices.get(h.by, subject))?.amount).toBe('1');
+    expect(
+      await h.prices.set(h.by, {
+        ...base,
+        expectedRevision: 1,
+        operation: newId<'price-operation'>(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'prc.list-inactive' } });
+    h.withhold(PRC_PERMISSIONS.price.edit);
+    expect(
+      await h.prices.set(h.by, {
+        ...base,
+        expectedRevision: 1,
+        operation: newId<'price-operation'>(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'prc.not-permitted' } });
+    h.withhold(PRC_PERMISSIONS.price.view);
+    expect(await h.prices.get(h.by, subject)).toMatchObject({
+      ok: false,
+      error: { code: 'prc.not-permitted' },
+    });
+    h.withhold(PRC_PERMISSIONS.price.history);
+    expect(await h.prices.history(h.by, { item: item.id })).toMatchObject({
       ok: false,
       error: { code: 'prc.not-permitted' },
     });

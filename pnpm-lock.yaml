@@ -540,6 +540,9 @@ importers:
       '@vertex/contracts':
         specifier: workspace:*
         version: link:../../contracts
+      '@vertex/fx':
+        specifier: workspace:*
+        version: link:../fx
       '@vertex/kernel':
         specifier: workspace:*
         version: link:../../kernel

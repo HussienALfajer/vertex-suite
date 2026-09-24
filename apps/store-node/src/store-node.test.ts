@@ -579,6 +579,148 @@ describe.skipIf(!database)('PRC-01 price lists over authenticated PostgreSQL tra
   });
 });
 
+describe.skipIf(!database)(
+  'PRC-01 PRC-02 PRC-11 USD prices over authenticated PostgreSQL transport',
+  () => {
+    it('commits prices and audit together, survives restart, and enforces tenant and HTTP rights', async () => {
+      const shop = await fixture();
+      const owner = await shop.signIn();
+      const root = `/v1/tenants/${shop.tenant}`;
+      const post = async (method: string, args: unknown[]) => {
+        const response = await shop.request(`${root}/${method}`, owner, { args }, 'POST');
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          value: { ok: boolean; value: Record<string, unknown>; error: { code: string } };
+        };
+      };
+      const listsResponse = await shop.request(`${root}/priceLists.list`, owner);
+      const lists = ((await listsResponse.json()) as { value: { id: string }[] }).value;
+      const category = (
+        await post('catalogue.createCategory', [
+          {
+            name: 'Goods',
+            parent: null,
+            defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+          },
+        ])
+      ).value.value;
+      const item = (await post('catalogue.createItem', [{ name: 'Box', category: category['id'] }]))
+        .value.value as { id: string; units: { id: string }[] };
+      const subject = { list: lists[0]!.id, item: item.id, unit: item.units[0]!.id };
+      const command = {
+        subject,
+        amount: { amount: '1.25', currency: 'USD' },
+        expectedRevision: 0,
+        reason: 'Initial',
+        operation: newId<'price-operation'>(),
+      };
+      expect((await post('usdPrices.set', [command])).value.value).toMatchObject({
+        revision: 1,
+        amount: '1.25',
+      });
+      expect((await post('usdPrices.set', [command])).value.value).toMatchObject({ revision: 1 });
+      expect(
+        (await post('usdPrices.set', [{ ...command, amount: { amount: '2.00', currency: 'USD' } }]))
+          .value.error.code,
+      ).toBe('prc.operation-reused');
+      expect(
+        (
+          await post('usdPrices.set', [
+            {
+              ...command,
+              amount: { amount: '0', currency: 'USD' },
+              operation: newId<'price-operation'>(),
+            },
+          ])
+        ).value.error.code,
+      ).toBe('prc.amount-invalid');
+      const get = async (token: string, method: string, args: unknown[], tenant = shop.tenant) =>
+        shop.request(
+          `/v1/tenants/${tenant}/${method}?args=${encodeURIComponent(JSON.stringify(args))}`,
+          token,
+        );
+      expect(await (await get(owner, 'usdPrices.get', [subject])).json()).toMatchObject({
+        value: { value: { amount: '1.25', revision: 1 } },
+      });
+      expect(
+        await (await get(owner, 'usdPrices.history', [{ item: item.id }])).json(),
+      ).toMatchObject({ value: { value: { entries: [{ newAmount: '1.25', oldAmount: null }] } } });
+      const competing = await Promise.all([
+        post('usdPrices.set', [
+          {
+            ...command,
+            amount: { amount: '2.00', currency: 'USD' },
+            expectedRevision: 1,
+            reason: 'First revision',
+            operation: newId<'price-operation'>(),
+          },
+        ]),
+        post('usdPrices.set', [
+          {
+            ...command,
+            amount: { amount: '3.00', currency: 'USD' },
+            expectedRevision: 1,
+            reason: 'Second revision',
+            operation: newId<'price-operation'>(),
+          },
+        ]),
+      ]);
+      expect(competing.filter((one) => one.value.ok)).toHaveLength(1);
+      expect(
+        competing.filter((one) => !one.value.ok && one.value.error.code === 'prc.revision-stale'),
+      ).toHaveLength(1);
+      expect(
+        await (await get(owner, 'usdPrices.history', [{ item: item.id }])).json(),
+      ).toMatchObject({
+        value: { value: { entries: [{ revision: 2 }, { revision: 1 }] } },
+      });
+      const other = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+      expect((await get(other, 'usdPrices.get', [subject], shop.otherTenant)).status).toBe(200);
+      expect(
+        await (await get(other, 'usdPrices.get', [subject], shop.otherTenant)).json(),
+      ).toMatchObject({ value: { error: { code: 'prc.list-not-found' } } });
+      expect(
+        (await shop.request(`${root}/usdPrices.set`, undefined, { args: [command] }, 'POST'))
+          .status,
+      ).toBe(401);
+      const enrolled = await post('users.enrol', [
+        { handle: 'price-cashier', name: 'Cashier', password: 'till-morning-3' },
+      ]);
+      const rolesResponse = await shop.request(`${root}/users.roles.list`, owner);
+      const cashier = (
+        (await rolesResponse.json()) as { value: { id: string; seeded: string }[] }
+      ).value.find((one) => one.seeded === 'cashier');
+      if (!cashier) throw new Error('Cashier role missing.');
+      await post('users.assignments.assign', [
+        { user: enrolled.value.value['id'], role: cashier.id, confinement: { kind: 'tenant' } },
+      ]);
+      const cashierToken = await shop.signIn(shop.tenant, 'price-cashier', 'till-morning-3');
+      expect((await get(cashierToken, 'usdPrices.get', [subject])).status).toBe(403);
+      expect((await get(cashierToken, 'usdPrices.history', [{ item: item.id }])).status).toBe(403);
+      expect(
+        (await shop.request(`${root}/usdPrices.set`, cashierToken, { args: [command] }, 'POST'))
+          .status,
+      ).toBe(403);
+      await shop.close();
+      const restarted = await startProcess(shop.options, shop.tenant);
+      const login = await fetch(`${restarted.base}/v1/sign-in`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenant: shop.tenant, handle: 'owner', password: 'till-morning-1' }),
+      });
+      const token = ((await login.json()) as { token: string }).token;
+      const persisted = await fetch(
+        `${restarted.base}${root}/usdPrices.history?args=${encodeURIComponent(JSON.stringify([{ item: item.id }]))}`,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+      expect(await persisted.json()).toMatchObject({
+        value: { value: { entries: [{ revision: 2 }, { revision: 1, newAmount: '1.25' }] } },
+      });
+      await restarted.stop();
+    });
+  },
+);
+
 async function startProcess(
   options: { connectionString: string; schema: string; attachmentsDirectory: string },
   tenant: string,

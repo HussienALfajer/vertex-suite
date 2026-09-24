@@ -1,6 +1,6 @@
 import { permissionId, type PermissionId, type TenantId } from '@vertex/contracts';
 import type { ItemId, ItemUnitId } from '@vertex/cat/contract';
-import type { Id, Refusal, Result } from '@vertex/kernel';
+import type { Id, Instant, Refusal, Result } from '@vertex/kernel';
 import { contractKey, type CommandContext } from '@vertex/platform';
 
 export type PriceListId = Id<'price-list'>;
@@ -31,7 +31,70 @@ export type PrcRefusal = Refusal<
   | 'prc.item-not-found'
   | 'prc.unit-not-on-item'
   | 'prc.subject-invalid'
+  | 'prc.amount-invalid'
+  | 'prc.reason-required'
+  | 'prc.revision-stale'
+  | 'prc.operation-invalid'
+  | 'prc.operation-reused'
+  | 'prc.history-query-invalid'
 >;
+
+export interface UsdPrice {
+  readonly tenant: TenantId;
+  readonly subject: PriceSubject;
+  /** Canonical exact decimal, settled to the USD cent. */
+  readonly amount: string;
+  readonly currency: 'USD';
+  readonly revision: number;
+}
+
+export interface UsdPriceChange {
+  readonly tenant: TenantId;
+  readonly subject: PriceSubject;
+  readonly operation: Id<'price-operation'>;
+  readonly actor: CommandContext['actor'];
+  readonly at: Instant;
+  readonly oldAmount: string | null;
+  readonly newAmount: string;
+  readonly reason: string;
+  readonly revision: number;
+  readonly sequence: number;
+}
+
+export interface UsdPriceCommand {
+  readonly subject: PriceSubject;
+  readonly amount: { readonly amount: string; readonly currency: 'USD' };
+  readonly expectedRevision: number;
+  readonly reason: string;
+  readonly operation: Id<'price-operation'>;
+}
+
+export interface PriceHistoryFilter {
+  readonly item?: ItemId;
+  readonly list?: PriceListId;
+  readonly unit?: ItemUnitId;
+  readonly from?: Instant;
+  readonly to?: Instant;
+  readonly before?: number;
+  readonly limit?: number;
+}
+
+export interface PriceHistoryPage {
+  readonly entries: readonly UsdPriceChange[];
+  readonly next: number | null;
+}
+
+export interface UsdPrices {
+  /** Null means explicitly unpriced; no unit or list fallback is applied. */
+  get(by: CommandContext, subject: PriceSubject): Promise<Result<UsdPrice | null, PrcRefusal>>;
+  /** Bounded by the selected item's units and the tenant's lists. */
+  forItem(by: CommandContext, item: ItemId): Promise<Result<readonly UsdPrice[], PrcRefusal>>;
+  history(
+    by: CommandContext,
+    filter: PriceHistoryFilter,
+  ): Promise<Result<PriceHistoryPage, PrcRefusal>>;
+  set(by: CommandContext, command: UsdPriceCommand): Promise<Result<UsdPrice, PrcRefusal>>;
+}
 
 export interface PriceLists {
   /** Includes inactive lists so historical identities remain readable. */
@@ -52,11 +115,17 @@ export const PriceLists = contractKey<PriceLists>('prc.price-lists');
 export const PriceListAdministration = contractKey<PriceListAdministration>(
   'prc.price-list-administration',
 );
+export const UsdPrices = contractKey<UsdPrices>('prc.usd-prices');
 
 export const PRC_PERMISSIONS = Object.freeze({
   list: Object.freeze({
     view: permissionId('prc', 'price-list', 'view'),
     create: permissionId('prc', 'price-list', 'create'),
     edit: permissionId('prc', 'price-list', 'edit'),
+  }),
+  price: Object.freeze({
+    view: permissionId('prc', 'price', 'view'),
+    edit: permissionId('prc', 'price', 'edit'),
+    history: permissionId('prc', 'price-history', 'view'),
   }),
 }) satisfies Record<string, Record<string, PermissionId>>;
