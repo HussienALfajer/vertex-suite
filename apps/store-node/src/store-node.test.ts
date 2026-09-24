@@ -176,6 +176,90 @@ describe.skipIf(!database)('CAT-02 CAT-12 authenticated catalogue transport', ()
         )
       ).status,
     ).toBe(403);
+    expect(
+      (
+        await shop.request(
+          `${root}.addUnit`,
+          cashierToken,
+          {
+            args: [
+              item.id,
+              { unit: { code: 'bag', kind: 'count', decimals: 0 }, basePerUnit: '2.5' },
+            ],
+          },
+          'POST',
+        )
+      ).status,
+    ).toBe(403);
+  });
+});
+
+describe.skipIf(!database)('CAT-08 authenticated item-unit transport', () => {
+  it('normalises to the base unit and guards signed, tenant-scoped unit routes', async () => {
+    const shop = await fixture();
+    const token = await shop.signIn();
+    const root = `/v1/tenants/${shop.tenant}/catalogue`;
+    const categoryResponse = await shop.request(
+      `${root}.createCategory`,
+      token,
+      {
+        args: [
+          {
+            name: 'Goods',
+            parent: null,
+            defaultBaseUnit: { code: 'kg', kind: 'weight', decimals: 3 },
+          },
+        ],
+      },
+      'POST',
+    );
+    const category = ((await categoryResponse.json()) as { value: { value: { id: string } } }).value
+      .value;
+    const itemResponse = await shop.request(
+      `${root}.createItem`,
+      token,
+      {
+        args: [{ name: 'Rice', category: category.id, kind: 'weighed' }],
+      },
+      'POST',
+    );
+    const item = ((await itemResponse.json()) as { value: { value: { id: string } } }).value.value;
+    const added = await shop.request(
+      `${root}.addUnit`,
+      token,
+      {
+        args: [item.id, { unit: { code: 'bag', kind: 'count', decimals: 0 }, basePerUnit: '2.5' }],
+      },
+      'POST',
+    );
+    expect(added.status).toBe(200);
+    const bag = ((await added.json()) as { value: { value: { id: string } } }).value.value;
+    const query = (route: string, args: unknown[]) =>
+      `${root}.${route}?args=${encodeURIComponent(JSON.stringify(args))}`;
+    const units = await shop.request(query('units', [item.id]), token);
+    const base = ((await units.json()) as { value: { value: { id: string }[] } }).value.value[0]!;
+    const conversion = await shop.request(query('convert', [item.id, '2', bag.id, base.id]), token);
+    expect(await conversion.json()).toMatchObject({
+      value: { value: { amount: '5', unit: { id: base.id } } },
+    });
+    expect((await shop.request(query('units', [item.id]))).status).toBe(401);
+    expect((await shop.request(query('convert', [item.id, '2', bag.id, base.id]))).status).toBe(
+      401,
+    );
+    const foreign = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+    expect((await shop.request(query('units', [item.id]), foreign)).status).toBe(403);
+    const otherRoot = `/v1/tenants/${shop.otherTenant}/catalogue`;
+    const foreignWrite = await shop.request(
+      `${otherRoot}.addUnit`,
+      foreign,
+      {
+        args: [item.id, { unit: { code: 'crate', kind: 'count', decimals: 0 }, basePerUnit: '5' }],
+      },
+      'POST',
+    );
+    expect(await foreignWrite.json()).toMatchObject({
+      value: { error: { code: 'cat.item-not-found' } },
+    });
   });
 });
 

@@ -74,6 +74,129 @@ function installed() {
 const piece = { code: 'pc', kind: 'count' as const, decimals: 0 };
 const kilogram = { code: 'kg', kind: 'weight' as const, decimals: 3 };
 
+describe('CAT-08 item units and exact stock conversion', () => {
+  it('keeps a legacy item base-only, then converts carton, pack and piece exactly in both directions', async () => {
+    const h = installed();
+    const category = unwrap(
+      await h.admin.createCategory(h.by, { name: 'Goods', parent: null, defaultBaseUnit: piece }),
+    );
+    const item = unwrap(await h.admin.createItem(h.by, { name: 'Pencils', category: category.id }));
+    const base = unwrap(await h.read.units(h.by, item.id));
+    expect(base).toHaveLength(1);
+    expect(base[0]).toMatchObject({ unit: piece, basePerUnit: '1' });
+    const pack = unwrap(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'pack', kind: 'count', decimals: 0 },
+        basePerUnit: '6',
+      }),
+    );
+    const carton = unwrap(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'carton', kind: 'count', decimals: 0 },
+        basePerUnit: '24',
+      }),
+    );
+    expect(unwrap(await h.read.convert(h.by, item.id, '2', carton.id, base[0]!.id))).toMatchObject({
+      amount: '48',
+      unit: base[0],
+    });
+    expect(unwrap(await h.read.stockQuantity(h.by, item.id, '2', carton.id))).toMatchObject({
+      amount: '48',
+      unit: base[0],
+    });
+    expect(unwrap(await h.read.convert(h.by, item.id, '4', carton.id, pack.id)).amount).toBe('16');
+    expect(unwrap(await h.read.convert(h.by, item.id, '16', pack.id, carton.id)).amount).toBe('4');
+    expect(await h.read.convert(h.by, item.id, '1', pack.id, carton.id)).toMatchObject({
+      ok: false,
+      error: { code: 'cat.conversion-inexact' },
+    });
+    expect(
+      await h.admin.addUnit(h.by, item.id, { unit: pack.unit, basePerUnit: '7' }),
+    ).toMatchObject({ ok: false, error: { code: 'cat.unit-duplicate' } });
+    expect(unwrap(await h.read.units(h.by, item.id))).toHaveLength(3);
+  });
+
+  it('permits an explicit bag to kg relation, enforces precision and rejects invalid or foreign units', async () => {
+    const h = installed();
+    const category = unwrap(
+      await h.admin.createCategory(h.by, {
+        name: 'Produce',
+        parent: null,
+        defaultBaseUnit: kilogram,
+      }),
+    );
+    const item = unwrap(
+      await h.admin.createItem(h.by, { name: 'Rice', category: category.id, kind: 'weighed' }),
+    );
+    const base = unwrap(await h.read.units(h.by, item.id))[0]!;
+    const bag = unwrap(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'bag', kind: 'count', decimals: 0 },
+        basePerUnit: '2.5',
+      }),
+    );
+    expect(unwrap(await h.read.convert(h.by, item.id, '3', bag.id, base.id)).amount).toBe('7.5');
+    expect(unwrap(await h.read.convert(h.by, item.id, '7.5', base.id, bag.id)).amount).toBe('3');
+    const sachet = unwrap(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'sachet', kind: 'count', decimals: 0 },
+        basePerUnit: '0.125',
+      }),
+    );
+    expect(unwrap(await h.read.stockQuantity(h.by, item.id, '1', sachet.id)).amount).toBe('0.125');
+    expect(unwrap(await h.read.convert(h.by, item.id, '0.125', base.id, sachet.id)).amount).toBe(
+      '1',
+    );
+    expect(await h.read.convert(h.by, item.id, '1', base.id, bag.id)).toMatchObject({
+      ok: false,
+      error: { code: 'cat.conversion-inexact' },
+    });
+    expect(await h.read.convert(h.by, item.id, '0.0001', base.id, base.id)).toMatchObject({
+      ok: false,
+      error: { code: 'cat.quantity-invalid' },
+    });
+    for (const factor of ['0', '-1', 'abc', '1e3']) {
+      expect(
+        (
+          await h.admin.addUnit(h.by, item.id, {
+            unit: { code: 'bad', kind: 'count', decimals: 0 },
+            basePerUnit: factor,
+          })
+        ).ok,
+      ).toBe(false);
+    }
+    expect(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'tiny', kind: 'count', decimals: 0 },
+        basePerUnit: '0.0001',
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'cat.factor-invalid' } });
+    expect(await h.read.units(h.other, item.id)).toMatchObject({
+      ok: false,
+      error: { code: 'cat.item-not-found' },
+    });
+    expect(await h.read.convert(h.other, item.id, '1', bag.id, base.id)).toMatchObject({
+      ok: false,
+      error: { code: 'cat.item-not-found' },
+    });
+    const another = unwrap(
+      await h.admin.createItem(h.by, { name: 'Other', category: category.id }),
+    );
+    expect(await h.read.convert(h.by, another.id, '1', bag.id, base.id)).toMatchObject({
+      ok: false,
+      error: { code: 'cat.unit-not-found' },
+    });
+    expect(unwrap(await h.read.units(h.by, item.id))).toHaveLength(3);
+    h.deny();
+    expect(
+      await h.admin.addUnit(h.by, item.id, {
+        unit: { code: 'crate', kind: 'count', decimals: 0 },
+        basePerUnit: '5',
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'cat.not-permitted' } });
+  });
+});
+
 describe('CAT-01 category tree and first item', () => {
   it('inherits the nearest base unit at creation, permits an item override, and keeps both snapshots after a category edit', async () => {
     const h = installed();

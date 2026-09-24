@@ -19,5 +19,9 @@ export function UnitLabel({ code, className }: UnitLabelProps): ReactNode {
   const translator = useTranslator();
   const key = `unit.${code}`;
   const label = translator.has(key) ? translator.format(key) : translator.term(code);
-  return <span className={className}>{label}</span>;
+  return (
+    <span className={className} {...(label === code ? { dir: 'ltr' as const } : {})}>
+      {label}
+    </span>
+  );
 }

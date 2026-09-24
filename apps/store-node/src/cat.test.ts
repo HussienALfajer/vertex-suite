@@ -84,6 +84,18 @@ for (const backend of ['sqlite', 'postgres'] as const) {
           );
           const child = unwrap(await admin.createCategory(by, { name: 'معلبات', parent: root.id }));
           const item = unwrap(await admin.createItem(by, { name: 'فول', category: child.id }));
+          const pack = unwrap(
+            await admin.addUnit(by, item.id, {
+              unit: { code: 'pack', kind: 'count', decimals: 0 },
+              basePerUnit: '6',
+            }),
+          );
+          const carton = unwrap(
+            await admin.addUnit(by, item.id, {
+              unit: { code: 'carton', kind: 'count', decimals: 0 },
+              basePerUnit: '24',
+            }),
+          );
           const variants = [];
           for (const kind of ['weighed', 'batch-tracked', 'variant-bearing'] as const) {
             variants.push(
@@ -119,6 +131,17 @@ for (const backend of ['sqlite', 'postgres'] as const) {
           await store.close();
           store = await openStore();
           const read = registry().require(Catalogue);
+          expect(unwrap(await read.convert(by, item.id, '4', carton.id, pack.id)).amount).toBe(
+            '16',
+          );
+          expect(unwrap(await read.units(by, item.id)).map((one) => one.id)).toEqual([
+            item.id,
+            pack.id,
+            carton.id,
+          ]);
+          expect(unwrap(await read.units(by, legacyId))).toMatchObject([
+            { id: legacyId, basePerUnit: '1', unit: item.baseUnit },
+          ]);
           expect((await read.categories(by)).map((one) => one.name)).toEqual(['غذاء', 'معلبات']);
           expect(
             (await read.item(by, item.id))?.statusHistory.map((change) => change.reason),

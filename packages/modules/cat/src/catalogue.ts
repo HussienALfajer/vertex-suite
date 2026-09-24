@@ -1,6 +1,7 @@
 import type { TenantId } from '@vertex/contracts';
 import {
   defineUnit,
+  isDecimalString,
   isId,
   newId,
   ok,
@@ -19,7 +20,11 @@ import type {
   ItemId,
   ItemKind,
   ItemStatus,
+  ItemUnit,
+  ItemUnitId,
   ItemTrade,
+  ConvertedItemQuantity,
+  NewItemUnit,
   NewCategory,
   NewItem,
   RecordSession,
@@ -27,8 +32,8 @@ import type {
 
 type Outcome<T> = Result<T, CatRefusal>;
 type Stored = Category | Item;
-type StoredItem = Omit<Item, 'status' | 'statusReason' | 'statusHistory'> &
-  Partial<Pick<Item, 'status' | 'statusReason' | 'statusHistory'>>;
+type StoredItem = Omit<Item, 'status' | 'statusReason' | 'statusHistory' | 'units'> &
+  Partial<Pick<Item, 'status' | 'statusReason' | 'statusHistory' | 'units'>>;
 const key = (type: 'category' | 'item', tenant: TenantId, id: string): string =>
   `cat/${type}/${encodeURIComponent(tenant)}/${encodeURIComponent(id)}`;
 const prefix = (type: 'category' | 'item', tenant: TenantId): string =>
@@ -74,7 +79,18 @@ function normaliseItem(item: StoredItem | null): Item | null {
         status: item.status ?? 'active',
         statusReason: item.statusReason ?? null,
         statusHistory: item.statusHistory ?? [],
+        units: item.units ?? [baseItemUnit(item)],
       };
+}
+function baseItemUnit(item: Pick<Item, 'id' | 'baseUnit'>): ItemUnit {
+  // An existing item's UUID is its base-unit identity. This is deterministic for
+  // pre-U08.3 records and never requires rewriting their category or history.
+  return {
+    id: item.id as unknown as ItemUnitId,
+    item: item.id,
+    unit: item.baseUnit,
+    basePerUnit: '1',
+  };
 }
 const supportedKinds: ReadonlySet<string> = new Set<ItemKind>([
   'standard',
@@ -95,6 +111,8 @@ function named(value: unknown): string | null {
 }
 function unitFrom(value: Unit): Outcome<Unit> {
   try {
+    if (typeof value.code !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(value.code))
+      return refuse('cat.unit-invalid');
     return ok(defineUnit(value));
   } catch {
     return refuse('cat.unit-invalid');
@@ -194,12 +212,109 @@ export function createItem(s: RecordSession, t: TenantId, input: NewItem): Outco
     category: input.category,
     kind,
     baseUnit: unit.value,
+    units: [],
     status: 'active',
     statusReason: null,
     statusHistory: [],
   };
-  s.put(key('item', t, item.id), item);
-  return ok(item);
+  const withBase = { ...item, units: [baseItemUnit(item)] };
+  s.put(key('item', t, item.id), withBase);
+  return ok(withBase);
+}
+
+export function unitsIn(s: RecordSession, t: TenantId, id: ItemId): Outcome<readonly ItemUnit[]> {
+  const item = itemIn(s, t, id);
+  return item === null ? refuse('cat.item-not-found') : ok(item.units);
+}
+
+export function addItemUnit(
+  s: RecordSession,
+  t: TenantId,
+  id: ItemId,
+  input: NewItemUnit,
+): Outcome<ItemUnit> {
+  const item = itemIn(s, t, id);
+  if (item === null) return refuse('cat.item-not-found');
+  const unit = unitFrom(input.unit);
+  if (!unit.ok) return unit;
+  if (item.units.some((one) => one.unit.code.toLowerCase() === unit.value.code.toLowerCase()))
+    return refuse('cat.unit-duplicate');
+  if (
+    typeof input.basePerUnit !== 'string' ||
+    !isDecimalString(input.basePerUnit) ||
+    input.basePerUnit.length > 80 ||
+    decimalParts(input.basePerUnit).integer <= 0n
+  )
+    return refuse('cat.factor-invalid');
+  const factor = decimalParts(input.basePerUnit);
+  if (
+    factor.scale > item.baseUnit.decimals &&
+    factor.integer % 10n ** BigInt(factor.scale - item.baseUnit.decimals) !== 0n
+  )
+    return refuse('cat.factor-invalid');
+  const added: ItemUnit = {
+    id: newId<'item-unit'>(),
+    item: id,
+    unit: unit.value,
+    basePerUnit: canonicalDecimal(input.basePerUnit),
+  };
+  s.put(key('item', t, id), { ...item, units: [...item.units, added] });
+  return ok(added);
+}
+
+function decimalParts(value: string): { integer: bigint; scale: number } {
+  const negative = value.startsWith('-');
+  const unsigned = value.replace(/^[+-]/, '');
+  const [whole, fraction = ''] = unsigned.split('.');
+  return {
+    integer: BigInt(`${negative ? '-' : ''}${(whole ?? '') + fraction}`),
+    scale: fraction.length,
+  };
+}
+function scaledDecimal(value: bigint, scale: number): string {
+  const sign = value < 0n ? '-' : '';
+  const digits = (value < 0n ? -value : value).toString().padStart(scale + 1, '0');
+  const fraction = scale === 0 ? '' : digits.slice(-scale).replace(/0+$/, '');
+  return sign + (scale === 0 ? digits : digits.slice(0, -scale)) + (fraction ? `.${fraction}` : '');
+}
+function canonicalDecimal(value: string): string {
+  const parsed = decimalParts(value);
+  return scaledDecimal(parsed.integer, parsed.scale);
+}
+
+export function convertItemQuantity(
+  s: RecordSession,
+  t: TenantId,
+  id: ItemId,
+  amount: string,
+  from: ItemUnitId,
+  to: ItemUnitId,
+): Outcome<ConvertedItemQuantity> {
+  const item = itemIn(s, t, id);
+  if (item === null) return refuse('cat.item-not-found');
+  const source = item.units.find((one) => one.id === from);
+  const destination = item.units.find((one) => one.id === to);
+  if (source === undefined || destination === undefined) return refuse('cat.unit-not-found');
+  if (typeof amount !== 'string' || !isDecimalString(amount) || amount.length > 80)
+    return refuse('cat.quantity-invalid');
+  const quantity = decimalParts(amount);
+  if (
+    quantity.scale > source.unit.decimals &&
+    quantity.integer % 10n ** BigInt(quantity.scale - source.unit.decimals) !== 0n
+  )
+    return refuse('cat.quantity-invalid');
+  const sourceFactor = decimalParts(source.basePerUnit);
+  const targetFactor = decimalParts(destination.basePerUnit);
+  const numerator =
+    quantity.integer *
+    sourceFactor.integer *
+    10n ** BigInt(targetFactor.scale + destination.unit.decimals);
+  const denominator = targetFactor.integer * 10n ** BigInt(quantity.scale + sourceFactor.scale);
+  if (numerator % denominator !== 0n) return refuse('cat.conversion-inexact');
+  return ok({
+    amount: scaledDecimal(numerator / denominator, destination.unit.decimals),
+    unit: destination,
+  });
 }
 
 export function changeItemStatus(
