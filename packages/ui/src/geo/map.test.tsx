@@ -305,10 +305,11 @@ describe('Putting a place on the map — SYS-14', () => {
     const user = userEvent.setup();
     wrap(<Picking />);
 
-    await user.type(
-      screen.getByLabelText('ألصق رابطًا أو إحداثيًا'),
-      'https://www.google.com/maps/@36.1997,37.1637,17z',
-    );
+    // Pasted, as the field asks and as an owner does — and not typed a key at
+    // a time, which through a simulated DOM on a Windows runner took longer
+    // than the test's whole budget and failed `main` for no reason of its own.
+    await user.click(screen.getByLabelText('ألصق رابطًا أو إحداثيًا'));
+    await user.paste('https://www.google.com/maps/@36.1997,37.1637,17z');
 
     expect(screen.getByTestId('chosen').textContent).toBe('36.1997,37.1637');
   });
@@ -319,7 +320,8 @@ describe('Putting a place on the map — SYS-14', () => {
 
     // Following it would ask a third party where this tenant's shop is, and
     // would fail in a shop with no line. So it is refused with instructions.
-    await user.type(screen.getByLabelText('ألصق رابطًا أو إحداثيًا'), 'https://maps.app.goo.gl/x1');
+    await user.click(screen.getByLabelText('ألصق رابطًا أو إحداثيًا'));
+    await user.paste('https://maps.app.goo.gl/x1');
 
     expect(await screen.findByText('رابط مختصر: افتحه وانسخ الرابط الكامل.')).toBeTruthy();
     expect(screen.getByTestId('chosen').textContent).toBe('');
