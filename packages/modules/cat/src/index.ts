@@ -12,6 +12,7 @@ import {
   CAT_PERMISSIONS,
   Catalogue,
   CatalogueAdministration,
+  ItemCosting,
   type CatRefusal,
   type ItemUnitId,
   type RecordSession,
@@ -37,6 +38,7 @@ import {
   rebuildSearchIndex,
   reviseCategory,
 } from './catalogue.js';
+import { applyCost, costSnapshot, quoteIssue, quoteReceipt } from './cost.js';
 
 export * from './contract.js';
 
@@ -93,6 +95,23 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
       },
     ],
     provides: [
+      provideContract(ItemCosting, (context: ModuleContext<Session>): ItemCosting => ({
+        snapshot: (by, id) =>
+          context.transactor.run(by, (uow) =>
+            Promise.resolve(costSnapshot(uow.session, by.tenant, id)),
+          ),
+        quoteReceipt: (by, movement, id, quantity, unit, valueUSD) =>
+          context.transactor.run(by, (uow) =>
+            Promise.resolve(
+              quoteReceipt(uow.session, by.tenant, movement, id, quantity, unit, valueUSD),
+            ),
+          ),
+        quoteIssue: (by, movement, id, quantity, unit) =>
+          context.transactor.run(by, (uow) =>
+            Promise.resolve(quoteIssue(uow.session, by.tenant, movement, id, quantity, unit)),
+          ),
+        apply: applyCost,
+      })),
       provideContract(Catalogue, (context: ModuleContext<Session>): Catalogue => {
         const read = async <T>(
           by: CommandContext,
