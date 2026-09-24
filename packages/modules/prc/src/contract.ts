@@ -2,7 +2,7 @@ import { permissionId, type BranchId, type PermissionId, type TenantId } from '@
 import type { ItemId, ItemUnitId } from '@vertex/cat/contract';
 import type { PriceRate, RateRevisionId, SettlementRule } from '@vertex/fx/contract';
 import type { CurrencyCode, Id, Instant, Refusal, Result } from '@vertex/kernel';
-import { contractKey, type CommandContext } from '@vertex/platform';
+import { contractKey, eventType, type CommandContext } from '@vertex/platform';
 
 export type PriceListId = Id<'price-list'>;
 
@@ -50,6 +50,19 @@ export type PrcRefusal = Refusal<
   | 'prc.conversion-unavailable'
   /** The price recalculated at approval is not the one that was reviewed. Preview again. */
   | 'prc.display-basis-changed'
+  /** Not a percentage in `RATE_REVIEW_THRESHOLD`'s range, or not null. */
+  | 'prc.threshold-invalid'
+  /** No such review task at the branch named, in this tenant. */
+  | 'prc.review-not-found'
+  /** The task is not awaiting a decision: it was decided, superseded, or is still being prepared. */
+  | 'prc.review-not-pending'
+  /** Prices the task lists have changed since it listed them. Refresh it and review again. */
+  | 'prc.review-stale'
+  /** Today's rate or the owner's threshold has moved on since the task was raised. */
+  | 'prc.review-superseded'
+  /** Every listed price is excluded: there is nothing to approve. Reject the task instead. */
+  | 'prc.review-empty'
+  | 'prc.review-query-invalid'
 >;
 
 export interface UsdPrice {
@@ -153,6 +166,8 @@ export interface DisplayPriceBasis {
  * `U09.5`, and nothing here claims that agreement.
  */
 export interface DisplayPrice extends DisplayPriceTarget {
+  /** The reviewed batch that published this figure (`PRC-03`); absent when approved on its own. */
+  readonly batch?: RateReviewBatchId;
   readonly tenant: TenantId;
   /** Canonical exact decimal, settled onto the currency's step. */
   readonly amount: string;
@@ -231,10 +246,14 @@ export interface DisplayPriceChange extends DisplayPriceTarget {
   readonly reason: string;
   readonly revision: number;
   readonly sequence: number;
+  /** The reviewed batch this change was one price of (`PRC-03`); absent when approved on its own. */
+  readonly batch?: RateReviewBatchId;
 }
 
 export interface DisplayPriceHistoryFilter extends PriceHistoryFilter {
   readonly branch?: BranchId;
+  /** One batch's changes: every price it published, and nothing else. */
+  readonly batch?: RateReviewBatchId;
 }
 
 export interface DisplayPriceHistoryPage {
@@ -269,6 +288,330 @@ export interface DisplayPrices {
     filter: DisplayPriceHistoryFilter,
   ): Promise<Result<DisplayPriceHistoryPage, PrcRefusal>>;
 }
+
+export type RateReviewTaskId = Id<'rate-review-task'>;
+export type RateReviewBatchId = Id<'rate-review-batch'>;
+
+/**
+ * The owner's threshold (`PRC-03`): how far today's rate may move from the rate
+ * a frozen price was approved at before somebody is asked to review it.
+ *
+ * **A percentage of the rate the price was frozen at**, one setting for the
+ * whole tenant. Per tenant, because the specification gives the owner one
+ * threshold to configure and a branch's own movement is already measured
+ * against its own rate; per branch would be a second dial nobody asked for.
+ *
+ * At least 0.1: a rate is typed to the pound, and below a tenth of a percent a
+ * correction of a single mistyped digit raises a task. At most 50: past half,
+ * the shelf has drifted further than any review could still call a
+ * correction. Two decimal places, as an owner writes a percentage.
+ *
+ * **Null — disabled — is the default.** Enabling it is the owner's act: a
+ * shop upgraded into this feature does not wake up to a review of every price
+ * it holds.
+ *
+ * The comparison, exactly, for one frozen price at one branch: with `r0` the
+ * rate its basis names and `r1` the rate `PriceConversion` applies today (the
+ * same buy side a preview uses), it has **moved** when
+ *
+ *     |r1 − r0| × 100 ≥ threshold × r0
+ *
+ * in exact decimals — never divided, so no quotient is ever rounded. Equality
+ * moves it: a 5% threshold is met by a 5% move. The baseline is each price's
+ * own frozen rate, so several small revisions that together cross the
+ * threshold are caught, a rate that returns toward the baseline stops
+ * counting, and only a price approved again takes a new baseline. Only the
+ * branch's current revision for today is compared; a same-day correction
+ * replaces the revision it corrects.
+ */
+export const RATE_REVIEW_THRESHOLD = Object.freeze({ min: '0.1', max: '50', decimals: 2 });
+
+export interface RateReviewPolicy {
+  readonly tenant: TenantId;
+  /** Percent, as a canonical decimal; null when disabled. */
+  readonly threshold: string | null;
+  /** 0 before the owner first sets it; one more for each change, including disabling it. */
+  readonly revision: number;
+  readonly changedBy: CommandContext['actor'];
+  readonly changedAt: Instant | null;
+}
+
+export interface RateReviewPolicyCommand {
+  readonly threshold: string | null;
+  readonly expectedRevision: number;
+  readonly operation: Id<'price-operation'>;
+}
+
+/**
+ * Where a review task stands.
+ *
+ * - `preparing` — its prices are still being listed; not yet a decision anybody can take.
+ * - `pending` — awaiting review: exclude prices, reject it, or approve it.
+ * - `approving` — approved, and its batch is being published. Nothing of it is
+ *   visible as a price until the whole batch is.
+ * - `approved` — its batch is published: every included price, at once.
+ * - `rejected` — decided against; every price it listed stays as frozen.
+ * - `superseded` — today's rate or the threshold moved on, or it was
+ *   refreshed; whatever replaces it is a task of its own.
+ *
+ * A rate that moved past the threshold without changing any listed figure —
+ * every price it reached settles where it already is — raises no task at all.
+ */
+export type RateReviewState =
+  'preparing' | 'pending' | 'approving' | 'approved' | 'rejected' | 'superseded';
+
+/**
+ * Why a price the rate moved past is not listed.
+ *
+ * - `list-inactive` — its list was withdrawn; a withdrawn list is not priced.
+ * - `subject-invalid` — its item or unit no longer exists in the catalogue.
+ * - `usd-missing` — no dollar price to derive a figure from.
+ * - `unchanged` — the new figure settles to the one already frozen.
+ * - `amount-invalid` — the new figure settles to nothing.
+ */
+export type RateReviewSkip =
+  'list-inactive' | 'subject-invalid' | 'usd-missing' | 'unchanged' | 'amount-invalid';
+
+export interface RateReviewCounts {
+  /** Frozen prices at the branch when the scan began. */
+  readonly frozen: number;
+  /** How many of them the scan has examined: `frozen` once prepared. */
+  readonly scanned: number;
+  /** Those the rate moved past the threshold. */
+  readonly moved: number;
+  /** Listed for review: moved, and with a new figure. */
+  readonly entries: number;
+  readonly excluded: number;
+  readonly skipped: Readonly<Record<RateReviewSkip, number>>;
+}
+
+export interface RateReviewDecision {
+  readonly kind: 'approved' | 'rejected';
+  readonly actor: CommandContext['actor'];
+  readonly at: Instant;
+  readonly reason: string;
+  readonly operation: Id<'price-operation'>;
+}
+
+export interface RateReviewSupersession {
+  readonly at: Instant;
+  readonly cause: 'rate-revised' | 'policy-changed' | 'refreshed';
+  readonly by: CommandContext['actor'];
+}
+
+/**
+ * One attempt to publish an approved task's prices.
+ *
+ * Staged a chunk at a time where nothing reads it, then published by a
+ * single small write — so no reader ever sees part of it. A batch whose basis
+ * changed before it could be published is `abandoned` and publishes nothing;
+ * its task returns to review (a price changed) or is superseded (the rate or
+ * threshold did).
+ */
+export interface RateReviewBatch {
+  readonly id: RateReviewBatchId;
+  readonly task: RateReviewTaskId;
+  readonly state: 'staging' | 'published' | 'abandoned';
+  readonly operation: Id<'price-operation'>;
+  readonly actor: CommandContext['actor'];
+  readonly reason: string;
+  /** When it was approved: the time every price change of it records. */
+  readonly at: Instant;
+  readonly total: number;
+  readonly staged: number;
+  readonly publishedAt: Instant | null;
+  readonly failure: {
+    readonly cause: 'stale' | 'superseded';
+    readonly at: Instant;
+    readonly stale: number;
+  } | null;
+}
+
+/**
+ * A review task (`PRC-03`): today's rate at one branch has moved past the
+ * owner's threshold from the rate some frozen prices were approved at.
+ *
+ * Raised by PRC, owned by PRC, and never a price change by itself. At most one
+ * is raised for a branch, rate revision and threshold revision.
+ */
+export interface RateReviewTask {
+  readonly tenant: TenantId;
+  readonly id: RateReviewTaskId;
+  readonly branch: BranchId;
+  /** The rate that crossed, as `FX` stated it — the rate every proposed figure is at. */
+  readonly rate: PriceRate;
+  readonly policy: { readonly revision: number; readonly threshold: string };
+  readonly state: RateReviewState;
+  readonly raisedAt: Instant;
+  /** One more for every exclusion changed: what an approval says it reviewed. */
+  readonly review: number;
+  readonly counts: RateReviewCounts;
+  readonly decision: RateReviewDecision | null;
+  readonly supersession: RateReviewSupersession | null;
+  /** The latest attempt to publish it, if it was approved. */
+  readonly batch: RateReviewBatch | null;
+}
+
+/**
+ * One price a task lists: the frozen figure as it is, and the figure proposed
+ * in its place, each with everything it was derived from.
+ */
+export interface RateReviewEntry extends DisplayPriceTarget {
+  readonly task: RateReviewTaskId;
+  readonly current: {
+    readonly amount: string;
+    readonly revision: number;
+    readonly basis: DisplayPriceBasis;
+  };
+  readonly usd: { readonly amount: string; readonly revision: number };
+  readonly currency: CurrencyCode;
+  readonly proposed: string;
+  readonly basis: DisplayPriceBasis;
+  readonly included: boolean;
+  readonly exclusion: {
+    readonly actor: CommandContext['actor'];
+    readonly at: Instant;
+  } | null;
+  /**
+   * Read, not stored: the dollar price or the frozen price has changed since
+   * this was listed, so approving would be refused. Refresh the task.
+   */
+  readonly stale: boolean;
+}
+
+export interface RateReviewRef {
+  readonly branch: BranchId;
+  readonly task: RateReviewTaskId;
+}
+
+export interface RateReviewTaskQuery {
+  /** One branch's tasks, asked at that branch; absent, every branch's, at the tenant-wide place. */
+  readonly branch?: BranchId;
+  /** Only tasks still preparing, pending or approving. */
+  readonly open?: boolean;
+  /** The `next` of the page before. */
+  readonly before?: RateReviewTaskId;
+  readonly limit?: number;
+}
+
+export interface RateReviewTaskPage {
+  readonly tasks: readonly RateReviewTask[];
+  readonly next: RateReviewTaskId | null;
+}
+
+export interface RateReviewEntryQuery extends RateReviewRef {
+  /** The `next` of the page before. */
+  readonly after?: string;
+  /** At most 100; 50 when absent. */
+  readonly limit?: number;
+  /** Only included, or only excluded, entries. */
+  readonly included?: boolean;
+}
+
+export interface RateReviewEntryPage {
+  readonly entries: readonly RateReviewEntry[];
+  readonly next: string | null;
+}
+
+export interface RateReviewExclusion extends RateReviewRef {
+  /** At most 100 at a time: a page. */
+  readonly subjects: readonly PriceSubject[];
+  readonly excluded: boolean;
+  readonly expectedReview: number;
+}
+
+export interface RateReviewRejection extends RateReviewRef {
+  readonly reason: string;
+  readonly operation: Id<'price-operation'>;
+}
+
+/**
+ * Approving a task as reviewed: the review revision the person saw, and why.
+ *
+ * Every figure published is the one the task lists, recalculated at approval
+ * and refused unless it still comes to exactly that.
+ */
+export interface RateReviewApproval extends RateReviewRef {
+  readonly expectedReview: number;
+  readonly reason: string;
+  readonly operation: Id<'price-operation'>;
+}
+
+export interface RateReviews {
+  policy(by: CommandContext): Promise<Result<RateReviewPolicy, PrcRefusal>>;
+  setPolicy(
+    by: CommandContext,
+    command: RateReviewPolicyCommand,
+  ): Promise<Result<RateReviewPolicy, PrcRefusal>>;
+  /** Newest first, a page at a time. */
+  tasks(
+    by: CommandContext,
+    query: RateReviewTaskQuery,
+  ): Promise<Result<RateReviewTaskPage, PrcRefusal>>;
+  task(by: CommandContext, ref: RateReviewRef): Promise<Result<RateReviewTask, PrcRefusal>>;
+  /** The listed prices, a page at a time, in list-item-unit key order. */
+  entries(
+    by: CommandContext,
+    query: RateReviewEntryQuery,
+  ): Promise<Result<RateReviewEntryPage, PrcRefusal>>;
+  exclude(
+    by: CommandContext,
+    command: RateReviewExclusion,
+  ): Promise<Result<RateReviewTask, PrcRefusal>>;
+  reject(
+    by: CommandContext,
+    command: RateReviewRejection,
+  ): Promise<Result<RateReviewTask, PrcRefusal>>;
+  /**
+   * Supersedes a pending task so that its prices are listed again from what
+   * they are now, keeping its exclusions. The replacement appears once the
+   * monitor has listed it.
+   */
+  refresh(by: CommandContext, ref: RateReviewRef): Promise<Result<RateReviewTask, PrcRefusal>>;
+  /** Accepts the approval and hands the batch to the monitor to publish. */
+  approve(
+    by: CommandContext,
+    command: RateReviewApproval,
+  ): Promise<Result<RateReviewTask, PrcRefusal>>;
+}
+
+/**
+ * The work nobody is waiting on a screen for, done in bounded steps by the host.
+ *
+ * Detection does not wait for an event: an event is held in memory between
+ * commit and dispatch, and a rate recorded just before the process died would
+ * never be heard of. Each `drive` instead reads every active branch's current
+ * rate and the threshold, compares them with a checkpoint PRC keeps durably,
+ * and scans what has changed — then carries every task being prepared and
+ * every batch being published one step further. Every step is idempotent and
+ * resumes from where the last committed step left it, so a host calls it at
+ * startup, after anything that might have moved a rate, and on a timer.
+ *
+ * Only the system may drive: `by.actor` must be null.
+ */
+export interface RateReviewMonitor {
+  drive(by: CommandContext): Promise<{ readonly more: boolean }>;
+}
+
+/** A task is ready for review (`SYS-04` will subscribe; the task itself is durable, this is not). */
+export interface RateReviewRaised {
+  readonly task: RateReviewTaskId;
+  readonly branch: BranchId;
+  readonly entries: number;
+}
+export const RateReviewRaised = eventType<RateReviewRaised>('prc.rate-review-raised');
+
+/** A batch is published: its prices are the frozen display prices from now on. */
+export interface RateReviewPublished {
+  readonly task: RateReviewTaskId;
+  readonly batch: RateReviewBatchId;
+  readonly branch: BranchId;
+  readonly prices: number;
+}
+export const RateReviewPublished = eventType<RateReviewPublished>('prc.rate-review-published');
+
+export const RateReviews = contractKey<RateReviews>('prc.rate-reviews');
+export const RateReviewMonitor = contractKey<RateReviewMonitor>('prc.rate-review-monitor');
 
 export interface PriceLists {
   /** Includes inactive lists so historical identities remain readable. */
@@ -307,5 +650,13 @@ export const PRC_PERMISSIONS = Object.freeze({
     view: permissionId('prc', 'display-price', 'view'),
     /** Previewing and approving: the preview is the first half of an approval. */
     edit: permissionId('prc', 'display-price', 'edit'),
+  }),
+  review: Object.freeze({
+    /** Seeing tasks and their listed prices, and the threshold they were raised under. */
+    view: permissionId('prc', 'rate-review', 'view'),
+    /** Excluding, rejecting, refreshing and approving: every decision a task takes. */
+    approve: permissionId('prc', 'rate-review', 'approve'),
+    /** Setting the threshold: the owner's. */
+    policy: permissionId('prc', 'rate-review-policy', 'edit'),
   }),
 }) satisfies Record<string, Record<string, PermissionId>>;

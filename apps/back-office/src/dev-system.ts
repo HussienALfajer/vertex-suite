@@ -22,6 +22,8 @@ import {
   prcModule,
   PriceLists,
   PriceListAdministration,
+  RateReviewMonitor,
+  RateReviews,
   UsdPrices,
 } from '@vertex/prc';
 import {
@@ -329,6 +331,27 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const priceAdmin = registry.require(PriceListAdministration);
   const usdPrices = registry.require(UsdPrices);
   const displayPrices = registry.require(DisplayPrices);
+  const rateReviews = registry.require(RateReviews);
+  const reviewMonitor = registry.require(RateReviewMonitor);
+
+  /**
+   * The rate-review monitor (`PRC-03`), run to rest after anything that can
+   * give it work — here, inline and before the answer, where the store node
+   * runs it beside the requests. One tab, one shop, a few prices: waiting for
+   * it costs nothing, and a background run would race the next click for the
+   * store's revision.
+   */
+  async function settleReviews(): Promise<void> {
+    await ensurePriceLists();
+    // Bounded: a monitor that always had more would otherwise hang the tab.
+    for (let steps = 0; steps < 1000; steps += 1)
+      if (!(await reviewMonitor.drive(systemContext(tenant))).more) return;
+  }
+  async function thenSettled<T>(work: Promise<T>): Promise<T> {
+    const answer = await work;
+    await settleReviews();
+    return answer;
+  }
 
   let priceSeed: Promise<void> | null = null;
   function ensurePriceLists(): Promise<void> {
@@ -624,7 +647,7 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     },
     record: async (branch, currency, quote) => {
       await ensureRatesReady();
-      return ratesAdmin.record(by(), branch, currency, quote);
+      return thenSettled(ratesAdmin.record(by(), branch, currency, quote));
     },
     suggest: async (currency, quote) => {
       await ensureRatesReady();
@@ -632,7 +655,7 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     },
     adopt: async (branch) => {
       await ensureRatesReady();
-      return ratesAdmin.adopt(by(), branch);
+      return thenSettled(ratesAdmin.adopt(by(), branch));
     },
   };
 
@@ -1305,6 +1328,23 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
         await ensurePriceLists();
         return priceAdmin.deactivate(by(), id);
       },
+    },
+    rateReviews: {
+      policy: async () => {
+        await ensurePriceLists();
+        return rateReviews.policy(by());
+      },
+      setPolicy: (command) => thenSettled(rateReviews.setPolicy(by(), command)),
+      tasks: async (query) => {
+        await settleReviews();
+        return rateReviews.tasks(by(), query);
+      },
+      task: (ref) => rateReviews.task(by(), ref),
+      entries: (query) => rateReviews.entries(by(), query),
+      exclude: (command) => rateReviews.exclude(by(), command),
+      reject: (command) => rateReviews.reject(by(), command),
+      refresh: (ref) => thenSettled(rateReviews.refresh(by(), ref)),
+      approve: (command) => thenSettled(rateReviews.approve(by(), command)),
     },
     displayPrices: {
       get: (target) => displayPrices.get(by(), target),

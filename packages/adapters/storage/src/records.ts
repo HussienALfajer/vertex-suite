@@ -124,8 +124,12 @@ export interface Committed {
    */
   readonly epoch: string;
   readonly records: ReadonlyMap<string, StoredRow>;
-  /** The keys, sorted: computed once per revision, on the first listing that asks. */
-  keys(): readonly string[];
+  /**
+   * The keys, sorted: computed once per revision, on the first listing that asks.
+   * A function rather than a method: it uses no `this`, so a later revision
+   * can hold the function alone.
+   */
+  readonly keys: () => readonly string[];
 }
 
 function committedFrom(
@@ -136,12 +140,22 @@ function committedFrom(
 ): Committed {
   if (!Number.isSafeInteger(version) || version < 0) throw new Error('Corrupted store revision.');
   let keys: readonly string[] | undefined;
+  // Released once the listing exists. What derives it reaches back to the
+  // revision before this one, and a revision held for its listing used to
+  // hold every revision before it, each with a whole copy of the store's
+  // records: a batch of a hundred commits over a store of half a million rows
+  // kept gigabytes alive that nothing could read.
+  let derive: (() => readonly string[]) | null = sortedKeys;
   return {
     version,
     epoch,
     records,
-    keys() {
-      keys ??= Object.freeze([...sortedKeys()]);
+    keys: () => {
+      if (keys === undefined) {
+        if (derive === null) throw new Error('A revision lost its listing.');
+        keys = Object.freeze([...derive()]);
+        derive = null;
+      }
       return keys;
     },
   };
@@ -218,11 +232,30 @@ export function advance(base: Committed, changes: readonly Change[], epoch: stri
     if (row === null) records.delete(key);
     else records.set(key, row);
   }
-  // Most commits only update; they keep the listing as it was. The listing is
-  // derived lazily either way, so a revision nobody lists never pays for it.
-  return committedFrom(base.version + 1, epoch, records, () =>
-    added.size === 0 && removed.size === 0 ? base.keys() : reshape(base.keys(), added, removed),
-  );
+  return committedFrom(base.version + 1, epoch, records, listingAfter(base.keys, added, removed));
+}
+
+/**
+ * How a revision's listing is derived from the one before it: the earlier
+ * listing, with the keys this commit added and removed.
+ *
+ * Built here and not inline in `advance`, because every closure made inside a
+ * function shares that function's scope: one written beside `advance`'s own
+ * `base.records.has` would hold `base` — a whole copy of the store — and
+ * through its listing every revision before it, for as long as this revision
+ * is held and unlisted. This closure holds the earlier listing's function and
+ * the two sets, and nothing else.
+ *
+ * Most commits only update; they keep the listing as it was. The listing is
+ * derived lazily either way, so a revision nobody lists never pays for it.
+ */
+function listingAfter(
+  earlier: () => readonly string[],
+  added: ReadonlySet<string>,
+  removed: ReadonlySet<string>,
+): () => readonly string[] {
+  return () =>
+    added.size === 0 && removed.size === 0 ? earlier() : reshape(earlier(), added, removed);
 }
 
 /**

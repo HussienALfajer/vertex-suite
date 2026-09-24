@@ -1,5 +1,16 @@
 import type { Result } from '@vertex/kernel';
 import type {
+  RateReviewApproval,
+  RateReviewEntryPage,
+  RateReviewEntryQuery,
+  RateReviewExclusion,
+  RateReviewPolicy,
+  RateReviewPolicyCommand,
+  RateReviewRef,
+  RateReviewRejection,
+  RateReviewTask,
+  RateReviewTaskPage,
+  RateReviewTaskQuery,
   DisplayPrice,
   DisplayPriceCommand,
   DisplayPriceHistoryFilter,
@@ -549,7 +560,21 @@ export interface StatementsOfRecord {
   generalLedger(request: LedgerRequest): Stated<GeneralLedger>;
 }
 
+/** PRC-03/11: the owner's threshold, and the review tasks a rate that moves past it raises. */
+export interface RateReviewsOfRecord {
+  policy(): Promise<Result<RateReviewPolicy, PrcRefusal>>;
+  setPolicy(command: RateReviewPolicyCommand): Promise<Result<RateReviewPolicy, PrcRefusal>>;
+  tasks(query: RateReviewTaskQuery): Promise<Result<RateReviewTaskPage, PrcRefusal>>;
+  task(ref: RateReviewRef): Promise<Result<RateReviewTask, PrcRefusal>>;
+  entries(query: RateReviewEntryQuery): Promise<Result<RateReviewEntryPage, PrcRefusal>>;
+  exclude(command: RateReviewExclusion): Promise<Result<RateReviewTask, PrcRefusal>>;
+  reject(command: RateReviewRejection): Promise<Result<RateReviewTask, PrcRefusal>>;
+  refresh(ref: RateReviewRef): Promise<Result<RateReviewTask, PrcRefusal>>;
+  approve(command: RateReviewApproval): Promise<Result<RateReviewTask, PrcRefusal>>;
+}
+
 export interface SystemOfRecord {
+  readonly rateReviews: RateReviewsOfRecord;
   /** PRC-02/03: the frozen SYP display price of one branch, read as stored. */
   readonly displayPrices: {
     get(target: DisplayPriceTarget): Promise<Result<DisplayPriceState, PrcRefusal>>;

@@ -483,13 +483,22 @@ describe.skipIf(!database)('CAT-04 authenticated barcode transport', () => {
   });
 });
 
-async function fixture(enableSyn02Fixture = false) {
+async function fixture(
+  enableSyn02Fixture = false,
+  extra: Partial<Parameters<typeof composeStoreNode>[0]> = {},
+) {
   if (!database) throw new Error('A PostgreSQL test URL is required.');
   const schema = `vertex_test_${newId<'schema'>().replaceAll('-', '')}`;
   const attachmentsDirectory = await mkdtemp(join(tmpdir(), 'vertex-u07-attachments-'));
   const tenant = newId<'tenant'>();
   const otherTenant = newId<'tenant'>();
-  const options = { connectionString: database, schema, attachmentsDirectory, enableSyn02Fixture };
+  const options = {
+    connectionString: database,
+    schema,
+    attachmentsDirectory,
+    enableSyn02Fixture,
+    ...extra,
+  };
   cleanup.push(async () => {
     const admin = new Pool({ connectionString: database });
     try {
@@ -531,6 +540,7 @@ async function fixture(enableSyn02Fixture = false) {
     tenant,
     otherTenant,
     options,
+    node,
     request,
     signIn,
     base,
@@ -1248,6 +1258,391 @@ describe.skipIf(!database)(
         },
       });
       await restarted.stop();
+    });
+  },
+);
+
+/**
+ * A shop over the real modules and PostgreSQL, ready for `PRC-03`'s review:
+ * two branches at 10,000 pounds to the dollar and `count` items whose retail
+ * price is frozen at Aleppo — n dollars, frozen at n × 10,000.
+ */
+async function reviewShop(shop: Awaited<ReturnType<typeof fixture>>, count = 3) {
+  const owner = await shop.signIn();
+  const root = `/v1/tenants/${shop.tenant}`;
+  interface Answer {
+    value: { ok: boolean; value: Record<string, unknown>; error: { code: string } };
+  }
+  const post = async (method: string, args: unknown[], token = owner) => {
+    const response = await shop.request(`${root}/${method}`, token, { args }, 'POST');
+    return { status: response.status, body: (await response.json()) as Answer };
+  };
+  const made = async (method: string, args: unknown[]) => {
+    const { body } = await post(method, args);
+    expect(body.value.ok, `${method} ${JSON.stringify(body)}`).toBe(true);
+    return body.value.value;
+  };
+  const get = async (method: string, args: unknown[], token = owner, tenant = shop.tenant) => {
+    const response = await shop.request(
+      `/v1/tenants/${tenant}/${method}?args=${encodeURIComponent(JSON.stringify(args))}`,
+      token,
+    );
+    return {
+      status: response.status,
+      body: response.status === 200 ? ((await response.json()) as Answer) : null,
+    };
+  };
+  const read = async (method: string, args: unknown[], token = owner) => {
+    const { status, body } = await get(method, args, token);
+    expect(status, method).toBe(200);
+    return body!.value;
+  };
+  const company = await made('companies.register', [{ name: 'Shop' }]);
+  const aleppo = (await made('branches.open', [{ company: company['id'], name: 'Aleppo' }]))[
+    'id'
+  ] as string;
+  const damascus = (await made('branches.open', [{ company: company['id'], name: 'Damascus' }]))[
+    'id'
+  ] as string;
+  const quote = (buy: string) => ({ form: 'units-per-functional', buy, sell: '9000' });
+  await made('rates.record', [aleppo, 'SYP', quote('10000')]);
+  await made('rates.record', [damascus, 'SYP', quote('10000')]);
+  const lists = (await read('priceLists.list', [])) as unknown as { id: string }[];
+  const category = await made('catalogue.createCategory', [
+    { name: 'Goods', parent: null, defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 } },
+  ]);
+  const targets: { branch: string; subject: { list: string; item: string; unit: string } }[] = [];
+  for (let n = 1; n <= count; n += 1) {
+    const item = (await made('catalogue.createItem', [
+      { name: `Box ${String(n)}`, category: category['id'] },
+    ])) as unknown as { id: string; units: { id: string }[] };
+    const subject = { list: lists[0]!.id, item: item.id, unit: item.units[0]!.id };
+    await made('usdPrices.set', [
+      {
+        subject,
+        amount: { amount: `${String(n)}.00`, currency: 'USD' },
+        expectedRevision: 0,
+        reason: 'Initial',
+        operation: newId<'price-operation'>(),
+      },
+    ]);
+    const target = { branch: aleppo, subject };
+    const preview = (await read('displayPrices.preview', [target])).value as {
+      proposed: string;
+      basis: { usdRevision: number; rate: { revision: string } };
+    };
+    await made('displayPrices.approve', [
+      {
+        ...target,
+        expectedRevision: 0,
+        proposed: preview.proposed,
+        usdRevision: preview.basis.usdRevision,
+        rateRevision: preview.basis.rate.revision,
+        reason: 'Shelf price',
+        operation: newId<'price-operation'>(),
+      },
+    ]);
+    targets.push(target);
+  }
+  const frozen = async () => {
+    const amounts: string[] = [];
+    for (const target of targets)
+      amounts.push(
+        ((await read('displayPrices.get', [target])).value as { price: { amount: string } }).price
+          .amount,
+      );
+    return amounts;
+  };
+  const threshold = async (percent: string | null) => {
+    const policy = (await read('rateReviews.policy', [])).value as { revision: number };
+    return made('rateReviews.setPolicy', [
+      {
+        threshold: percent,
+        expectedRevision: policy.revision,
+        operation: newId<'price-operation'>(),
+      },
+    ]);
+  };
+  const tasks = async (open = true) =>
+    (
+      (await read('rateReviews.tasks', [{ branch: aleppo, open }])).value as {
+        tasks: {
+          id: string;
+          branch: string;
+          state: string;
+          review: number;
+          counts: { entries: number; excluded: number };
+          batch: { id: string; state: string } | null;
+        }[];
+      }
+    ).tasks;
+  return {
+    owner,
+    root,
+    post,
+    made,
+    get,
+    read,
+    aleppo,
+    damascus,
+    quote,
+    targets,
+    frozen,
+    threshold,
+    tasks,
+  };
+}
+
+describe.skipIf(!database)(
+  'PRC-03 PRC-11 rate-movement review over authenticated PostgreSQL transport',
+  () => {
+    it('raises one task past the threshold, reviews it a page at a time, and publishes an approved batch with its audit', async () => {
+      const shop = await fixture(false, { rateReviewInterval: 0, rateReviewChunk: 2 });
+      const s = await reviewShop(shop, 5);
+      await s.threshold('5');
+
+      // Below the threshold: nothing, and nothing moves.
+      await s.made('rates.record', [s.aleppo, 'SYP', s.quote('10400')]);
+      await shop.node.settleReviews();
+      expect(await s.tasks(false)).toEqual([]);
+
+      const crossing = await s.made('rates.record', [s.aleppo, 'SYP', s.quote('11000')]);
+      await shop.node.settleReviews();
+      const [task] = await s.tasks();
+      expect(task).toMatchObject({ branch: s.aleppo, state: 'pending', counts: { entries: 5 } });
+      expect(await s.frozen()).toEqual(['10000', '20000', '30000', '40000', '50000']);
+      const ref = { branch: s.aleppo, task: task!.id };
+      const page = (await s.read('rateReviews.entries', [{ ...ref, limit: 2 }])).value as {
+        entries: { subject: unknown; current: { amount: string }; proposed: string }[];
+        next: string | null;
+      };
+      expect(page.entries).toHaveLength(2);
+      expect(page.next).not.toBeNull();
+      expect(page.entries[0]).toMatchObject({
+        current: { amount: '10000' },
+        proposed: '11000',
+        basis: { rate: { revision: crossing['id'], rate: '11000' } },
+      });
+      expect(
+        (await s.get('rateReviews.entries', [{ ...ref, limit: 1000 }])).body?.value,
+      ).toMatchObject({ ok: false, error: { code: 'prc.review-query-invalid' } });
+
+      const excluded = await s.made('rateReviews.exclude', [
+        { ...ref, subjects: [s.targets[4]!.subject], excluded: true, expectedReview: 0 },
+      ]);
+      const approval = {
+        ...ref,
+        expectedReview: excluded['review'],
+        reason: 'Rate moved',
+        operation: newId<'price-operation'>(),
+      };
+      const accepted = await s.made('rateReviews.approve', [approval]);
+      expect(accepted).toMatchObject({ state: 'approving' });
+      expect((await s.post('rateReviews.approve', [approval])).body.value).toMatchObject({
+        ok: true,
+        value: { id: task!.id },
+      });
+      // People keep working while the batch is published around them: none of
+      // their writes loses the store's revision to a step of it.
+      const publishing = shop.node.settleReviews();
+      for (const buy of ['10001', '10002', '10003', '10004']) {
+        const one = await s.post('rates.record', [s.damascus, 'SYP', s.quote(buy)]);
+        expect(one.body.value.ok, JSON.stringify(one.body)).toBe(true);
+      }
+      await publishing;
+      await shop.node.settleReviews();
+      const [done] = await s.tasks(false);
+      expect(done).toMatchObject({ state: 'approved', batch: { state: 'published' } });
+      expect(await s.frozen()).toEqual(['11000', '22000', '33000', '44000', '50000']);
+      const audit = (await s.read('displayPrices.history', [{ batch: done!.batch!.id }])).value as {
+        entries: { actor: string; reason: string; oldAmount: string; newAmount: string }[];
+      };
+      expect(audit.entries).toHaveLength(4);
+      expect(audit.entries.every((one) => one.reason === 'Rate moved')).toBe(true);
+
+      // After a restart the published figures are read as stored.
+      await shop.close();
+      const restarted = await startProcess(shop.options, shop.tenant);
+      const login = await fetch(`${restarted.base}/v1/sign-in`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenant: shop.tenant, handle: 'owner', password: 'till-morning-1' }),
+      });
+      const token = ((await login.json()) as { token: string }).token;
+      const after = await fetch(
+        `${restarted.base}${s.root}/displayPrices.get?args=${encodeURIComponent(JSON.stringify([s.targets[0]]))}`,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+      expect(await after.json()).toMatchObject({
+        value: { value: { price: { amount: '11000', revision: 2, batch: done!.batch!.id } } },
+      });
+      await restarted.stop();
+    });
+
+    it('finds a rate revision committed just before the process died, when the next one starts', async () => {
+      // This process commits the rate and dies before anything heard of it.
+      const shop = await fixture(false, { rateReviewMonitor: false });
+      const s = await reviewShop(shop);
+      await s.threshold('5');
+      await s.made('rates.record', [s.aleppo, 'SYP', s.quote('10600')]);
+      expect(await s.tasks(false)).toEqual([]);
+      await shop.close();
+
+      const next = await composeStoreNode({ ...shop.options, rateReviewMonitor: true });
+      cleanup.push(() => next.close());
+      await next.provisionTenant(shop.tenant, 'owner', 'till-morning-1');
+      await next.settleReviews();
+      // Driven again, and again after that: still one.
+      await next.settleReviews();
+      const server = await next.listen(0);
+      cleanup.push(() => server.close());
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Expected TCP address.');
+      const base = `http://127.0.0.1:${String(address.port)}`;
+      const login = await fetch(`${base}/v1/sign-in`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenant: shop.tenant, handle: 'owner', password: 'till-morning-1' }),
+      });
+      const token = ((await login.json()) as { token: string }).token;
+      const found = await fetch(
+        `${base}${s.root}/rateReviews.tasks?args=${encodeURIComponent(JSON.stringify([{ branch: s.aleppo }]))}`,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+      expect(await found.json()).toMatchObject({
+        value: { value: { tasks: [{ state: 'pending', rate: { rate: '10600' } }] } },
+      });
+    });
+
+    it('publishes nothing of a batch the database refuses part-way, and all of it once the refusal lifts', async () => {
+      const shop = await fixture(false, { rateReviewInterval: 0, rateReviewChunk: 2 });
+      const s = await reviewShop(shop, 5);
+      await s.threshold('5');
+      await s.made('rates.record', [s.aleppo, 'SYP', s.quote('11000')]);
+      await shop.node.settleReviews();
+      const [task] = await s.tasks();
+      const ref = { branch: s.aleppo, task: task!.id };
+
+      const admin = new Pool({ connectionString: database });
+      cleanup.push(() => admin.end());
+      const schema = `"${shop.options.schema}"`;
+      // The first page stages; the second is refused at the database.
+      await admin.query(`CREATE TABLE ${schema}.staged_seen (n integer)`);
+      await admin.query(
+        `CREATE FUNCTION ${schema}.refuse_second_page() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.key LIKE 'prc/display/%/staged/%' THEN INSERT INTO ${schema}.staged_seen VALUES (1); IF (SELECT count(*) FROM ${schema}.staged_seen) > 2 THEN RAISE EXCEPTION 'disk full'; END IF; END IF; RETURN NEW; END $$`,
+      );
+      await admin.query(
+        `CREATE TRIGGER refuse_second_page BEFORE INSERT ON ${schema}.vertex_records FOR EACH ROW EXECUTE FUNCTION ${schema}.refuse_second_page()`,
+      );
+      await s.made('rateReviews.approve', [
+        { ...ref, expectedReview: 0, reason: 'Rate moved', operation: newId<'price-operation'>() },
+      ]);
+      await shop.node.settleReviews();
+      const [stuck] = await s.tasks();
+      expect(stuck).toMatchObject({ state: 'approving', batch: { state: 'staging' } });
+      expect(await s.frozen()).toEqual(['10000', '20000', '30000', '40000', '50000']);
+      expect(
+        (
+          (await s.read('displayPrices.history', [{ branch: s.aleppo }])).value as {
+            entries: unknown[];
+          }
+        ).entries,
+      ).toHaveLength(5);
+
+      await admin.query(`DROP TRIGGER refuse_second_page ON ${schema}.vertex_records`);
+      await shop.node.settleReviews();
+      const [done] = await s.tasks(false);
+      expect(done).toMatchObject({ state: 'approved', batch: { state: 'published' } });
+      expect(await s.frozen()).toEqual(['11000', '22000', '33000', '44000', '55000']);
+      const audit = (await s.read('displayPrices.history', [{ batch: done!.batch!.id }])).value as {
+        entries: { subject: { item: string } }[];
+      };
+      expect(audit.entries).toHaveLength(5);
+      expect(new Set(audit.entries.map((one) => one.subject.item)).size).toBe(5);
+    });
+
+    it('answers every review route only to the rights it names, at the task’s branch and tenant', async () => {
+      const shop = await fixture(false, { rateReviewInterval: 0 });
+      const s = await reviewShop(shop);
+      await s.threshold('5');
+      await s.made('rates.record', [s.aleppo, 'SYP', s.quote('11000')]);
+      await shop.node.settleReviews();
+      const [task] = await s.tasks();
+      const ref = { branch: s.aleppo, task: task!.id };
+      const decision = {
+        ...ref,
+        expectedReview: 0,
+        reason: 'Rate moved',
+        operation: newId<'price-operation'>(),
+      };
+
+      expect((await s.get('rateReviews.tasks', [{ branch: s.aleppo }], '')).status).toBe(401);
+      const enrol = async (handle: string, seeded: string, confinement: unknown) => {
+        const user = await s.made('users.enrol', [
+          { handle, name: handle, password: 'till-morning-5' },
+        ]);
+        const roles = (await s.read('users.roles.list', [])) as unknown as {
+          id: string;
+          seeded: string;
+        }[];
+        await s.made('users.assignments.assign', [
+          { user: user['id'], role: roles.find((one) => one.seeded === seeded)!.id, confinement },
+        ]);
+        return shop.signIn(shop.tenant, handle, 'till-morning-5');
+      };
+      const cashier = await enrol('review-cashier', 'cashier', { kind: 'tenant' });
+      for (const method of ['rateReviews.policy', 'rateReviews.tasks', 'rateReviews.task'])
+        expect((await s.get(method, [ref], cashier)).status, method).toBe(403);
+      for (const method of ['rateReviews.approve', 'rateReviews.reject', 'rateReviews.refresh'])
+        expect((await s.post(method, [decision], cashier)).status, method).toBe(403);
+
+      // Purchasing sees the task, and decides nothing; a manager sets no threshold.
+      const buyer = await enrol('review-buyer', 'purchasing', { kind: 'tenant' });
+      expect((await s.get('rateReviews.task', [ref], buyer)).status).toBe(200);
+      expect((await s.post('rateReviews.approve', [decision], buyer)).status).toBe(403);
+      const manager = await enrol('review-manager', 'manager', { kind: 'tenant' });
+      expect(
+        (
+          await s.post(
+            'rateReviews.setPolicy',
+            [{ threshold: '9', expectedRevision: 1, operation: newId<'price-operation'>() }],
+            manager,
+          )
+        ).status,
+      ).toBe(403);
+
+      // A manager of Damascus is refused Aleppo's task, however it is named.
+      const confined = await enrol('damascus-reviewer', 'manager', {
+        kind: 'branches',
+        branches: [s.damascus],
+        locations: [],
+      });
+      expect((await s.get('rateReviews.task', [ref], confined)).status).toBe(403);
+      expect((await s.get('rateReviews.tasks', [{}], confined)).status).toBe(403);
+      expect((await s.post('rateReviews.approve', [decision], confined)).status).toBe(403);
+      const disguised = await s.get(
+        'rateReviews.task',
+        [{ branch: s.damascus, task: task!.id }],
+        confined,
+      );
+      expect(disguised.status).toBe(200);
+      expect(disguised.body?.value).toMatchObject({
+        ok: false,
+        error: { code: 'prc.review-not-found' },
+      });
+      expect(
+        (await s.post('rateReviews.approve', [{ ...decision, branch: s.damascus }], confined)).body
+          .value,
+      ).toMatchObject({ ok: false, error: { code: 'prc.review-not-found' } });
+
+      // Another tenant's owner finds nothing.
+      const other = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+      const foreign = await s.get('rateReviews.task', [ref], other, shop.otherTenant);
+      expect(foreign.body?.value).toMatchObject({
+        ok: false,
+        error: { code: 'prc.review-not-found' },
+      });
+      expect((await s.tasks()).map((one) => one.state)).toEqual(['pending']);
     });
   },
 );

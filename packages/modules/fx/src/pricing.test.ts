@@ -161,3 +161,59 @@ describe('A functional-currency price restated as what a customer pays — PRC-0
     );
   });
 });
+
+describe('Many prices restated at one reading of today’s rate — PRC-03 FX-06 FX-07', () => {
+  it('settles each price exactly as a single conversion would, all at one revision', async () => {
+    const revision = taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    const amounts = [money('1.25', 'USD'), money('0.37', 'USD'), money('10', 'USD')];
+
+    const all = taken(await fx.pricing.convertAll(fx.by, aleppo, amounts, 'SYP'));
+
+    expect(all.map((one) => toDecimalString(one.amount))).toEqual(['16380', '4850', '131000']);
+    for (const [at, amount] of amounts.entries()) {
+      const one = taken(await fx.pricing.convert(fx.by, aleppo, amount, 'SYP'));
+      expect(all[at]).toEqual(one);
+    }
+    expect(new Set(all.map((one) => one.rate.revision))).toEqual(new Set([revision.id]));
+  });
+
+  it('refuses the whole batch as a single conversion would be refused, and converts none', async () => {
+    expect(
+      refused(await fx.pricing.convertAll(fx.by, aleppo, [money('1', 'USD')], 'SYP')).code,
+    ).toBe('fx.rate-missing');
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    expect(
+      refused(
+        await fx.pricing.convertAll(fx.by, aleppo, [money('1', 'USD'), money('1', 'EUR')], 'SYP'),
+      ).code,
+    ).toBe('fx.cross-rate-unsupported');
+    expect(taken(await fx.pricing.convertAll(fx.by, aleppo, [], 'SYP'))).toEqual([]);
+  });
+
+  it('answers the rate a conversion would use now, and follows the day’s correction', async () => {
+    expect(refused(await fx.pricing.rate(fx.by, aleppo, 'SYP')).code).toBe('fx.rate-missing');
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    const corrected = taken(
+      await fx.rateAdmin.record(fx.by, aleppo, 'SYP', {
+        form: 'units-per-functional',
+        buy: '13200',
+        sell: '13000',
+      }),
+    );
+
+    const rate = taken(await fx.pricing.rate(fx.by, aleppo, 'SYP'));
+
+    expect(rate).toEqual(
+      taken(await fx.pricing.convert(fx.by, aleppo, money('1', 'USD'), 'SYP')).rate,
+    );
+    expect(rate).toMatchObject({ revision: corrected.id, side: 'buy', rate: '13200' });
+    fx.clock.advance(DAY);
+    expect(refused(await fx.pricing.rate(fx.by, aleppo, 'SYP')).code).toBe('fx.rate-missing');
+  });
+
+  it('refuses more prices than one conversion takes, as a defect in the caller', async () => {
+    taken(await fx.rateAdmin.record(fx.by, aleppo, 'SYP', POUNDS));
+    const many = Array.from({ length: 5_001 }, () => money('1', 'USD'));
+    await expect(fx.pricing.convertAll(fx.by, aleppo, many, 'SYP')).rejects.toThrow(RangeError);
+  });
+});
