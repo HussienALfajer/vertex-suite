@@ -206,6 +206,7 @@ export function match(
   const whole = searchable(term);
   const tokens = [...new Set(whole.split(' ').filter((one) => one !== ''))];
   const words = tokens.map(wordOf);
+  if (words.length === 0) return everyItem(shards, limit);
   const names = new Map(categories.map((one) => [one.id, searchable(one.name)]));
   const through = words.map((one) => categoriesMatching(categories, names, one));
   const found: Match[] = [];
@@ -237,6 +238,24 @@ export function match(
           rank = NAME_START;
       }
       found.push({ id: id as ItemId, rank, name });
+    }
+  }
+  return { ids: best(found, limit).map((one) => one.id), total: found.length };
+}
+
+/** An empty query needs only identity and name; decoding every other field costs time at the till. */
+function everyItem(shards: readonly string[], limit: number): Matches {
+  const found: Match[] = [];
+  for (const entries of shards) {
+    for (const line of entries.split('\n')) {
+      const first = line.indexOf('\t');
+      const second = line.indexOf('\t', first + 1);
+      const third = line.indexOf('\t', second + 1);
+      found.push({
+        id: line.slice(0, first) as ItemId,
+        rank: OWN_TEXT,
+        name: line.slice(second + 1, third),
+      });
     }
   }
   return { ids: best(found, limit).map((one) => one.id), total: found.length };
