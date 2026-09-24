@@ -6,6 +6,12 @@ async function enter(page: Page, label: string, text: string, index = 0): Promis
   await page.keyboard.type(text);
 }
 
+async function retype(page: Page, label: string, text: string): Promise<void> {
+  await page.getByLabel(label, { exact: true }).focus();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type(text);
+}
+
 async function choose(page: Page, label: string, option: string): Promise<void> {
   await page.getByLabel(label, { exact: true }).focus();
   await page.keyboard.press('Enter');
@@ -122,4 +128,75 @@ test('CAT-08 adds an item unit and previews an exact stock quantity by keyboard'
     .filter({ has: page.locator('span[dir="ltr"]', { hasText: '12' }) });
   await expect(result).toBeVisible();
   await expect(result.getByText('قطعة')).toBeVisible();
+});
+
+test('CAT-04 registers barcodes per unit, finds an item by any of them, and withdraws one by keyboard', async ({
+  page,
+}) => {
+  await gotoThemed(page);
+  await page.keyboard.type('owner');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('till-morning-1');
+  await page.keyboard.press('Enter');
+  await page.getByRole('link', { name: 'الأصناف والفئات' }).focus();
+  await page.keyboard.press('Enter');
+  await enter(page, 'الاسم', 'مشروبات');
+  await page.getByRole('button', { name: 'إنشاء فئة' }).focus();
+  await page.keyboard.press('Enter');
+  await enter(page, 'الاسم', 'شاي', 1);
+  await choose(page, 'فئة الصنف', 'مشروبات');
+  await choose(page, 'وحدة الأساس', 'قطعة');
+  await page.getByRole('button', { name: 'إنشاء صنف' }).focus();
+  await page.keyboard.press('Enter');
+  await page
+    .getByRole('listitem')
+    .filter({ hasText: 'شاي' })
+    .getByRole('button', { name: 'عرض الحالة والسجل' })
+    .focus();
+  await page.keyboard.press('Enter');
+  await enter(page, 'رمز الوحدة الجديدة', 'carton');
+  await enter(page, 'عدد وحدات الأساس في الوحدة الجديدة', '24');
+  await page.getByRole('button', { name: 'إضافة وحدة' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('تمت إضافة الوحدة.')).toBeVisible();
+
+  // The manufacturer's code, for a single piece.
+  await enter(page, 'الباركود الجديد', '036000291452');
+  await page.getByRole('button', { name: 'إضافة باركود' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('تمت إضافة الباركود.')).toBeVisible();
+  // The carton's own code, bound to the carton.
+  await enter(page, 'الباركود الجديد', 'CASE-24');
+  await choose(page, 'الوحدة التي يمثلها الباركود', 'carton');
+  await page.getByRole('button', { name: 'إضافة باركود' }).focus();
+  await page.keyboard.press('Enter');
+  const carton = page.getByRole('listitem').filter({ hasText: 'CASE-24' });
+  await expect(carton.getByText('فعّال')).toBeVisible();
+  await expect(carton.locator('code')).toHaveAttribute('dir', 'ltr');
+
+  // A second registration of the same GTIN, in its EAN-13 spelling, is refused and names the holder.
+  await enter(page, 'الباركود الجديد', '0036000291452');
+  await page.getByRole('button', { name: 'إضافة باركود' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('الباركود «0036000291452» مسجّل بالفعل للصنف «شاي».')).toBeVisible();
+
+  const result = page.getByRole('status', { name: 'نتيجة البحث بالباركود' });
+  await enter(page, 'امسح الباركود أو اكتبه', '0036000291452');
+  await page.keyboard.press('Enter');
+  await expect(result).toContainText('شاي — قطعة');
+  await retype(page, 'امسح الباركود أو اكتبه', 'CASE-24');
+  await page.keyboard.press('Enter');
+  await expect(result).toContainText('شاي — كرتون');
+
+  await choose(page, 'الباركود المراد تغيير حالته', 'CASE-24');
+  await enter(page, 'سبب تغيير حالة الباركود', 'تغيّر المورّد');
+  await page.getByRole('button', { name: 'سحب الباركود' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(carton.getByText('مسحوب')).toBeVisible();
+  await expect(carton).toContainText('تغيّر المورّد');
+  // Withdrawn, and still readable: the lookup names the item, the unit and the state.
+  await retype(page, 'امسح الباركود أو اكتبه', 'CASE-24');
+  await page.keyboard.press('Enter');
+  await expect(result).toContainText('شاي — كرتون');
+  await expect(result.getByText('مسحوب')).toBeVisible();
 });

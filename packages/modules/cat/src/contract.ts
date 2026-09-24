@@ -20,6 +20,41 @@ export interface NewItemUnit {
   readonly unit: Unit;
   readonly basePerUnit: string;
 }
+/**
+ * One code printed on the goods — a manufacturer's, a supplier's, a carton's or
+ * a legacy one — and the unit a scan of it means (CAT-04).
+ *
+ * Never removed and never moved to another item: a receipt printed last year
+ * names the code it was sold by, and it must still say what that code meant.
+ * Withdrawing a code is deactivation, which stops the till accepting it and
+ * keeps both the binding and the reason it was withdrawn.
+ */
+export interface ItemBarcode {
+  /** As registered, after surrounding space is trimmed and Arabic-Indic digits are read as digits. */
+  readonly code: string;
+  /** Always one of the item's units; a code registered without one scans as the base unit. */
+  readonly unit: ItemUnitId;
+  readonly active: boolean;
+  readonly registered: { readonly by: CommandContext['actor']; readonly at: Instant };
+  readonly history: readonly ItemBarcodeChange[];
+}
+export interface ItemBarcodeChange {
+  readonly active: boolean;
+  readonly reason: string;
+  readonly by: CommandContext['actor'];
+  readonly at: Instant;
+}
+export interface NewItemBarcode {
+  readonly code: string;
+  /** Omitted, the code scans as the item's base unit. */
+  readonly unit?: ItemUnitId;
+}
+/** What a code resolves to: the item, the unit it counts in, and the code's own record. */
+export interface BarcodeResolution {
+  readonly item: Item;
+  readonly unit: ItemUnit;
+  readonly barcode: ItemBarcode;
+}
 export interface ConvertedItemQuantity {
   readonly amount: string;
   readonly unit: ItemUnit;
@@ -52,6 +87,7 @@ export interface Item {
   /** A snapshot, resolved when created; category changes do not rewrite it. */
   readonly baseUnit: Unit;
   readonly units: readonly ItemUnit[];
+  readonly barcodes: readonly ItemBarcode[];
   readonly status: ItemStatus;
   readonly statusReason: string | null;
   readonly statusHistory: readonly ItemStatusChange[];
@@ -93,6 +129,11 @@ export type CatRefusal = Refusal<
   | 'cat.reason-required'
   | 'cat.item-suspended'
   | 'cat.item-discontinued'
+  | 'cat.barcode-invalid'
+  | 'cat.barcode-taken'
+  | 'cat.barcode-not-found'
+  | 'cat.barcode-inactive'
+  | 'cat.barcode-active'
 >;
 export interface RecordSession {
   get(key: string): unknown;
@@ -120,6 +161,19 @@ export interface Catalogue {
     from: ItemUnitId,
   ): Promise<Result<ConvertedItemQuantity, CatRefusal>>;
   eligibility(by: CommandContext, id: ItemId, trade: ItemTrade): Promise<Result<Item, CatRefusal>>;
+  /**
+   * The till's question: what is this code, and may it be sold by? Only an
+   * active code answers; a withdrawn one is refused as `cat.barcode-inactive`
+   * rather than as unknown, so the cashier is told the code was retired and
+   * not that the item does not exist. Whether the item itself may be sold is
+   * `eligibility`'s question, asked separately.
+   */
+  scan(by: CommandContext, code: string): Promise<Result<BarcodeResolution, CatRefusal>>;
+  /**
+   * The record's question: what did this code mean? Answers for active and
+   * withdrawn codes alike, which is what keeps a historical document readable.
+   */
+  barcode(by: CommandContext, code: string): Promise<Result<BarcodeResolution, CatRefusal>>;
 }
 export interface CatalogueAdministration {
   createCategory(by: CommandContext, input: NewCategory): Promise<Result<Category, CatRefusal>>;
@@ -145,6 +199,21 @@ export interface CatalogueAdministration {
     status: ItemStatus,
     reason: string,
   ): Promise<Result<Item, CatRefusal>>;
+  addBarcode(
+    by: CommandContext,
+    id: ItemId,
+    input: NewItemBarcode,
+  ): Promise<Result<ItemBarcode, CatRefusal>>;
+  deactivateBarcode(
+    by: CommandContext,
+    code: string,
+    reason: string,
+  ): Promise<Result<ItemBarcode, CatRefusal>>;
+  reactivateBarcode(
+    by: CommandContext,
+    code: string,
+    reason: string,
+  ): Promise<Result<ItemBarcode, CatRefusal>>;
 }
 export const Catalogue = contractKey<Catalogue>('cat.catalogue');
 export const CatalogueAdministration = contractKey<CatalogueAdministration>('cat.administration');

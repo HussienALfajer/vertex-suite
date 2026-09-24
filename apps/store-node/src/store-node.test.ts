@@ -263,6 +263,82 @@ describe.skipIf(!database)('CAT-08 authenticated item-unit transport', () => {
   });
 });
 
+describe.skipIf(!database)('CAT-04 authenticated barcode transport', () => {
+  it('registers, scans and withdraws codes through signed, tenant-scoped routes', async () => {
+    const shop = await fixture();
+    const token = await shop.signIn();
+    const root = `/v1/tenants/${shop.tenant}/catalogue`;
+    const post = (route: string, args: unknown[]) =>
+      shop.request(`${root}.${route}`, token, { args }, 'POST');
+    const query = (route: string, args: unknown[]) =>
+      `${root}.${route}?args=${encodeURIComponent(JSON.stringify(args))}`;
+    const created = await post('createCategory', [
+      { name: 'Goods', parent: null, defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 } },
+    ]);
+    const category = ((await created.json()) as { value: { value: { id: string } } }).value.value;
+    const itemResponse = await post('createItem', [{ name: 'Tea', category: category.id }]);
+    const item = ((await itemResponse.json()) as { value: { value: { id: string } } }).value.value;
+    const unitResponse = await post('addUnit', [
+      item.id,
+      { unit: { code: 'carton', kind: 'count', decimals: 0 }, basePerUnit: '24' },
+    ]);
+    const carton = ((await unitResponse.json()) as { value: { value: { id: string } } }).value
+      .value;
+
+    const added = await post('addBarcode', [item.id, { code: '036000291452', unit: carton.id }]);
+    expect(added.status).toBe(200);
+    expect(await added.json()).toMatchObject({ value: { ok: true, value: { active: true } } });
+    const scanned = await shop.request(query('scan', ['0036000291452']), token);
+    expect(await scanned.json()).toMatchObject({
+      value: { ok: true, value: { item: { id: item.id }, unit: { id: carton.id } } },
+    });
+    expect(
+      await (await post('addBarcode', [item.id, { code: '036000291452' }])).json(),
+    ).toMatchObject({ value: { ok: false, error: { code: 'cat.barcode-taken' } } });
+
+    expect((await post('deactivateBarcode', ['036000291452', 'Relabelled'])).status).toBe(200);
+    expect(await (await shop.request(query('scan', ['036000291452']), token)).json()).toMatchObject(
+      { value: { ok: false, error: { code: 'cat.barcode-inactive' } } },
+    );
+    expect(
+      await (await shop.request(query('barcode', ['036000291452']), token)).json(),
+    ).toMatchObject({ value: { ok: true, value: { unit: { id: carton.id } } } });
+
+    expect((await shop.request(query('scan', ['036000291452']))).status).toBe(401);
+    expect(
+      (
+        await shop.request(
+          `${root}.addBarcode`,
+          undefined,
+          { args: [item.id, { code: 'X-1' }] },
+          'POST',
+        )
+      ).status,
+    ).toBe(401);
+    const foreign = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+    expect((await shop.request(query('barcode', ['036000291452']), foreign)).status).toBe(403);
+    const otherRoot = `/v1/tenants/${shop.otherTenant}/catalogue`;
+    expect(
+      await (
+        await shop.request(
+          `${otherRoot}.barcode?args=${encodeURIComponent(JSON.stringify(['036000291452']))}`,
+          foreign,
+        )
+      ).json(),
+    ).toMatchObject({ value: { ok: false, error: { code: 'cat.barcode-not-found' } } });
+    expect(
+      await (
+        await shop.request(
+          `${otherRoot}.reactivateBarcode`,
+          foreign,
+          { args: ['036000291452', 'Theirs'] },
+          'POST',
+        )
+      ).json(),
+    ).toMatchObject({ value: { ok: false, error: { code: 'cat.barcode-not-found' } } });
+  });
+});
+
 async function fixture(enableSyn02Fixture = false) {
   if (!database) throw new Error('A PostgreSQL test URL is required.');
   const schema = `vertex_test_${newId<'schema'>().replaceAll('-', '')}`;

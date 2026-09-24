@@ -12,11 +12,13 @@ import {
 } from '@vertex/kernel';
 import type { CommandContext } from '@vertex/platform';
 import type {
+  BarcodeResolution,
   Category,
   CategoryId,
   CategoryRevision,
   CatRefusal,
   Item,
+  ItemBarcode,
   ItemId,
   ItemKind,
   ItemStatus,
@@ -24,6 +26,7 @@ import type {
   ItemUnitId,
   ItemTrade,
   ConvertedItemQuantity,
+  NewItemBarcode,
   NewItemUnit,
   NewCategory,
   NewItem,
@@ -32,9 +35,20 @@ import type {
 
 type Outcome<T> = Result<T, CatRefusal>;
 type Stored = Category | Item;
-type StoredItem = Omit<Item, 'status' | 'statusReason' | 'statusHistory' | 'units'> &
-  Partial<Pick<Item, 'status' | 'statusReason' | 'statusHistory' | 'units'>>;
-const key = (type: 'category' | 'item', tenant: TenantId, id: string): string =>
+type Later = 'status' | 'statusReason' | 'statusHistory' | 'units' | 'barcodes';
+type StoredItem = Omit<Item, Later> & Partial<Pick<Item, Later>>;
+/**
+ * A barcode's entry in the tenant's index: the one thing that makes a code
+ * unique, and what turns a scan into a read by key rather than a walk through
+ * every item. It names the item and nothing more — what the code means is kept
+ * on the item, so there is a single record of it to agree with.
+ */
+interface BarcodeEntry {
+  readonly tenant: TenantId;
+  readonly item: ItemId;
+}
+type Kind = 'category' | 'item' | 'barcode';
+const key = (type: Kind, tenant: TenantId, id: string): string =>
   `cat/${type}/${encodeURIComponent(tenant)}/${encodeURIComponent(id)}`;
 const prefix = (type: 'category' | 'item', tenant: TenantId): string =>
   `cat/${type}/${encodeURIComponent(tenant)}/`;
@@ -80,6 +94,7 @@ function normaliseItem(item: StoredItem | null): Item | null {
         statusReason: item.statusReason ?? null,
         statusHistory: item.statusHistory ?? [],
         units: item.units ?? [baseItemUnit(item)],
+        barcodes: item.barcodes ?? [],
       };
 }
 function baseItemUnit(item: Pick<Item, 'id' | 'baseUnit'>): ItemUnit {
@@ -213,6 +228,7 @@ export function createItem(s: RecordSession, t: TenantId, input: NewItem): Outco
     kind,
     baseUnit: unit.value,
     units: [],
+    barcodes: [],
     status: 'active',
     statusReason: null,
     statusHistory: [],
@@ -362,4 +378,190 @@ export function itemEligibility(
   if (item.status === 'discontinued' && trade === 'purchase')
     return refuse('cat.item-discontinued');
   return ok(item);
+}
+
+const BARCODE_LENGTH = 48;
+/**
+ * A code as it is kept and shown: surrounding space trimmed, invisible
+ * formatting removed, and Arabic-Indic digits read as the digits they are.
+ *
+ * `FIN` refuses `١١٠١` for an account code, so that two codes cannot read as
+ * one. A barcode is the opposite case: nobody chooses it, it is copied off a
+ * label, and a manager transcribing one on an Arabic keyboard means exactly the
+ * digits a scanner would send. Refusing would only teach them to switch
+ * layouts; folding means the typed code and the scanned one are the same code,
+ * which is also what keeps them from being registered twice. The direction
+ * marks an Arabic spreadsheet or chat wraps round a pasted code (`\p{Cf}`) are
+ * dropped for the same reason: nobody typed them, and nobody can see them to
+ * take them out.
+ *
+ * Otherwise printable ASCII without spaces, which is every symbology a till
+ * scanner reads as a plain code — and a limit of 48, the most a Code 128 label
+ * carries in practice, so that a pasted paragraph is refused rather than
+ * indexed. A GS1 element string with its separators is not a code to register
+ * but a message to parse, which is `CAT-05`'s.
+ */
+function barcodeText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value
+    .replace(/\p{Cf}/gu, '')
+    .trim()
+    .replace(/[٠-٩۰-۹]/gu, (digit) => {
+      const point = digit.codePointAt(0) ?? 0;
+      return String(point - (point >= 0x6f0 ? 0x6f0 : 0x660));
+    });
+  return text.length <= BARCODE_LENGTH && /^[\x21-\x7e]+$/u.test(text) ? text : null;
+}
+
+/**
+ * The form a code is unique in.
+ *
+ * One GTIN reaches a till in several spellings: a UPC-A label is sent as twelve
+ * digits by one scanner and as a thirteen-digit EAN with a leading zero by the
+ * next, a UPC-E is sent as its eight digits or expanded to the UPC-A it
+ * abbreviates, and a case code may carry the same number as a GTIN-14. Keyed as
+ * typed, the second spelling would scan as an unknown item and could even be
+ * registered to a different one. So a code that *is* a GTIN — eight, twelve,
+ * thirteen or fourteen digits with a valid check digit — is keyed as the
+ * fourteen-digit number GS1 defines them all to be; any other code is keyed
+ * exactly as written, case included, because Code 128 distinguishes case.
+ *
+ * The price is that two numeric codes differing only in leading zeros, both
+ * with valid check digits, are one code here. That is not a choice this
+ * module could decline: the scanners already treat them as one.
+ */
+function barcodeKey(code: string): string {
+  const expanded = upcA(code);
+  if (expanded !== null) return expanded.padStart(14, '0');
+  return isGtin(code) ? code.padStart(14, '0') : code;
+}
+
+function isGtin(code: string): boolean {
+  if (!/^(?:\d{8}|\d{12,14})$/u.test(code)) return false;
+  let sum = 0;
+  // From the right, excluding the check digit, weights alternate 3, 1, 3 …
+  for (let at = code.length - 2, weight = 3; at >= 0; at -= 1, weight = 4 - weight)
+    sum += (code.charCodeAt(at) - 48) * weight;
+  return (10 - (sum % 10)) % 10 === code.charCodeAt(code.length - 1) - 48;
+}
+
+/**
+ * The UPC-A a UPC-E abbreviates, or null when the code is not one.
+ *
+ * Eight digits alone cannot say whether they are a UPC-E or an EAN-8. A UPC-E
+ * starts with number system 0 or 1 and carries the check digit *of its
+ * expansion*, so that is the test; eight digits that pass it are keyed as the
+ * expansion, and any others fall through to the EAN-8 reading. Either way one
+ * string always has one key, which is the property a scan depends on.
+ */
+function upcA(code: string): string | null {
+  const found = /^([01])(\d)(\d)(\d)(\d)(\d)(\d)(\d)$/u.exec(code);
+  if (found === null) return null;
+  const [, system = '', d1 = '', d2 = '', d3 = '', d4 = '', d5 = '', d6 = ''] = found;
+  const check = code.slice(-1);
+  const body =
+    d6 <= '2'
+      ? `${d1}${d2}${d6}0000${d3}${d4}${d5}`
+      : d6 === '3'
+        ? `${d1}${d2}${d3}00000${d4}${d5}`
+        : d6 === '4'
+          ? `${d1}${d2}${d3}${d4}00000${d5}`
+          : `${d1}${d2}${d3}${d4}${d5}0000${d6}`;
+  const expanded = `${system}${body}${check}`;
+  return isGtin(expanded) ? expanded : null;
+}
+
+function entryIn(s: RecordSession, t: TenantId, code: string): BarcodeEntry | null {
+  const found = s.get(key('barcode', t, barcodeKey(code))) as BarcodeEntry | undefined;
+  return found?.tenant === t ? found : null;
+}
+
+export function addItemBarcode(
+  s: RecordSession,
+  by: CommandContext,
+  at: Instant,
+  id: ItemId,
+  input: NewItemBarcode,
+): Outcome<ItemBarcode> {
+  const item = itemIn(s, by.tenant, id);
+  if (item === null) return refuse('cat.item-not-found');
+  // Off the wire, the command may not be the shape its type promises.
+  const given = input as Partial<NewItemBarcode> | null;
+  const code = barcodeText(given?.code);
+  if (code === null) return refuse('cat.barcode-invalid', { max: BARCODE_LENGTH });
+  const bound: unknown = given?.unit ?? baseItemUnit(item).id;
+  const unit = item.units.find((one) => one.id === bound);
+  if (unit === undefined) return refuse('cat.unit-not-found');
+  const holder = entryIn(s, by.tenant, code);
+  if (holder !== null) {
+    // Named, because the next question is always "on which item?" — and the
+    // answer is inside this tenant, so it tells the manager nothing they may
+    // not already see.
+    const owner = itemIn(s, by.tenant, holder.item);
+    return refuse('cat.barcode-taken', { code, item: owner?.name ?? '' });
+  }
+  const added: ItemBarcode = {
+    code,
+    unit: unit.id,
+    active: true,
+    registered: { by: by.actor, at },
+    history: [],
+  };
+  s.put(key('barcode', by.tenant, barcodeKey(code)), {
+    tenant: by.tenant,
+    item: id,
+  } satisfies BarcodeEntry);
+  s.put(key('item', by.tenant, id), { ...item, barcodes: [...item.barcodes, added] });
+  return ok(added);
+}
+
+/** Every code ever registered, active or withdrawn: the lookup history depends on. */
+export function barcodeIn(s: RecordSession, t: TenantId, raw: string): Outcome<BarcodeResolution> {
+  const code = barcodeText(raw);
+  if (code === null) return refuse('cat.barcode-invalid', { max: BARCODE_LENGTH });
+  const entry = entryIn(s, t, code);
+  if (entry === null) return refuse('cat.barcode-not-found', { code });
+  const item = itemIn(s, t, entry.item);
+  const lookup = barcodeKey(code);
+  const barcode = item?.barcodes.find((one) => barcodeKey(one.code) === lookup);
+  const unit = item?.units.find((one) => one.id === barcode?.unit);
+  // The entry and the item are written in one unit of work and neither is ever
+  // deleted, so a half of the pair missing is corruption, not a refusal.
+  if (item === null || barcode === undefined || unit === undefined)
+    throw new Error(`Barcode index entry without its item record: ${lookup}`);
+  return ok({ item, unit, barcode });
+}
+
+export function scanIn(s: RecordSession, t: TenantId, raw: string): Outcome<BarcodeResolution> {
+  const found = barcodeIn(s, t, raw);
+  if (found.ok && !found.value.barcode.active)
+    return refuse('cat.barcode-inactive', { code: found.value.barcode.code });
+  return found;
+}
+
+export function changeBarcodeState(
+  s: RecordSession,
+  by: CommandContext,
+  at: Instant,
+  raw: string,
+  active: boolean,
+  reason: string,
+): Outcome<ItemBarcode> {
+  const found = barcodeIn(s, by.tenant, raw);
+  if (!found.ok) return found;
+  const { item, barcode } = found.value;
+  if (barcode.active === active)
+    return refuse(active ? 'cat.barcode-active' : 'cat.barcode-inactive', { code: barcode.code });
+  const why = named(reason);
+  if (why === null) return refuse('cat.reason-required');
+  const next: ItemBarcode = {
+    ...barcode,
+    active,
+    history: [...barcode.history, { active, reason: why, by: by.actor, at }],
+  };
+  s.put(key('item', by.tenant, item.id), {
+    ...item,
+    barcodes: item.barcodes.map((one) => (one === barcode ? next : one)),
+  });
+  return ok(next);
 }

@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
+  BarcodeResolution,
   Category,
   CategoryId,
   Item,
+  ItemBarcode,
   ItemKind,
   ItemStatus,
   ItemUnitId,
 } from '@vertex/cat/contract';
-import { quantity, toDate, type UnitKind } from '@vertex/kernel';
+import { quantity, toDate, type Refusal, type UnitKind } from '@vertex/kernel';
 import {
   Badge,
   Banner,
@@ -25,6 +27,7 @@ import {
   useTranslator,
   type TreeNode,
 } from '@vertex/ui';
+import { messageForRefusal } from '../catalogue.js';
 import type { SystemOfRecord } from '../system.js';
 
 const NONE = 'none';
@@ -64,6 +67,12 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
   const [preview, setPreview] = useState<{ amount: string; unit: Item['units'][number] } | null>(
     null,
   );
+  const [newBarcode, setNewBarcode] = useState('');
+  const [barcodeUnit, setBarcodeUnit] = useState('');
+  const [barcodeTarget, setBarcodeTarget] = useState('');
+  const [barcodeReason, setBarcodeReason] = useState('');
+  const [lookupCode, setLookupCode] = useState('');
+  const [lookup, setLookup] = useState<BarcodeResolution | null>(null);
   const [message, setMessage] = useState('');
   const [working, setWorking] = useState(false);
 
@@ -93,6 +102,11 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
   ];
   const unitFor = (value: string) => (value === 'pc' ? PIECE : value === 'kg' ? KILOGRAM : null);
   const selected = items.find((one) => one.id === selectedItem) ?? null;
+  const target =
+    selected?.barcodes.find((one) => one.code === barcodeTarget) ?? selected?.barcodes[0] ?? null;
+  const refused = (refusal: Refusal): void => {
+    setMessage(messageForRefusal(t, refusal));
+  };
   const kinds: readonly ItemKind[] = ['standard', 'weighed', 'batch-tracked', 'variant-bearing'];
   const statuses: readonly ItemStatus[] = ['active', 'suspended', 'discontinued'];
 
@@ -110,7 +124,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         setCategories(await system.catalogue.categories());
         setCategoryName('');
         setMessage(t.format('catalogue.category.created'));
-      } else setMessage(t.format(`refusal.${result.error.code}`));
+      } else refused(result.error);
     } catch {
       setMessage(t.format('data.unreachable'));
     } finally {
@@ -133,7 +147,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         setItems(await system.catalogue.items());
         setItemName('');
         setMessage(t.format('catalogue.item.created'));
-      } else setMessage(t.format(`refusal.${result.error.code}`));
+      } else refused(result.error);
     } catch {
       setMessage(t.format('data.unreachable'));
     } finally {
@@ -150,7 +164,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         setItems(await system.catalogue.items());
         setReason('');
         setMessage(t.format('catalogue.status.changed'));
-      } else setMessage(t.format(`refusal.${result.error.code}`));
+      } else refused(result.error);
     } catch {
       setMessage(t.format('data.unreachable'));
     } finally {
@@ -172,7 +186,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         setBasePerUnit('');
         setPreview(null);
         setMessage(t.format('catalogue.units.added'));
-      } else setMessage(t.format(`refusal.${result.error.code}`));
+      } else refused(result.error);
     } catch {
       setMessage(t.format('data.unreachable'));
     } finally {
@@ -195,7 +209,68 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         setMessage('');
       } else {
         setPreview(null);
-        setMessage(t.format(`refusal.${result.error.code}`));
+        refused(result.error);
+      }
+    } catch {
+      setMessage(t.format('data.unreachable'));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function addBarcode(): Promise<void> {
+    if (working || selected === null || newBarcode.trim() === '') return;
+    setWorking(true);
+    try {
+      const result = await system.catalogue.addBarcode(selected.id, {
+        code: newBarcode,
+        ...(barcodeUnit === '' ? {} : { unit: barcodeUnit as ItemUnitId }),
+      });
+      if (result.ok) {
+        setItems(await system.catalogue.items());
+        setNewBarcode('');
+        setMessage(t.format('catalogue.barcodes.added'));
+      } else refused(result.error);
+    } catch {
+      setMessage(t.format('data.unreachable'));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function changeBarcode(): Promise<void> {
+    if (working || target === null || barcodeReason.trim() === '') return;
+    setWorking(true);
+    try {
+      const result = target.active
+        ? await system.catalogue.deactivateBarcode(target.code, barcodeReason)
+        : await system.catalogue.reactivateBarcode(target.code, barcodeReason);
+      if (result.ok) {
+        setItems(await system.catalogue.items());
+        setBarcodeReason('');
+        setLookup(null);
+        setMessage(t.format('catalogue.barcodes.changed'));
+      } else refused(result.error);
+    } catch {
+      setMessage(t.format('data.unreachable'));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  // The history lookup rather than the till's scan: a manager asking about a
+  // withdrawn code wants to be told what it was, and that it was withdrawn.
+  async function findBarcode(): Promise<void> {
+    if (working || lookupCode.trim() === '') return;
+    setWorking(true);
+    try {
+      const result = await system.catalogue.barcode(lookupCode);
+      if (result.ok) {
+        setLookup(result.value);
+        setMessage('');
+      } else {
+        setLookup(null);
+        refused(result.error);
       }
     } catch {
       setMessage(t.format('data.unreachable'));
@@ -211,6 +286,40 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         description={t.format('catalogue.description')}
       />
       {message === '' ? null : <Banner tone="info">{message}</Banner>}
+      <Panel title={t.format('catalogue.lookup.title')}>
+        <form
+          className="flex flex-col gap-[var(--vx-gap-md)]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void findBarcode();
+          }}
+        >
+          <TextInput
+            label={t.format('catalogue.lookup.code')}
+            value={lookupCode}
+            onChange={(value) => {
+              setLookupCode(value);
+              setLookup(null);
+            }}
+            isMachineText
+            isRequired
+          />
+          <Button tone="secondary" type="submit" isDisabled={working || lookupCode.trim() === ''}>
+            {t.format('catalogue.lookup.find')}
+          </Button>
+        </form>
+        {/* A live region that exists before it has anything to say, so that
+            a result read by a screen reader is announced as it arrives —
+            not only a refusal, which the banner already announces. */}
+        <div role="status" aria-label={t.format('catalogue.lookup.result')}>
+          {lookup === null ? null : (
+            <>
+              {lookup.item.name} — <UnitLabel code={lookup.unit.unit.code} /> —{' '}
+              <Code>{lookup.barcode.code}</Code> <BarcodeState barcode={lookup.barcode} />
+            </>
+          )}
+        </div>
+      </Panel>
       <Panel title={t.format('catalogue.categories')}>
         <TreeView<Category>
           label={t.format('catalogue.categories')}
@@ -333,6 +442,10 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
                     setPreview(null);
                     setPreviewFrom('');
                     setPreviewTo('');
+                    setNewBarcode('');
+                    setBarcodeUnit('');
+                    setBarcodeTarget('');
+                    setBarcodeReason('');
                   }}
                 >
                   {t.format('catalogue.item.inspect')}
@@ -452,6 +565,84 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
               </p>
             )}
           </form>
+          <h3>{t.format('catalogue.barcodes.title')}</h3>
+          {selected.barcodes.length === 0 ? (
+            <p>{t.format('catalogue.barcodes.empty')}</p>
+          ) : (
+            <ul>
+              {selected.barcodes.map((barcode) => (
+                <li key={barcode.code}>
+                  <Code>{barcode.code}</Code> —{' '}
+                  <UnitLabel
+                    code={
+                      selected.units.find((one) => one.id === barcode.unit)?.unit.code ??
+                      selected.baseUnit.code
+                    }
+                  />{' '}
+                  <BarcodeState barcode={barcode} />
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void addBarcode();
+            }}
+          >
+            <TextInput
+              label={t.format('catalogue.barcodes.code')}
+              value={newBarcode}
+              onChange={setNewBarcode}
+              isMachineText
+              isRequired
+            />
+            <Select
+              label={t.format('catalogue.barcodes.unit')}
+              isMachineText
+              options={selected.units.map((one) => ({ id: one.id, label: one.unit.code }))}
+              value={barcodeUnit === '' ? (selected.units[0]?.id ?? '') : barcodeUnit}
+              onChange={(key) => {
+                setBarcodeUnit(String(key));
+              }}
+            />
+            <Button tone="primary" type="submit" isDisabled={working || newBarcode.trim() === ''}>
+              {t.format('catalogue.barcodes.add')}
+            </Button>
+          </form>
+          {target === null ? null : (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void changeBarcode();
+              }}
+            >
+              <Select
+                label={t.format('catalogue.barcodes.target')}
+                isMachineText
+                options={selected.barcodes.map((one) => ({ id: one.code, label: one.code }))}
+                value={target.code}
+                onChange={(key) => {
+                  setBarcodeTarget(String(key));
+                }}
+              />
+              <TextInput
+                label={t.format('catalogue.barcodes.reason')}
+                value={barcodeReason}
+                onChange={setBarcodeReason}
+                isRequired
+              />
+              <Button
+                tone={target.active ? 'danger' : 'primary'}
+                type="submit"
+                isDisabled={working || barcodeReason.trim() === ''}
+              >
+                {t.format(
+                  target.active ? 'catalogue.barcodes.deactivate' : 'catalogue.barcodes.reactivate',
+                )}
+              </Button>
+            </form>
+          )}
           <p>
             {t.format('catalogue.item.reason')}:{' '}
             {selected.statusReason ?? t.format('catalogue.item.noReason')}
@@ -507,5 +698,29 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         </Panel>
       )}
     </div>
+  );
+}
+
+/**
+ * Whether a code still scans — and, once it has been withdrawn or restored,
+ * why, when and by whom: the reason is the one thing the next manager asks.
+ */
+function BarcodeState({ barcode }: { readonly barcode: ItemBarcode }): ReactNode {
+  const t = useTranslator();
+  const last = barcode.history.at(-1);
+  return (
+    <>
+      <Badge tone={barcode.active ? 'success' : 'neutral'}>
+        {t.format(barcode.active ? 'catalogue.barcodes.active' : 'catalogue.barcodes.inactive')}
+      </Badge>
+      {last === undefined ? null : (
+        <>
+          {' '}
+          — {last.reason} — <DateTime value={toDate(last.at)} timeZone="UTC" /> —{' '}
+          {t.format('catalogue.item.changedBy')}{' '}
+          {last.by === null ? t.format('catalogue.item.system') : <Code>{last.by}</Code>}
+        </>
+      )}
+    </>
   );
 }

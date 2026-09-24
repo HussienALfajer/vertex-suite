@@ -27,7 +27,7 @@ if (process.env['CI'] && !pgUrl)
 
 for (const backend of ['sqlite', 'postgres'] as const) {
   describe.skipIf(backend === 'postgres' && !pgUrl)(
-    `CAT-01 CAT-02 CAT-12 ${backend} restart persistence`,
+    `CAT-01 CAT-02 CAT-04 CAT-12 ${backend} restart persistence`,
     () => {
       it('reads the category tree and its item after reopening the durable store', async () => {
         const directory = await mkdtemp(join(tmpdir(), 'vertex-cat-'));
@@ -96,6 +96,9 @@ for (const backend of ['sqlite', 'postgres'] as const) {
               basePerUnit: '24',
             }),
           );
+          unwrap(await admin.addBarcode(by, item.id, { code: '036000291452' }));
+          unwrap(await admin.addBarcode(by, item.id, { code: 'CASE-24', unit: carton.id }));
+          unwrap(await admin.deactivateBarcode(by, 'CASE-24', 'Relabelled'));
           const variants = [];
           for (const kind of ['weighed', 'batch-tracked', 'variant-bearing'] as const) {
             variants.push(
@@ -139,6 +142,16 @@ for (const backend of ['sqlite', 'postgres'] as const) {
             pack.id,
             carton.id,
           ]);
+          expect(unwrap(await read.scan(by, '0036000291452')).item.id).toBe(item.id);
+          expect((await read.scan(by, 'CASE-24')).ok).toBe(false);
+          const withdrawn = unwrap(await read.barcode(by, 'CASE-24'));
+          expect(withdrawn.unit.id).toBe(carton.id);
+          expect(withdrawn.barcode.history.map((change) => change.reason)).toEqual(['Relabelled']);
+          expect(
+            await registry()
+              .require(CatalogueAdministration)
+              .addBarcode(by, legacyId, { code: '00036000291452' }),
+          ).toMatchObject({ ok: false, error: { code: 'cat.barcode-taken' } });
           expect(unwrap(await read.units(by, legacyId))).toMatchObject([
             { id: legacyId, basePerUnit: '1', unit: item.baseUnit },
           ]);

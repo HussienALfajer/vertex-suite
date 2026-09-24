@@ -109,6 +109,8 @@ const READS = new Set([
   'catalogue.convert',
   'catalogue.stockQuantity',
   'catalogue.eligibility',
+  'catalogue.scan',
+  'catalogue.barcode',
   'currencies.functional',
   'rates.board',
   'users.roles.rights',
