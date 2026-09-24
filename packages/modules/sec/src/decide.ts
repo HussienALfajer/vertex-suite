@@ -39,9 +39,16 @@ import { assignmentsIn, rolesIn, userIn } from './records.js';
  * unconfined assignment admits one. The other reading, that an absent branch
  * means "anywhere", is how somebody who runs one shop comes to edit the tax
  * number printed on every receipt in the group.
+ *
+ * "Anywhere" exists, but only when it is said: `ANYWHERE` asks whether the
+ * grant reaches any place at all, for a read of a record every branch shares.
+ * A confinement naming no branch reaches nowhere, and `assign` refuses to make
+ * one — refused here too, so a row written before that rule, or around it,
+ * cannot read as a grant.
  */
 function admits(confinement: Confinement, where: Where | undefined): boolean {
   if (confinement.kind === 'tenant') return true;
+  if (where?.anywhere === true) return confinement.branches.length > 0;
 
   const branch = where?.branch;
   if (branch === undefined) return false;

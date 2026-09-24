@@ -126,6 +126,102 @@ describe.skipIf(!database)('CAT-01 authenticated catalogue transport', () => {
   });
 });
 
+describe.skipIf(!database)(
+  'CAT-01 CAT-08 CAT-15 SEC-04 the catalogue over PostgreSQL for a manager confined to a branch',
+  () => {
+    it('answers the manager of Damascus every catalogue read, and still refuses them writes and Aleppo', async () => {
+      const shop = await fixture();
+      const owner = await shop.signIn();
+      const root = `/v1/tenants/${shop.tenant}`;
+      const post = async (path: string, args: unknown[], token = owner) => {
+        const response = await shop.request(`${root}/${path}`, token, { args }, 'POST');
+        expect(response.status, path).toBe(200);
+        return (
+          (await response.json()) as {
+            value: { ok: boolean; value: { id: string }; error: { code: string } };
+          }
+        ).value;
+      };
+      const get = (path: string, args: unknown[], token: string) =>
+        shop.request(`${root}/${path}?args=${encodeURIComponent(JSON.stringify(args))}`, token);
+      const company = (await post('companies.register', [{ name: 'Shop' }])).value.id;
+      const damascus = (await post('branches.open', [{ company, name: 'دمشق' }])).value.id;
+      const aleppo = (await post('branches.open', [{ company, name: 'حلب' }])).value.id;
+      const category = (
+        await post('catalogue.createCategory', [
+          {
+            name: 'ألبان',
+            parent: null,
+            defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+          },
+        ])
+      ).value.id;
+      const item = (await post('catalogue.createItem', [{ name: 'حليب', category }])).value.id;
+      const user = (
+        await post('users.enrol', [
+          { handle: 'damascus', name: 'مدير دمشق', password: 'till-morning-5' },
+        ])
+      ).value.id;
+      const roles = await shop.request(`${root}/users.roles.list`, owner);
+      const manager = (
+        (await roles.json()) as { value: { id: string; seeded: string }[] }
+      ).value.find((one) => one.seeded === 'manager')!;
+      expect(
+        (
+          await post('users.assignments.assign', [
+            {
+              user,
+              role: manager.id,
+              confinement: { kind: 'branches', branches: [damascus], locations: [] },
+            },
+          ])
+        ).ok,
+      ).toBe(true);
+      const them = await shop.signIn(shop.tenant, 'damascus', 'till-morning-5');
+
+      // The item is the same record in every branch, so the manager of one
+      // reads it as the owner does — through the route's gate and CAT's alike.
+      const read = await get('catalogue.item', [item], them);
+      expect(read.status).toBe(200);
+      expect(((await read.json()) as { value: { id: string } }).value.id).toBe(item);
+      const listed = await get('catalogue.items', [], them);
+      expect(
+        ((await listed.json()) as { value: { id: string }[] }).value.map((one) => one.id),
+      ).toEqual([item]);
+      const units = await get('catalogue.units', [item], them);
+      expect(((await units.json()) as { value: { ok: boolean } }).value.ok).toBe(true);
+      const found = await get('catalogue.search', ['حليب'], them);
+      expect(
+        (
+          (await found.json()) as { value: { value: { items: { id: string }[] } } }
+        ).value.value.items.map((one) => one.id),
+      ).toEqual([item]);
+
+      // Writing it would change it for every branch, which is not the act of
+      // somebody who runs one: refused by CAT, and by the route's own gate.
+      expect(await post('catalogue.createItem', [{ name: 'جبن', category }], them)).toMatchObject({
+        ok: false,
+        error: { code: 'cat.not-permitted' },
+      });
+      expect(
+        (
+          await shop.request(
+            `${root}/catalogue.changeItemStatus`,
+            them,
+            { args: [item, 'suspended', 'تجربة'] },
+            'POST',
+          )
+        ).status,
+      ).toBe(403);
+
+      // And the confinement still confines: a branch-scoped read answers in
+      // Damascus and not in Aleppo.
+      expect((await get('registers.list', [damascus], them)).status).toBe(200);
+      expect((await get('registers.list', [aleppo], them)).status).toBe(403);
+    });
+  },
+);
+
 describe.skipIf(!database)('CAT-02 CAT-12 authenticated catalogue transport', () => {
   it('serves tracking, status and eligibility through signed tenant-scoped routes', async () => {
     const shop = await fixture();
@@ -717,6 +813,135 @@ describe.skipIf(!database)(
         value: { value: { entries: [{ revision: 2 }, { revision: 1, newAmount: '1.25' }] } },
       });
       await restarted.stop();
+    });
+  },
+);
+
+describe.skipIf(!database)(
+  'PRC-03 SEC-04 a display price approved by a manager confined to their branch, over PostgreSQL',
+  () => {
+    it('lets the manager of Damascus freeze a Damascus price, and refuses them Aleppo', async () => {
+      const shop = await fixture();
+      const owner = await shop.signIn();
+      const root = `/v1/tenants/${shop.tenant}`;
+      interface Answer {
+        value: { ok: boolean; value: Record<string, unknown>; error: { code: string } };
+      }
+      const post = async (method: string, args: unknown[], token = owner) => {
+        const response = await shop.request(`${root}/${method}`, token, { args }, 'POST');
+        expect(response.status, method).toBe(200);
+        return ((await response.json()) as Answer).value;
+      };
+      const made = async (method: string, args: unknown[]) => {
+        const answer = await post(method, args);
+        expect(answer.ok, `${method} ${JSON.stringify(answer)}`).toBe(true);
+        return answer.value;
+      };
+      const get = (method: string, args: unknown[], token: string) =>
+        shop.request(`${root}/${method}?args=${encodeURIComponent(JSON.stringify(args))}`, token);
+
+      const company = (await made('companies.register', [{ name: 'Shop' }]))['id'] as string;
+      const damascus = (await made('branches.open', [{ company, name: 'Damascus' }]))[
+        'id'
+      ] as string;
+      const aleppo = (await made('branches.open', [{ company, name: 'Aleppo' }]))['id'] as string;
+      for (const branch of [damascus, aleppo]) {
+        await made('rates.record', [
+          branch,
+          'SYP',
+          { form: 'units-per-functional', buy: '13300', sell: '12900' },
+        ]);
+      }
+      const lists = (
+        (await (await get('priceLists.list', [], owner)).json()) as { value: { id: string }[] }
+      ).value;
+      const category = await made('catalogue.createCategory', [
+        {
+          name: 'Goods',
+          parent: null,
+          defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+        },
+      ]);
+      const item = (await made('catalogue.createItem', [
+        { name: 'Box', category: category['id'] },
+      ])) as unknown as { id: string; units: { id: string }[] };
+      const subject = { list: lists[0]!.id, item: item.id, unit: item.units[0]!.id };
+      await made('usdPrices.set', [
+        {
+          subject,
+          amount: { amount: '1.25', currency: 'USD' },
+          expectedRevision: 0,
+          reason: 'Initial',
+          operation: newId<'price-operation'>(),
+        },
+      ]);
+
+      const user = (
+        await made('users.enrol', [
+          { handle: 'damascus', name: 'Damascus manager', password: 'till-morning-6' },
+        ])
+      )['id'] as string;
+      const roles = await shop.request(`${root}/users.roles.list`, owner);
+      const manager = (
+        (await roles.json()) as { value: { id: string; seeded: string }[] }
+      ).value.find((one) => one.seeded === 'manager')!;
+      await made('users.assignments.assign', [
+        {
+          user,
+          role: manager.id,
+          confinement: { kind: 'branches', branches: [damascus], locations: [] },
+        },
+      ]);
+      const them = await shop.signIn(shop.tenant, 'damascus', 'till-morning-6');
+
+      // At their own branch: the preview reads the item through CAT, which
+      // once answered this manager that the item did not exist.
+      const here = { branch: damascus, subject };
+      const previewed = await get('displayPrices.preview', [here], them);
+      expect(previewed.status).toBe(200);
+      const preview = ((await previewed.json()) as Answer).value;
+      expect(preview, JSON.stringify(preview)).toMatchObject({ ok: true });
+      const basis = preview.value as {
+        proposed: string;
+        basis: { usdRevision: number; rate: { revision: string } };
+      };
+      const approval = (branch: string) => ({
+        branch,
+        subject,
+        expectedRevision: 0,
+        proposed: basis.proposed,
+        usdRevision: basis.basis.usdRevision,
+        rateRevision: basis.basis.rate.revision,
+        reason: 'Shelf price',
+        operation: newId<'price-operation'>(),
+      });
+      expect(await post('displayPrices.approve', [approval(damascus)], them)).toMatchObject({
+        ok: true,
+        value: { amount: basis.proposed, revision: 1 },
+      });
+
+      // At another branch the confinement still confines, at the route's gate
+      // and at PRC's own, before anything about Aleppo is read.
+      expect((await get('displayPrices.preview', [{ branch: aleppo, subject }], them)).status).toBe(
+        403,
+      );
+      expect(
+        (
+          await shop.request(
+            `${root}/displayPrices.approve`,
+            them,
+            { args: [approval(aleppo)] },
+            'POST',
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          (await (
+            await get('displayPrices.get', [{ branch: aleppo, subject }], owner)
+          ).json()) as Answer
+        ).value,
+      ).toMatchObject({ value: { price: null, status: 'not-frozen' } });
     });
   },
 );
