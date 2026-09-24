@@ -105,6 +105,7 @@ const READS = new Set([
   'catalogue.category',
   'catalogue.items',
   'catalogue.item',
+  'catalogue.eligibility',
   'currencies.functional',
   'rates.board',
   'users.roles.rights',

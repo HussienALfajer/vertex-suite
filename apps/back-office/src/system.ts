@@ -6,6 +6,8 @@ import type {
   CatRefusal,
   Item,
   ItemId,
+  ItemStatus,
+  ItemTrade,
   NewCategory,
   NewItem,
 } from '@vertex/cat/contract';
@@ -528,6 +530,7 @@ export interface SystemOfRecord {
     category(id: CategoryId): Promise<Category | null>;
     items(): Promise<readonly Item[]>;
     item(id: ItemId): Promise<Item | null>;
+    eligibility(id: ItemId, trade: ItemTrade): Promise<Result<Item, CatRefusal>>;
     createCategory(input: NewCategory): Promise<Result<Category, CatRefusal>>;
     reviseCategory(
       id: CategoryId,
@@ -535,6 +538,11 @@ export interface SystemOfRecord {
     ): Promise<Result<Category, CatRefusal>>;
     moveCategory(id: CategoryId, parent: CategoryId | null): Promise<Result<Category, CatRefusal>>;
     createItem(input: NewItem): Promise<Result<Item, CatRefusal>>;
+    changeItemStatus(
+      id: ItemId,
+      status: ItemStatus,
+      reason: string,
+    ): Promise<Result<Item, CatRefusal>>;
   };
   /**
    * A password verified against a sign-in, and nothing more.

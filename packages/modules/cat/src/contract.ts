@@ -1,9 +1,20 @@
 import { permissionId, type PermissionId, type TenantId } from '@vertex/contracts';
-import type { Id, Refusal, Result, Unit } from '@vertex/kernel';
+import type { Id, Instant, Refusal, Result, Unit } from '@vertex/kernel';
 import { contractKey, type CommandContext } from '@vertex/platform';
 
 export type CategoryId = Id<'category'>;
 export type ItemId = Id<'item'>;
+/** Stored as an extensible value; the validator admits only these four today. */
+export type ItemKind = 'standard' | 'weighed' | 'batch-tracked' | 'variant-bearing';
+export type ItemStatus = 'active' | 'suspended' | 'discontinued';
+export type ItemTrade = 'purchase' | 'sale';
+export interface ItemStatusChange {
+  readonly from: ItemStatus;
+  readonly to: ItemStatus;
+  readonly reason: string;
+  readonly by: CommandContext['actor'];
+  readonly at: Instant;
+}
 export interface Category {
   readonly tenant: TenantId;
   readonly id: CategoryId;
@@ -17,9 +28,12 @@ export interface Item {
   readonly id: ItemId;
   readonly name: string;
   readonly category: CategoryId;
-  readonly kind: 'standard';
+  readonly kind: ItemKind;
   /** A snapshot, resolved when created; category changes do not rewrite it. */
   readonly baseUnit: Unit;
+  readonly status: ItemStatus;
+  readonly statusReason: string | null;
+  readonly statusHistory: readonly ItemStatusChange[];
 }
 export interface NewCategory {
   readonly name: string;
@@ -34,6 +48,8 @@ export interface NewItem {
   readonly name: string;
   readonly category: CategoryId;
   readonly baseUnit?: Unit;
+  /** Omission is standard for U08.1 callers and records. */
+  readonly kind?: ItemKind;
 }
 export type CatRefusal = Refusal<
   | 'cat.not-permitted'
@@ -43,6 +59,14 @@ export type CatRefusal = Refusal<
   | 'cat.cycle'
   | 'cat.unit-required'
   | 'cat.unit-invalid'
+  | 'cat.tracking-unsupported'
+  | 'cat.tracking-unit-incompatible'
+  | 'cat.item-not-found'
+  | 'cat.status-invalid'
+  | 'cat.status-transition-invalid'
+  | 'cat.reason-required'
+  | 'cat.item-suspended'
+  | 'cat.item-discontinued'
 >;
 export interface RecordSession {
   get(key: string): unknown;
@@ -54,6 +78,7 @@ export interface Catalogue {
   category(by: CommandContext, id: CategoryId): Promise<Category | null>;
   items(by: CommandContext): Promise<readonly Item[]>;
   item(by: CommandContext, id: ItemId): Promise<Item | null>;
+  eligibility(by: CommandContext, id: ItemId, trade: ItemTrade): Promise<Result<Item, CatRefusal>>;
 }
 export interface CatalogueAdministration {
   createCategory(by: CommandContext, input: NewCategory): Promise<Result<Category, CatRefusal>>;
@@ -68,6 +93,12 @@ export interface CatalogueAdministration {
     parent: CategoryId | null,
   ): Promise<Result<Category, CatRefusal>>;
   createItem(by: CommandContext, input: NewItem): Promise<Result<Item, CatRefusal>>;
+  changeItemStatus(
+    by: CommandContext,
+    id: ItemId,
+    status: ItemStatus,
+    reason: string,
+  ): Promise<Result<Item, CatRefusal>>;
 }
 export const Catalogue = contractKey<Catalogue>('cat.catalogue');
 export const CatalogueAdministration = contractKey<CatalogueAdministration>('cat.administration');
@@ -80,5 +111,6 @@ export const CAT_PERMISSIONS = Object.freeze({
   item: Object.freeze({
     view: permissionId('cat', 'item', 'view'),
     create: permissionId('cat', 'item', 'create'),
+    edit: permissionId('cat', 'item', 'edit'),
   }),
 }) satisfies Record<string, Record<string, PermissionId>>;

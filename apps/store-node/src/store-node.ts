@@ -315,6 +315,13 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     const write = (path: string, dispatch: Dispatch): void => {
       routes.set(path, { read: false, dispatch });
     };
+    const securedWrite = (path: string, right: string, dispatch: Dispatch): void => {
+      write(path, async (by, args) =>
+        (await authority.may(by, right as Parameters<typeof authority.may>[1]))
+          ? dispatch(by, args)
+          : { forbidden: true },
+      );
+    };
     const read = (
       path: string,
       right: string,
@@ -348,6 +355,13 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     read('catalogue.item', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.item(by, string(args[0]) as Parameters<typeof catRead.item>[1]),
     );
+    read('catalogue.eligibility', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.eligibility(
+        by,
+        args[0] as Parameters<typeof catRead.eligibility>[1],
+        args[1] as Parameters<typeof catRead.eligibility>[2],
+      ),
+    );
     write('catalogue.createCategory', (by, args) =>
       catAdmin.createCategory(
         by,
@@ -372,6 +386,14 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
       catAdmin.createItem(
         by,
         object(args[0]) as unknown as Parameters<typeof catAdmin.createItem>[1],
+      ),
+    );
+    securedWrite('catalogue.changeItemStatus', CAT_PERMISSIONS.item.edit, (by, args) =>
+      catAdmin.changeItemStatus(
+        by,
+        args[0] as Parameters<typeof catAdmin.changeItemStatus>[1],
+        args[1] as Parameters<typeof catAdmin.changeItemStatus>[2],
+        args[2] as Parameters<typeof catAdmin.changeItemStatus>[3],
       ),
     );
 

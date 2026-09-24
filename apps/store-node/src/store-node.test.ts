@@ -78,6 +78,107 @@ describe.skipIf(!database)('CAT-01 authenticated catalogue transport', () => {
   });
 });
 
+describe.skipIf(!database)('CAT-02 CAT-12 authenticated catalogue transport', () => {
+  it('serves tracking, status and eligibility through signed tenant-scoped routes', async () => {
+    const shop = await fixture();
+    const token = await shop.signIn();
+    const root = `/v1/tenants/${shop.tenant}/catalogue`;
+    const post = (route: string, args: unknown[]) =>
+      shop.request(`${root}.${route}`, token, { args }, 'POST');
+    const created = await post('createCategory', [
+      { name: 'Goods', parent: null, defaultBaseUnit: { code: 'kg', kind: 'weight', decimals: 3 } },
+    ]);
+    const category = ((await created.json()) as { value: { value: { id: string } } }).value.value;
+    const response = await post('createItem', [
+      { name: 'Apples', category: category.id, kind: 'weighed' },
+    ]);
+    const item = ((await response.json()) as { value: { value: { id: string; kind: string } } })
+      .value.value;
+    expect(item.kind).toBe('weighed');
+    const changed = await post('changeItemStatus', [item.id, 'suspended', 'Inspect']);
+    expect(
+      ((await changed.json()) as { value: { value: { status: string } } }).value.value.status,
+    ).toBe('suspended');
+    const eligibility = await shop.request(
+      `${root}.eligibility?args=${encodeURIComponent(JSON.stringify([item.id, 'sale']))}`,
+      token,
+    );
+    expect(
+      ((await eligibility.json()) as { value: { ok: boolean; error: { code: string } } }).value
+        .error.code,
+    ).toBe('cat.item-suspended');
+    const foreign = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+    expect(
+      (
+        await shop.request(
+          `${root}.item?args=${encodeURIComponent(JSON.stringify([item.id]))}`,
+          foreign,
+        )
+      ).status,
+    ).toBe(403);
+    await expect(
+      (
+        await shop.request(
+          `/v1/tenants/${shop.otherTenant}/catalogue.item?args=${encodeURIComponent(JSON.stringify([item.id]))}`,
+          foreign,
+        )
+      ).json(),
+    ).resolves.toMatchObject({ value: null });
+    const foreignWrite = await shop.request(
+      `/v1/tenants/${shop.otherTenant}/catalogue.changeItemStatus`,
+      foreign,
+      { args: [item.id, 'active', 'No'] },
+      'POST',
+    );
+    expect(
+      ((await foreignWrite.json()) as { value: { error: { code: string } } }).value.error.code,
+    ).toBe('cat.item-not-found');
+    const invalid = await post('changeItemStatus', ['bad-id', 'active', 'No']);
+    expect(invalid.status).toBe(200);
+    expect(
+      ((await invalid.json()) as { value: { error: { code: string } } }).value.error.code,
+    ).toBe('cat.item-not-found');
+    const enrolled = await shop.request(
+      `/v1/tenants/${shop.tenant}/users.enrol`,
+      token,
+      { args: [{ handle: 'cashier-cat', name: 'Cashier', password: 'till-morning-3' }] },
+      'POST',
+    );
+    const person = ((await enrolled.json()) as { value: { value: { id: string } } }).value.value;
+    const roles = await shop.request(`/v1/tenants/${shop.tenant}/users.roles.list`, token);
+    const cashier = (
+      (await roles.json()) as { value: { id: string; seeded: string }[] }
+    ).value.find((one) => one.seeded === 'cashier');
+    expect(cashier).toBeDefined();
+    const assigned = await shop.request(
+      `/v1/tenants/${shop.tenant}/users.assignments.assign`,
+      token,
+      { args: [{ user: person.id, role: cashier!.id, confinement: { kind: 'tenant' } }] },
+      'POST',
+    );
+    expect(((await assigned.json()) as { value: { ok: boolean } }).value.ok).toBe(true);
+    const cashierToken = await shop.signIn(shop.tenant, 'cashier-cat', 'till-morning-3');
+    expect(
+      (
+        await shop.request(
+          `${root}.item?args=${encodeURIComponent(JSON.stringify([item.id]))}`,
+          cashierToken,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await shop.request(
+          `${root}.changeItemStatus`,
+          cashierToken,
+          { args: [item.id, 'active', 'Denied'] },
+          'POST',
+        )
+      ).status,
+    ).toBe(403);
+  });
+});
+
 async function fixture(enableSyn02Fixture = false) {
   if (!database) throw new Error('A PostgreSQL test URL is required.');
   const schema = `vertex_test_${newId<'schema'>().replaceAll('-', '')}`;
