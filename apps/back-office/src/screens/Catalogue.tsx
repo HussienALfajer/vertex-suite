@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type {
-  BarcodeResolution,
-  Category,
-  CategoryId,
-  Item,
-  ItemBarcode,
-  ItemKind,
-  ItemStatus,
-  ItemUnitId,
+import {
+  SEARCH_LENGTH,
+  type BarcodeResolution,
+  type Category,
+  type CategoryId,
+  type Item,
+  type ItemBarcode,
+  type ItemKind,
+  type ItemSearch,
+  type ItemStatus,
+  type ItemUnitId,
 } from '@vertex/cat/contract';
 import { quantity, toDate, type Refusal, type UnitKind } from '@vertex/kernel';
 import {
@@ -33,8 +35,6 @@ import { useLoaded } from '../organisation.js';
 import type { SystemOfRecord } from '../system.js';
 
 const NONE = 'none';
-/** CAT's own limit on a term, so that typing can never reach its refusal. */
-const TERM_LENGTH = 100;
 const PIECE = { code: 'pc', kind: 'count' as const, decimals: 0 };
 const KILOGRAM = { code: 'kg', kind: 'weight' as const, decimals: 3 };
 
@@ -102,8 +102,16 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
   // store node is in the same room and answers in tens of milliseconds — and
   // an answer overtaken by a newer term is dropped rather than shown under it.
   const found = useLoaded(term, (asked) => system.catalogue.search(asked));
-  const results = found.value?.ok === true ? found.value.value : null;
+  const answer = found.value?.ok === true ? found.value.value : null;
   const searchRefusal = found.value?.ok === false ? found.value.error : null;
+  // What stays on screen while the next answer is on its way: the last one,
+  // rather than an empty list and a silent count on every keystroke. It is
+  // replaced the moment the answer to the current term arrives.
+  const [shown, setShown] = useState<ItemSearch | null>(null);
+  useEffect(() => {
+    if (answer !== null) setShown(answer);
+  }, [answer]);
+  const results = answer ?? shown;
 
   const nodes = useMemo(() => treeOf(categories), [categories]);
   const choices = categories.map((one) => ({ id: one.id, label: one.name }));
@@ -447,7 +455,7 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
           placeholder={t.format('catalogue.search.placeholder')}
           value={term}
           onChange={setTerm}
-          maxLength={TERM_LENGTH}
+          maxLength={SEARCH_LENGTH}
           isLabelVisible
         />
         {/* Present before it has anything to say, so that the count is read

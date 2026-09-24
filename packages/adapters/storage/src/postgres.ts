@@ -5,6 +5,7 @@ import {
   advance,
   committed,
   conflict,
+  newEpoch,
   revisions,
   snapshot,
   type Committed,
@@ -46,6 +47,10 @@ export async function openPostgresStore(options: PostgresStoreOptions): Promise<
       await client.query(
         `CREATE TABLE IF NOT EXISTS ${recordsTable} (key text PRIMARY KEY, value text NOT NULL, digest text NOT NULL)`,
       );
+      // Added to stores created before it existed; see `Committed.epoch`.
+      await client.query(
+        `ALTER TABLE ${revisionTable} ADD COLUMN IF NOT EXISTS epoch text NOT NULL DEFAULT ''`,
+      );
       await client.query(
         `INSERT INTO ${revisionTable} (id, version) VALUES (1, 0) ON CONFLICT (id) DO NOTHING`,
       );
@@ -85,13 +90,13 @@ export async function openPostgresStore(options: PostgresStoreOptions): Promise<
     let releaseError: Error | undefined;
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-      const revision = await client.query<{ version: string }>(
-        `SELECT version FROM ${revisionTable} WHERE id = 1`,
+      const revision = await client.query<{ version: string; epoch: string }>(
+        `SELECT version, epoch FROM ${revisionTable} WHERE id = 1`,
       );
       const first = revision.rows[0];
       if (revision.rows.length !== 1 || !first) throw new Error('The store revision is missing.');
       const rows = await client.query<StoredRow>(`SELECT key, value, digest FROM ${recordsTable}`);
-      const loaded = committed(Number(first.version), rows.rows);
+      const loaded = committed(Number(first.version), first.epoch, rows.rows);
       await client.query('COMMIT');
       held.loaded(loaded);
       return loaded;
@@ -113,10 +118,11 @@ export async function openPostgresStore(options: PostgresStoreOptions): Promise<
         check();
         // One statement, so one consistent reading of the counter. When it
         // names the revision already held, nothing else needs to be read.
-        const current = await pool.query<{ version: string }>(
-          `SELECT version FROM ${revisionTable} WHERE id = 1`,
+        const current = await pool.query<{ version: string; epoch: string }>(
+          `SELECT version, epoch FROM ${revisionTable} WHERE id = 1`,
         );
-        const cached = current.rows.length === 1 ? held.at(Number(current.rows[0]?.version)) : null;
+        const now = current.rows.length === 1 ? current.rows[0] : undefined;
+        const cached = now === undefined ? null : held.at(Number(now.version), now.epoch);
         const one = snapshot(cached ?? (await load()));
         check();
         active.set(one.session, one);
@@ -127,14 +133,15 @@ export async function openPostgresStore(options: PostgresStoreOptions): Promise<
         try {
           const changes = one.changes();
           if (changes.length === 0) return;
+          const epoch = newEpoch();
           const client = await pool.connect();
           let releaseError: Error | undefined;
           try {
             await client.query('BEGIN');
             await client.query('SET LOCAL synchronous_commit = on');
             const updated = await client.query(
-              `UPDATE ${revisionTable} SET version = version + 1 WHERE id = 1 AND version = $1 RETURNING version`,
-              [one.version],
+              `UPDATE ${revisionTable} SET version = version + 1, epoch = $2 WHERE id = 1 AND version = $1 RETURNING version`,
+              [one.version, epoch],
             );
             if (updated.rowCount !== 1) throw conflict();
             // In batches rather than a statement per row: a command that
@@ -158,7 +165,7 @@ export async function openPostgresStore(options: PostgresStoreOptions): Promise<
               );
             }
             await client.query('COMMIT');
-            held.advanced(advance(one.base, changes));
+            held.advanced(advance(one.base, changes, epoch));
           } catch (cause) {
             try {
               await client.query('ROLLBACK');

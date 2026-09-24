@@ -33,10 +33,8 @@ import type {
   NewItem,
   RecordSession,
 } from './contract.js';
+import { SEARCH_LENGTH, SEARCH_LIMIT, SEARCH_LIMIT_MAX } from './contract.js';
 import {
-  SEARCH_LENGTH,
-  SEARCH_LIMIT,
-  SEARCH_LIMIT_MAX,
   lineOf,
   match,
   searchable,
@@ -677,6 +675,7 @@ export function searchIn(
   t: TenantId,
   term: unknown,
   limit: unknown,
+  throughCategories: boolean,
 ): Outcome<ItemSearch> {
   if (typeof term !== 'string' || term.length > SEARCH_LENGTH)
     return refuse('cat.search-invalid', { max: SEARCH_LENGTH });
@@ -688,7 +687,7 @@ export function searchIn(
     const shard = s.get(key('search', t, name)) as IndexShard | undefined;
     if (shard?.tenant === t && shard.entries !== '') shards.push(shard.entries);
   }
-  const found = match(shards, categoriesIn(s, t), term, size);
+  const found = match(shards, throughCategories ? categoriesIn(s, t) : [], term, size);
   const items = found.ids.map((id) => {
     const item = itemIn(s, t, id);
     // Written in one unit of work with the item and never without it, so an

@@ -413,6 +413,40 @@ for (const kind of ['terminal', 'store-node'] as const) {
       });
     });
 
+    it('does not mistake another history for the revision it holds when the counter repeats', async () => {
+      const f = await fixture(kind);
+      const peer = await f.peer();
+      await f.transact().run(f.context, (uow) => {
+        uow.session.put('restore/probe', { from: 'held' });
+        return Promise.resolve();
+      });
+      // A backup restored under the running store moves the counter back one,
+      // and another process commits it forward to the same number again.
+      if (kind === 'terminal') {
+        const db = new DatabaseSync((f.config as { path: string }).path);
+        try {
+          db.exec('UPDATE vertex_revision SET version = version - 1 WHERE id = 1');
+        } finally {
+          db.close();
+        }
+      } else {
+        const schema = (f.config as { schema: string }).schema;
+        const admin = new Pool({ connectionString: pgUrl });
+        try {
+          await admin.query(`UPDATE "${schema}".vertex_revision SET version = version - 1`);
+        } finally {
+          await admin.end();
+        }
+      }
+      const theirs = await peer.driver.begin(f.context);
+      theirs.put('restore/probe', { from: 'the other history' });
+      await peer.driver.commit(theirs);
+      await f.transact().run(f.context, (uow) => {
+        expect(uow.session.get('restore/probe')).toEqual({ from: 'the other history' });
+        return Promise.resolve();
+      });
+    });
+
     it('hands every command its own copy of what it reads', async () => {
       const f = await fixture(kind);
       await f.transact().run(f.context, (uow) => {

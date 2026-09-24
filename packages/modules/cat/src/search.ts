@@ -9,7 +9,7 @@ import type { Category, CategoryId, ItemId } from './contract.js';
  *   the same milk. Compatibility decomposition splits every vowel mark,
  *   shadda, sukun and dagger alef off its letter, and every non-spacing mark
  *   is then dropped — Latin accents with them, so `café` is `cafe`.
- * - **Hamza and alef forms.** The same decomposition turns `أ إ آ` into a bare
+ * - **Hamza and alef words.** The same decomposition turns `أ إ آ` into a bare
  *   alef and `ؤ ئ` into their seats, because Unicode spells each as the seat
  *   plus a combining hamza or madda. Alef wasla and the wavy-hamza alefs have
  *   no decomposition and are folded by name; a hamza on the line is dropped,
@@ -18,7 +18,7 @@ import type { Category, CategoryId, ItemId } from './contract.js';
  *   constantly, in both directions; each pair is one letter here.
  * - **Keyboards.** A Persian or Urdu layout sends its own yeh and kaf, and an
  *   Arabic one sends Arabic-Indic digits; each is folded to the letter or
- *   digit it stands for. Presentation forms and ligatures (`ﻻ`, `ﷲ`) are
+ *   digit it stands for. Presentation words and ligatures (`ﻻ`, `ﷲ`) are
  *   decomposed with everything else.
  * - **Tatweel, direction marks and punctuation** are not part of a word.
  *   Anything that is neither letter nor digit separates words, which is also
@@ -56,13 +56,6 @@ const FOLDS: Readonly<Record<string, string>> = {
   '\u0629': '\u0647', // taa marbuta → heh
 };
 
-/** The longest term a search accepts: a name and a code, not a paragraph. */
-export const SEARCH_LENGTH = 100;
-/** How many items one answer carries, unless the caller asks for fewer. */
-export const SEARCH_LIMIT = 50;
-/** The most one answer may carry: a screen of results, not the catalogue. */
-export const SEARCH_LIMIT_MAX = 200;
-
 /**
  * What the index holds of one item: its identity and category, and the three
  * texts a term may be found in, each already `searchable`.
@@ -98,16 +91,21 @@ export interface IndexShard {
 }
 
 /**
- * Items are spread over a fixed set of shards by the last two hex digits of
- * their identifier, which in a UUIDv7 are random. Enough that writing one item
- * rewrites a few kilobytes rather than the whole index, and that two managers
- * editing two items rarely touch the same record; few enough that reading all
- * of them is one pass over a short list of keys.
+ * Items are spread over a fixed set of shards by a hash of their identifier.
+ * Enough that writing one item rewrites a few kilobytes rather than the whole
+ * index, and that two managers editing two items rarely touch the same
+ * record; few enough that reading all of them is one pass over a short list of
+ * keys. Hashed, rather than read off the identifier's last digits, so that
+ * every identifier lands in a shard the search reads, whatever its shape.
  */
 export const SHARDS = 256;
 
 export function shardOf(id: ItemId): string {
-  return id.slice(-2).toLowerCase();
+  // FNV-1a: small, fast, and well spread over the time-ordered UUIDs items get.
+  let hash = 0x811c9dc5;
+  for (let at = 0; at < id.length; at += 1)
+    hash = Math.imul(hash ^ id.charCodeAt(at), 0x01000193) >>> 0;
+  return (hash % SHARDS).toString(16).padStart(2, '0');
 }
 
 export function shardNames(): readonly string[] {
@@ -127,21 +125,45 @@ export function withLine(entries: string, id: ItemId, line: string | null): stri
 }
 
 /**
- * The same word with the definite article, and without it.
+ * A word of the term, and the stem it also answers for.
  *
  * `الحليب` is how a person says milk and `حليب` is how a label often prints it,
- * so a term that starts with `ال` also matches its stem — when the stem is
- * still a word of three letters or more, so that `اله` (a folded `آلة`) does
- * not become the single letter that is in half the catalogue.
+ * so a word that starts with `ال` also finds its stem — but only at the start
+ * of a word, where an article's stem would be. Anywhere else, `البان` (dairy,
+ * whose `ال` is not an article at all) would find `لبان` through `بان`. And
+ * only when the stem is still three letters or more, so that `اله` (a folded
+ * `آلة`) does not become one letter that is in half the catalogue.
  */
-const ARTICLE = '\u0627\u0644';
-
-function spellings(token: string): readonly string[] {
-  return token.startsWith(ARTICLE) && token.length >= 5 ? [token, token.slice(2)] : [token];
+interface Word {
+  readonly text: string;
+  readonly stem: string | null;
 }
 
-function contains(text: string, forms: readonly string[]): boolean {
-  return forms.some((form) => text.includes(form));
+const ARTICLE = '\u0627\u0644';
+
+function wordOf(token: string): Word {
+  return {
+    text: token,
+    stem: token.startsWith(ARTICLE) && token.length >= 5 ? token.slice(ARTICLE.length) : null,
+  };
+}
+
+/** What separates words in an index line: a space, a field, a code, a line. */
+const BOUNDARY = /[ \t|\n]/u;
+
+function beginsAWord(text: string, part: string): boolean {
+  for (let at = text.indexOf(part); at !== -1; at = text.indexOf(part, at + 1))
+    if (at === 0 || BOUNDARY.test(text.charAt(at - 1))) return true;
+  return false;
+}
+
+function contains(text: string, word: Word): boolean {
+  return text.includes(word.text) || (word.stem !== null && beginsAWord(text, word.stem));
+}
+
+/** Whether the text could contain the word — cheaper, and never wrong when it says no. */
+function mayContain(text: string, word: Word): boolean {
+  return text.includes(word.stem ?? word.text);
 }
 
 /**
@@ -183,31 +205,36 @@ export function match(
 ): Matches {
   const whole = searchable(term);
   const tokens = [...new Set(whole.split(' ').filter((one) => one !== ''))];
-  const forms = tokens.map(spellings);
+  const words = tokens.map(wordOf);
   const names = new Map(categories.map((one) => [one.id, searchable(one.name)]));
-  const through = forms.map((one) => categoriesMatching(categories, names, one));
+  const through = words.map((one) => categoriesMatching(categories, names, one));
   const found: Match[] = [];
   for (const entries of shards) {
     // A shard in which some word appears nowhere, and which no category could
     // answer for, holds no match; most shards are passed over here.
-    if (forms.some((one, at) => through[at]?.size === 0 && !contains(entries, one))) continue;
+    if (words.some((one, at) => through[at]?.size === 0 && !mayContain(entries, one))) continue;
     for (const line of entries.split('\n')) {
-      if (forms.some((one, at) => through[at]?.size === 0 && !contains(line, one))) continue;
+      if (words.some((one, at) => through[at]?.size === 0 && !mayContain(line, one))) continue;
       const [id = '', category = '', name = '', code = '', barcodes = ''] = line.split('\t');
       const own = `${name}\t${code}\t${barcodes}`;
       let rank = OWN_TEXT;
       let matched = true;
-      for (let at = 0; at < forms.length && matched; at += 1) {
-        const one = forms[at] ?? [];
-        if (contains(own, one)) continue;
+      for (let at = 0; at < words.length && matched; at += 1) {
+        const one = words[at];
+        if (one === undefined || contains(own, one)) continue;
         if (through[at]?.has(category as CategoryId)) rank = THROUGH_CATEGORY;
         else matched = false;
       }
       if (!matched) continue;
-      const first = tokens[0];
+      const first = words[0];
       if (first !== undefined && rank === OWN_TEXT) {
         if (code === whole || barcodes.split('|').includes(whole)) rank = EXACT;
-        else if (name.startsWith(first)) rank = NAME_START;
+        // With the article or without it, as the match itself allowed.
+        else if (
+          name.startsWith(first.text) ||
+          (first.stem !== null && name.startsWith(first.stem))
+        )
+          rank = NAME_START;
       }
       found.push({ id: id as ItemId, rank, name });
     }
@@ -261,7 +288,7 @@ function best(found: readonly Match[], limit: number): readonly Match[] {
 function categoriesMatching(
   categories: readonly Category[],
   names: ReadonlyMap<CategoryId, string>,
-  forms: readonly string[],
+  word: Word,
 ): ReadonlySet<CategoryId> {
   const byId = new Map(categories.map((one) => [one.id, one]));
   const hit = new Set<CategoryId>();
@@ -270,7 +297,7 @@ function categoriesMatching(
     for (let cursor: Category | undefined = category; cursor !== undefined;) {
       if (seen.has(cursor.id)) break;
       seen.add(cursor.id);
-      if (contains(names.get(cursor.id) ?? '', forms)) {
+      if (contains(names.get(cursor.id) ?? '', word)) {
         hit.add(category.id);
         break;
       }

@@ -131,7 +131,12 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
             answer(by, (s) => itemEligibility(s, by.tenant, id, trade)),
           scan: (by, code) => answer(by, (s) => scanIn(s, by.tenant, code)),
           barcode: (by, code) => answer(by, (s) => barcodeIn(s, by.tenant, code)),
-          search: (by, term, limit) => answer(by, (s) => searchIn(s, by.tenant, term, limit)),
+          // A category name is found only by a caller who may read categories;
+          // otherwise the ranking would name them, one guessed word at a time.
+          search: async (by, term, limit) => {
+            const throughCategories = await context.authorise(by, CAT_PERMISSIONS.category.view);
+            return answer(by, (s) => searchIn(s, by.tenant, term, limit, throughCategories));
+          },
         };
       }),
       provideContract(

@@ -148,6 +148,15 @@ export type CatRefusal = Refusal<
   | 'cat.search-invalid'
   | 'cat.search-limit-invalid'
 >;
+/**
+ * The longest term a search accepts: a name and a code, not a paragraph. A
+ * screen limits its field to this, so that typing never reaches the refusal.
+ */
+export const SEARCH_LENGTH = 100;
+/** How many items one answer carries, unless the caller asks for fewer. */
+export const SEARCH_LIMIT = 50;
+/** The most one answer may carry: a screen of results, not the catalogue. */
+export const SEARCH_LIMIT_MAX = 200;
 /** What a search found (`CAT-15`): the best matches, and how many there were in all. */
 export interface ItemSearch {
   /** Best match first, and never more than the limit the search was given. */

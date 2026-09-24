@@ -15,13 +15,14 @@ import {
 } from '@vertex/platform';
 import type { Authoriser, MemorySession } from '@vertex/platform';
 import { catModule, Catalogue, CatalogueAdministration, CAT_PERMISSIONS } from './index.js';
-import { searchable } from './search.js';
+import { searchable, shardNames, shardOf } from './search.js';
 
 const unwrap = <T, E>(result: Result<T, E>): T =>
   orThrow(result, (error) => new Error(JSON.stringify(error)));
 
 function installed() {
   let allowed = true;
+  const withheld = new Set<string>();
   const at = instant(1_780_000_000_000);
   const clock = { now: () => at };
   const Authority = contractKey<Authoriser>('sec.authorisation');
@@ -30,7 +31,11 @@ function installed() {
     defineModule<MemorySession>({
       code: 'SEC',
       labelKey: 'module.sec',
-      provides: [provideContract(Authority, () => ({ may: () => Promise.resolve(allowed) }))],
+      provides: [
+        provideContract(Authority, () => ({
+          may: (_by, right) => Promise.resolve(allowed && !withheld.has(right)),
+        })),
+      ],
     }),
     defineModule<MemorySession>({ code: 'FX', labelKey: 'module.fx' }),
     catModule<MemorySession>(),
@@ -67,6 +72,9 @@ function installed() {
     other,
     deny: () => {
       allowed = false;
+    },
+    withhold: (right: string) => {
+      withheld.add(right);
     },
     store,
     registry,
@@ -820,6 +828,43 @@ describe('CAT-15 Arabic search', () => {
       ).not.toContain('SHARED-1');
     }
     expect(unwrap(await h.read.search(h.by, '')).total).toBe(1);
+  });
+
+  it('drops an article only from the start of a word, and ranks as though it was never typed', async () => {
+    const h = installed();
+    const { add, dairy } = await shelves(h);
+    const gum = await add('لبان عربي');
+    const milk = await add('حليب طازج');
+    const chocolate = await add('شوكولاتة بالحليب');
+    // `ال` in `البان` is part of the word, not an article: the stem `بان`
+    // inside `لبان` is no match.
+    const cheese = await add('جبنة', dairy.id);
+    expect(unwrap(await h.read.search(h.by, 'البان')).items.map((one) => one.id)).toEqual([
+      cheese.id,
+    ]);
+    expect(unwrap(await h.read.search(h.by, 'لبان')).items.map((one) => one.id)).toContain(gum.id);
+    expect(unwrap(await h.read.search(h.by, 'الحليب')).items.map((one) => one.id)).toEqual([
+      milk.id,
+      chocolate.id,
+    ]);
+  });
+
+  it('finds nothing through a category name for a caller who may not read categories', async () => {
+    const h = installed();
+    const { add, dairy } = await shelves(h);
+    const cheese = await add('جبنة', dairy.id);
+    expect(unwrap(await h.read.search(h.by, 'البان')).total).toBe(1);
+    h.withhold(CAT_PERMISSIONS.category.view);
+    expect(unwrap(await h.read.search(h.by, 'البان')).total).toBe(0);
+    expect(unwrap(await h.read.search(h.by, 'جبنة')).items.map((one) => one.id)).toEqual([
+      cheese.id,
+    ]);
+  });
+
+  it('files every identifier, whatever its shape, in a shard the search reads', () => {
+    const read = new Set(shardNames());
+    for (const id of [newId<'item'>(), 'legacy-42', 'ZZ', '', 'حليب'])
+      expect(read.has(shardOf(id as ReturnType<typeof newId<'item'>>)), id).toBe(true);
   });
 
   it('refuses a term that is not one, a limit out of range, and a caller without the right', async () => {
