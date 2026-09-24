@@ -11,7 +11,7 @@ export {
   UndeclaredEventError,
 } from './errors.js';
 
-export { ANYWHERE, type AuthorisationScope, type Authoriser } from './authorise.js';
+export { ANYWHERE, type Anywhere, type AuthorisationScope, type Authoriser } from './authorise.js';
 
 export { contractKey, type ContractKey, type ContractResolver } from './contract.js';
 

@@ -38,7 +38,7 @@ interface Place {
   readonly anywhere?: never;
 }
 
-interface Anywhere {
+export interface Anywhere {
   readonly anywhere: true;
   readonly branch?: never;
   readonly location?: never;
@@ -62,7 +62,7 @@ interface Anywhere {
  * this.** Changing a record every branch shares is an act at the tenant-wide
  * place, whoever is only reading it.
  */
-export const ANYWHERE: AuthorisationScope = Object.freeze({ anywhere: true });
+export const ANYWHERE: Anywhere = Object.freeze({ anywhere: true });
 
 /**
  * Whatever this edition uses to answer "may they".

@@ -48,6 +48,7 @@ import {
   runMigrations,
   systemContext,
   untilCommitted,
+  type Anywhere,
   type CommandContext,
   type MemorySession,
   type OperationEnvelope,
@@ -338,7 +339,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
       path: string,
       right: string,
       dispatch: Dispatch,
-      scope?: (args: readonly unknown[]) => { branch?: string } | typeof ANYWHERE,
+      scope?: (args: readonly unknown[]) => { branch?: string } | Anywhere,
     ): void => {
       routes.set(path, {
         read: true,
