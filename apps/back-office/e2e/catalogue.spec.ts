@@ -80,3 +80,46 @@ test('CAT-02 CAT-12 creates tracking types and changes lifecycle by keyboard in 
   await expect(apples.getByText('معلّق')).toBeVisible();
   await expect(page.getByText('السبب الحالي: فحص المخزون')).toBeVisible();
 });
+
+test('CAT-08 adds an item unit and previews an exact stock quantity by keyboard', async ({
+  page,
+}) => {
+  await gotoThemed(page);
+  await page.keyboard.type('owner');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('till-morning-1');
+  await page.keyboard.press('Enter');
+  await page.getByRole('link', { name: 'الأصناف والفئات' }).focus();
+  await page.keyboard.press('Enter');
+  await enter(page, 'الاسم', 'أدوات');
+  await page.getByRole('button', { name: 'إنشاء فئة' }).focus();
+  await page.keyboard.press('Enter');
+  await enter(page, 'الاسم', 'قلم', 1);
+  await choose(page, 'فئة الصنف', 'أدوات');
+  await choose(page, 'وحدة الأساس', 'قطعة');
+  await page.getByRole('button', { name: 'إنشاء صنف' }).focus();
+  await page.keyboard.press('Enter');
+  await page
+    .getByRole('listitem')
+    .filter({ hasText: 'قلم' })
+    .getByRole('button', { name: 'عرض الحالة والسجل' })
+    .focus();
+  await page.keyboard.press('Enter');
+  await enter(page, 'رمز الوحدة الجديدة', 'pack');
+  await enter(page, 'عدد وحدات الأساس في الوحدة الجديدة', '6');
+  await page.getByRole('button', { name: 'إضافة وحدة' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('code').filter({ hasText: 'pack' })).toHaveAttribute('dir', 'ltr');
+  await enter(page, 'كمية المعاينة', '2');
+  await choose(page, 'من وحدة', 'pack');
+  await expect(
+    page.getByRole('button', { name: 'pack من وحدة' }).locator('[dir="ltr"]'),
+  ).toHaveText('pack');
+  await page.getByRole('button', { name: 'معاينة التحويل' }).focus();
+  await page.keyboard.press('Enter');
+  const result = page
+    .locator('p')
+    .filter({ has: page.locator('span[dir="ltr"]', { hasText: '12' }) });
+  await expect(result).toBeVisible();
+  await expect(result.getByText('قطعة')).toBeVisible();
+});

@@ -30,6 +30,8 @@ export interface SelectProps extends Omit<
   readonly description?: string;
   readonly errorMessage?: string;
   readonly placeholder?: string;
+  /** Isolate machine-readable option labels from the surrounding RTL text. */
+  readonly isMachineText?: boolean;
   readonly className?: string;
 }
 
@@ -51,6 +53,7 @@ export function Select({
   description,
   errorMessage,
   placeholder,
+  isMachineText = false,
   className,
   ...props
 }: SelectProps): ReactNode {
@@ -76,7 +79,13 @@ export function Select({
           focusRing,
         )}
       >
-        <SelectValue className="truncate data-[placeholder]:text-fg-muted">
+        <SelectValue
+          {...(isMachineText ? { dir: 'ltr' as const } : {})}
+          className={clsx(
+            'truncate data-[placeholder]:text-fg-muted',
+            isMachineText && 'font-mono',
+          )}
+        >
           {({ isPlaceholder, selectedText }) =>
             isPlaceholder ? (placeholder ?? '') : selectedText
           }
@@ -123,7 +132,13 @@ export function Select({
                 'data-[disabled]:text-fg-disabled data-[disabled]:cursor-not-allowed',
               )}
             >
-              {option.label}
+              {isMachineText ? (
+                <span dir="ltr" className="font-mono">
+                  {option.label}
+                </span>
+              ) : (
+                option.label
+              )}
             </ListBoxItem>
           )}
         </ListBox>

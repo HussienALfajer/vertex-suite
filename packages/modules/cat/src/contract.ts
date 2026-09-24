@@ -4,6 +4,26 @@ import { contractKey, type CommandContext } from '@vertex/platform';
 
 export type CategoryId = Id<'category'>;
 export type ItemId = Id<'item'>;
+export type ItemUnitId = Id<'item-unit'>;
+/**
+ * The factor is the exact number of base units contained in one of this unit.
+ * All edges lead directly to the immutable base; callers cannot introduce a
+ * second path with a contradictory factor or change an existing relationship.
+ */
+export interface ItemUnit {
+  readonly id: ItemUnitId;
+  readonly item: ItemId;
+  readonly unit: Unit;
+  readonly basePerUnit: string;
+}
+export interface NewItemUnit {
+  readonly unit: Unit;
+  readonly basePerUnit: string;
+}
+export interface ConvertedItemQuantity {
+  readonly amount: string;
+  readonly unit: ItemUnit;
+}
 /** Stored as an extensible value; the validator admits only these four today. */
 export type ItemKind = 'standard' | 'weighed' | 'batch-tracked' | 'variant-bearing';
 export type ItemStatus = 'active' | 'suspended' | 'discontinued';
@@ -31,6 +51,7 @@ export interface Item {
   readonly kind: ItemKind;
   /** A snapshot, resolved when created; category changes do not rewrite it. */
   readonly baseUnit: Unit;
+  readonly units: readonly ItemUnit[];
   readonly status: ItemStatus;
   readonly statusReason: string | null;
   readonly statusHistory: readonly ItemStatusChange[];
@@ -59,6 +80,11 @@ export type CatRefusal = Refusal<
   | 'cat.cycle'
   | 'cat.unit-required'
   | 'cat.unit-invalid'
+  | 'cat.unit-duplicate'
+  | 'cat.unit-not-found'
+  | 'cat.factor-invalid'
+  | 'cat.quantity-invalid'
+  | 'cat.conversion-inexact'
   | 'cat.tracking-unsupported'
   | 'cat.tracking-unit-incompatible'
   | 'cat.item-not-found'
@@ -78,6 +104,21 @@ export interface Catalogue {
   category(by: CommandContext, id: CategoryId): Promise<Category | null>;
   items(by: CommandContext): Promise<readonly Item[]>;
   item(by: CommandContext, id: ItemId): Promise<Item | null>;
+  units(by: CommandContext, id: ItemId): Promise<Result<readonly ItemUnit[], CatRefusal>>;
+  convert(
+    by: CommandContext,
+    id: ItemId,
+    amount: string,
+    from: ItemUnitId,
+    to: ItemUnitId,
+  ): Promise<Result<ConvertedItemQuantity, CatRefusal>>;
+  /** Stock writers call this to obtain only the item's immutable base unit. */
+  stockQuantity(
+    by: CommandContext,
+    id: ItemId,
+    amount: string,
+    from: ItemUnitId,
+  ): Promise<Result<ConvertedItemQuantity, CatRefusal>>;
   eligibility(by: CommandContext, id: ItemId, trade: ItemTrade): Promise<Result<Item, CatRefusal>>;
 }
 export interface CatalogueAdministration {
@@ -93,6 +134,11 @@ export interface CatalogueAdministration {
     parent: CategoryId | null,
   ): Promise<Result<Category, CatRefusal>>;
   createItem(by: CommandContext, input: NewItem): Promise<Result<Item, CatRefusal>>;
+  addUnit(
+    by: CommandContext,
+    id: ItemId,
+    input: NewItemUnit,
+  ): Promise<Result<ItemUnit, CatRefusal>>;
   changeItemStatus(
     by: CommandContext,
     id: ItemId,

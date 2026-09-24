@@ -13,17 +13,21 @@ import {
   Catalogue,
   CatalogueAdministration,
   type CatRefusal,
+  type ItemUnitId,
   type RecordSession,
 } from './contract.js';
 import {
   categoriesIn,
+  addItemUnit,
   categoryIn,
   changeItemStatus,
   createCategory,
   createItem,
+  convertItemQuantity,
   itemIn,
   itemEligibility,
   itemsIn,
+  unitsIn,
   moveCategory,
   reviseCategory,
 } from './catalogue.js';
@@ -88,6 +92,35 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
           items: (by) => read(by, CAT_PERMISSIONS.item.view, [], (s) => itemsIn(s, by.tenant)),
           item: (by, id) =>
             read(by, CAT_PERMISSIONS.item.view, null, (s) => itemIn(s, by.tenant, id)),
+          units: async (by, id) =>
+            (await context.authorise(by, CAT_PERMISSIONS.item.view))
+              ? context.transactor.run(by, (uow) =>
+                  Promise.resolve(unitsIn(uow.session, by.tenant, id)),
+                )
+              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
+          convert: async (by, id, amount, from, to) =>
+            (await context.authorise(by, CAT_PERMISSIONS.item.view))
+              ? context.transactor.run(by, (uow) =>
+                  Promise.resolve(
+                    convertItemQuantity(uow.session, by.tenant, id, amount, from, to),
+                  ),
+                )
+              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
+          stockQuantity: async (by, id, amount, from) =>
+            (await context.authorise(by, CAT_PERMISSIONS.item.view))
+              ? context.transactor.run(by, (uow) =>
+                  Promise.resolve(
+                    convertItemQuantity(
+                      uow.session,
+                      by.tenant,
+                      id,
+                      amount,
+                      from,
+                      id as unknown as ItemUnitId,
+                    ),
+                  ),
+                )
+              : refuse('cat.not-permitted', { right: CAT_PERMISSIONS.item.view }),
           eligibility: async (by, id, trade) =>
             (await context.authorise(by, CAT_PERMISSIONS.item.view))
               ? context.transactor.run(by, (uow) =>
@@ -124,6 +157,8 @@ export function catModule<Session extends RecordSession>(): ModuleDefinition<Ses
               ),
             createItem: (by, input) =>
               write(by, CAT_PERMISSIONS.item.create, (s) => createItem(s, by.tenant, input)),
+            addUnit: (by, id, input) =>
+              write(by, CAT_PERMISSIONS.item.edit, (s) => addItemUnit(s, by.tenant, id, input)),
             changeItemStatus: (by, id, status, reason) =>
               write(by, CAT_PERMISSIONS.item.edit, (s) =>
                 changeItemStatus(s, by, context.clock.now(), id, status, reason),

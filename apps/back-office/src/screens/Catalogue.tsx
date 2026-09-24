@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { Category, CategoryId, Item, ItemKind, ItemStatus } from '@vertex/cat/contract';
-import { toDate } from '@vertex/kernel';
+import type {
+  Category,
+  CategoryId,
+  Item,
+  ItemKind,
+  ItemStatus,
+  ItemUnitId,
+} from '@vertex/cat/contract';
+import { quantity, toDate, type UnitKind } from '@vertex/kernel';
 import {
   Badge,
   Banner,
@@ -9,6 +16,7 @@ import {
   DateTime,
   PageHeader,
   Panel,
+  Quantity,
   Select,
   TextArea,
   TextInput,
@@ -46,6 +54,16 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
   const [selectedItem, setSelectedItem] = useState<Item['id'] | null>(null);
   const [nextStatus, setNextStatus] = useState<ItemStatus>('suspended');
   const [reason, setReason] = useState('');
+  const [newUnitCode, setNewUnitCode] = useState('');
+  const [newUnitKind, setNewUnitKind] = useState<UnitKind>('count');
+  const [newUnitDecimals, setNewUnitDecimals] = useState('0');
+  const [basePerUnit, setBasePerUnit] = useState('');
+  const [previewAmount, setPreviewAmount] = useState('');
+  const [previewFrom, setPreviewFrom] = useState('');
+  const [previewTo, setPreviewTo] = useState('');
+  const [preview, setPreview] = useState<{ amount: string; unit: Item['units'][number] } | null>(
+    null,
+  );
   const [message, setMessage] = useState('');
   const [working, setWorking] = useState(false);
 
@@ -133,6 +151,52 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
         setReason('');
         setMessage(t.format('catalogue.status.changed'));
       } else setMessage(t.format(`refusal.${result.error.code}`));
+    } catch {
+      setMessage(t.format('data.unreachable'));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function addUnit(): Promise<void> {
+    if (working || selected === null) return;
+    setWorking(true);
+    try {
+      const result = await system.catalogue.addUnit(selected.id, {
+        unit: { code: newUnitCode, kind: newUnitKind, decimals: Number(newUnitDecimals) },
+        basePerUnit,
+      });
+      if (result.ok) {
+        setItems(await system.catalogue.items());
+        setNewUnitCode('');
+        setBasePerUnit('');
+        setPreview(null);
+        setMessage(t.format('catalogue.units.added'));
+      } else setMessage(t.format(`refusal.${result.error.code}`));
+    } catch {
+      setMessage(t.format('data.unreachable'));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function convertPreview(): Promise<void> {
+    if (working || selected === null) return;
+    setWorking(true);
+    try {
+      const result = await system.catalogue.convert(
+        selected.id,
+        previewAmount,
+        (previewFrom || selected.units[0]?.id) as ItemUnitId,
+        (previewTo || selected.units[0]?.id) as ItemUnitId,
+      );
+      if (result.ok) {
+        setPreview(result.value);
+        setMessage('');
+      } else {
+        setPreview(null);
+        setMessage(t.format(`refusal.${result.error.code}`));
+      }
     } catch {
       setMessage(t.format('data.unreachable'));
     } finally {
@@ -266,6 +330,9 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
                   onPress={() => {
                     setSelectedItem(one.id);
                     setNextStatus(one.status === 'suspended' ? 'active' : 'suspended');
+                    setPreview(null);
+                    setPreviewFrom('');
+                    setPreviewTo('');
                   }}
                 >
                   {t.format('catalogue.item.inspect')}
@@ -277,6 +344,114 @@ export function CatalogueScreen({ system }: { readonly system: SystemOfRecord })
       </Panel>
       {selected === null ? null : (
         <Panel title={t.format('catalogue.item.details', { name: selected.name })}>
+          <h3>{t.format('catalogue.units.title')}</h3>
+          <ul>
+            {selected.units.map((itemUnit) => (
+              <li key={itemUnit.id}>
+                <UnitLabel code={itemUnit.unit.code} /> (<Code>{itemUnit.unit.code}</Code>) —{' '}
+                <Quantity
+                  value={quantity(itemUnit.basePerUnit, selected.baseUnit.code)}
+                  unit={selected.baseUnit}
+                />{' '}
+                {itemUnit.id === selected.units[0]?.id ? t.format('catalogue.units.base') : null}
+              </li>
+            ))}
+          </ul>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void addUnit();
+            }}
+          >
+            <TextInput
+              label={t.format('catalogue.units.code')}
+              value={newUnitCode}
+              onChange={setNewUnitCode}
+              isMachineText
+              isRequired
+            />
+            <Select
+              label={t.format('catalogue.units.kind')}
+              options={(['count', 'weight', 'volume', 'length'] as const).map((kind) => ({
+                id: kind,
+                label: t.format(`catalogue.units.kind.${kind}`),
+              }))}
+              value={newUnitKind}
+              onChange={(key) => {
+                setNewUnitKind(String(key) as UnitKind);
+                setNewUnitDecimals(String(key) === 'count' ? '0' : '3');
+              }}
+            />
+            <TextInput
+              label={t.format('catalogue.units.decimals')}
+              value={newUnitDecimals}
+              onChange={setNewUnitDecimals}
+              isMachineText
+              isRequired
+            />
+            <TextInput
+              label={t.format('catalogue.units.factor')}
+              value={basePerUnit}
+              onChange={setBasePerUnit}
+              isMachineText
+              isRequired
+            />
+            <Button
+              tone="primary"
+              type="submit"
+              isDisabled={working || !newUnitCode || !basePerUnit}
+            >
+              {t.format('catalogue.units.add')}
+            </Button>
+          </form>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void convertPreview();
+            }}
+          >
+            <TextInput
+              label={t.format('catalogue.units.previewAmount')}
+              value={previewAmount}
+              onChange={(value) => {
+                setPreviewAmount(value);
+                setPreview(null);
+              }}
+              isMachineText
+              isRequired
+            />
+            <Select
+              label={t.format('catalogue.units.from')}
+              isMachineText
+              options={selected.units.map((one) => ({ id: one.id, label: one.unit.code }))}
+              value={previewFrom === '' ? (selected.units[0]?.id ?? '') : previewFrom}
+              onChange={(key) => {
+                setPreviewFrom(String(key));
+                setPreview(null);
+              }}
+            />
+            <Select
+              label={t.format('catalogue.units.to')}
+              isMachineText
+              options={selected.units.map((one) => ({ id: one.id, label: one.unit.code }))}
+              value={previewTo === '' ? (selected.units[0]?.id ?? '') : previewTo}
+              onChange={(key) => {
+                setPreviewTo(String(key));
+                setPreview(null);
+              }}
+            />
+            <Button tone="secondary" type="submit" isDisabled={working || !previewAmount}>
+              {t.format('catalogue.units.preview')}
+            </Button>
+            {preview === null ? null : (
+              <p>
+                <Quantity
+                  value={quantity(preview.amount, preview.unit.unit.code)}
+                  unit={preview.unit.unit}
+                />
+              </p>
+            )}
+          </form>
           <p>
             {t.format('catalogue.item.reason')}:{' '}
             {selected.statusReason ?? t.format('catalogue.item.noReason')}

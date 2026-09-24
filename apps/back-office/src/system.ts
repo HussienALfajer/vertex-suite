@@ -8,6 +8,10 @@ import type {
   ItemId,
   ItemStatus,
   ItemTrade,
+  ItemUnit,
+  ItemUnitId,
+  ConvertedItemQuantity,
+  NewItemUnit,
   NewCategory,
   NewItem,
 } from '@vertex/cat/contract';
@@ -530,6 +534,18 @@ export interface SystemOfRecord {
     category(id: CategoryId): Promise<Category | null>;
     items(): Promise<readonly Item[]>;
     item(id: ItemId): Promise<Item | null>;
+    units(id: ItemId): Promise<Result<readonly ItemUnit[], CatRefusal>>;
+    convert(
+      id: ItemId,
+      amount: string,
+      from: ItemUnitId,
+      to: ItemUnitId,
+    ): Promise<Result<ConvertedItemQuantity, CatRefusal>>;
+    stockQuantity(
+      id: ItemId,
+      amount: string,
+      from: ItemUnitId,
+    ): Promise<Result<ConvertedItemQuantity, CatRefusal>>;
     eligibility(id: ItemId, trade: ItemTrade): Promise<Result<Item, CatRefusal>>;
     createCategory(input: NewCategory): Promise<Result<Category, CatRefusal>>;
     reviseCategory(
@@ -538,6 +554,7 @@ export interface SystemOfRecord {
     ): Promise<Result<Category, CatRefusal>>;
     moveCategory(id: CategoryId, parent: CategoryId | null): Promise<Result<Category, CatRefusal>>;
     createItem(input: NewItem): Promise<Result<Item, CatRefusal>>;
+    addUnit(id: ItemId, input: NewItemUnit): Promise<Result<ItemUnit, CatRefusal>>;
     changeItemStatus(
       id: ItemId,
       status: ItemStatus,

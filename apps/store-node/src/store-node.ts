@@ -355,6 +355,26 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     read('catalogue.item', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.item(by, string(args[0]) as Parameters<typeof catRead.item>[1]),
     );
+    read('catalogue.units', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.units(by, string(args[0]) as Parameters<typeof catRead.units>[1]),
+    );
+    read('catalogue.convert', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.convert(
+        by,
+        string(args[0]) as Parameters<typeof catRead.convert>[1],
+        string(args[1]),
+        string(args[2]) as Parameters<typeof catRead.convert>[3],
+        string(args[3]) as Parameters<typeof catRead.convert>[4],
+      ),
+    );
+    read('catalogue.stockQuantity', CAT_PERMISSIONS.item.view, (by, args) =>
+      catRead.stockQuantity(
+        by,
+        string(args[0]) as Parameters<typeof catRead.stockQuantity>[1],
+        string(args[1]),
+        string(args[2]) as Parameters<typeof catRead.stockQuantity>[3],
+      ),
+    );
     read('catalogue.eligibility', CAT_PERMISSIONS.item.view, (by, args) =>
       catRead.eligibility(
         by,
@@ -386,6 +406,13 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
       catAdmin.createItem(
         by,
         object(args[0]) as unknown as Parameters<typeof catAdmin.createItem>[1],
+      ),
+    );
+    securedWrite('catalogue.addUnit', CAT_PERMISSIONS.item.edit, (by, args) =>
+      catAdmin.addUnit(
+        by,
+        string(args[0]) as Parameters<typeof catAdmin.addUnit>[1],
+        object(args[1]) as unknown as Parameters<typeof catAdmin.addUnit>[2],
       ),
     );
     securedWrite('catalogue.changeItemStatus', CAT_PERMISSIONS.item.edit, (by, args) =>
