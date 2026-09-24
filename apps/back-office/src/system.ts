@@ -1,5 +1,12 @@
 import type { Result } from '@vertex/kernel';
 import type {
+  DisplayPrice,
+  DisplayPriceCommand,
+  DisplayPriceHistoryFilter,
+  DisplayPriceHistoryPage,
+  DisplayPricePreview,
+  DisplayPriceState,
+  DisplayPriceTarget,
   PriceList,
   PriceListId,
   PriceSubject,
@@ -543,6 +550,19 @@ export interface StatementsOfRecord {
 }
 
 export interface SystemOfRecord {
+  /** PRC-02/03: the frozen SYP display price of one branch, read as stored. */
+  readonly displayPrices: {
+    get(target: DisplayPriceTarget): Promise<Result<DisplayPriceState, PrcRefusal>>;
+    forItem(
+      branch: BranchId,
+      item: ItemId,
+    ): Promise<Result<readonly DisplayPriceState[], PrcRefusal>>;
+    preview(target: DisplayPriceTarget): Promise<Result<DisplayPricePreview, PrcRefusal>>;
+    approve(command: DisplayPriceCommand): Promise<Result<DisplayPrice, PrcRefusal>>;
+    history(
+      filter: DisplayPriceHistoryFilter,
+    ): Promise<Result<DisplayPriceHistoryPage, PrcRefusal>>;
+  };
   readonly usdPrices: {
     get(subject: PriceSubject): Promise<Result<UsdPrice | null, PrcRefusal>>;
     forItem(item: ItemId): Promise<Result<readonly UsdPrice[], PrcRefusal>>;

@@ -1088,6 +1088,92 @@ export interface Presentation {
 
 export const Presentation = contractKey<Presentation>('fx.presentation');
 
+/**
+ * The rate a price was restated at, copied rather than referenced — for the
+ * reason a `RateStamp` copies its figure: a caller that freezes the result
+ * (`PRC-03`) must still say what it was frozen from after the day's rate has
+ * been corrected, superseded, and forgotten by every board.
+ *
+ * Always the **buy** side. See `PriceConversion` for why.
+ */
+export interface PriceRate {
+  readonly currency: CurrencyCode;
+  /** What "one unit of the functional currency" meant when this was read. */
+  readonly functional: CurrencyCode;
+  readonly side: Extract<RateSide, 'buy'>;
+  /** Canonical: units of `currency` per one unit of `functional`. */
+  readonly rate: string;
+  readonly revision: RateRevisionId;
+  /** Which of the day's revisions: 1 for the first, one more for each correction. */
+  readonly sequence: number;
+  /** Always the branch's today. A price is never restated at another day's rate. */
+  readonly day: LocalDate;
+  readonly recordedAt: Instant;
+}
+
+/** The step and direction a figure was settled by, as the owner had them that moment. */
+export interface SettlementRule {
+  readonly increment: string;
+  readonly mode: RoundingMode;
+}
+
+/**
+ * A price in the functional currency, restated as the figure a customer hands
+ * over in another currency, and everything that went into it.
+ *
+ * `exact` is the product before anything was rounded; `amount` is it settled;
+ * `residual` is what settling moved. All three are here so that whoever keeps
+ * the figure can show how it was reached without asking `FX` again.
+ */
+export interface ConvertedPrice {
+  readonly amount: Money;
+  readonly exact: Money;
+  readonly residual: RoundingResidual;
+  readonly rate: PriceRate;
+  readonly rounding: SettlementRule;
+}
+
+/**
+ * Restating a price for a customer who pays in another currency (`PRC-02`).
+ *
+ * `Presentation` cannot be used for this, and the difference is the whole of
+ * why this exists. A presented figure is **for reading only** — at the mid,
+ * carried to stored precision, never kept. A shelf price is the opposite on
+ * every count: it is kept, it is handed over, and it must agree with the till.
+ *
+ * **The buy side**, because paying a shelf price in pounds is the shop
+ * *receiving* pounds, which `FX-06` prices at the buy rate. It is the only side
+ * on which the figure on the shelf equals what the till would ask for the same
+ * dollar price converted today; at the mid a customer would read one figure and
+ * be charged another, and at the sell the shop would price every item below
+ * what it asks at the till.
+ *
+ * **Settled once**, at `FX-07`'s settlement point — onto the note a customer
+ * actually hands over, by the currency's own declared direction — and never
+ * first carried to stored precision, because a figure passes each rounding
+ * point at most once.
+ *
+ * **Never on a last-known rate.** `FX-04`'s exception lets a till cut off from
+ * the store node *trade* on yesterday's rate after a supervisor confirms it; it
+ * does not let anybody *set a price* from it. Whatever machine the caller is at,
+ * a missing rate for today is `fx.rate-missing`.
+ *
+ * And trading, not reading: a withdrawn branch sets no prices.
+ *
+ * Unguarded, as the module's other reads are. Whoever keeps the result decides
+ * who may.
+ */
+export interface PriceConversion {
+  convert(
+    by: CommandContext,
+    branch: BranchId,
+    amount: Money,
+    into: CurrencyCode,
+  ): Rated<ConvertedPrice>;
+}
+
+export const PriceConversion = contractKey<PriceConversion>('fx.price-conversion');
+
 /** The four rights over a thing that is made, read, revised and taken out of use. */
 export interface StructuralRights {
   readonly view: PermissionId;

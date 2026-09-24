@@ -31,6 +31,7 @@ import {
   FX_PERMISSION_SEEDS,
   FX_PERMISSIONS,
   Presentation,
+  PriceConversion,
   RateAdministration,
   RateStamps,
   ROUNDING_ACCOUNT,
@@ -71,6 +72,7 @@ import {
   type Recording,
 } from './rates.js';
 import {
+  convertAtReceipt,
   presentAllAtMid,
   presentAtMid,
   presentAtStamp,
@@ -350,6 +352,22 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
             stamp: RateStamp,
           ) => read(by, (session) => presentAtStamp(session, by.tenant, amount, into, stamp)),
         } satisfies Presentation;
+      }),
+
+      provideContract(PriceConversion, (context: ModuleContext<Session>) => {
+        const today = branchToday(context);
+        return {
+          // Trading, not reading: a withdrawn branch sets no prices. The
+          // machine is dropped for the reason `convertAtReceipt` gives.
+          convert: async (by: CommandContext, id: BranchId, amount: Money, into: CurrencyCode) => {
+            const here = await today(by, id, 'trading');
+            if (!here.ok) return here;
+            const day: BranchDay = { branch: id, day: here.value.day, device: null };
+            return context.transactor.run(by, (uow) =>
+              Promise.resolve(convertAtReceipt(uow.session, by.tenant, day, amount, into)),
+            );
+          },
+        } satisfies PriceConversion;
       }),
 
       provideContract(RateStamps, (context: ModuleContext<Session>) => {
