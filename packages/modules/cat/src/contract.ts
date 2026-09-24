@@ -1,10 +1,11 @@
 import { permissionId, type PermissionId, type TenantId } from '@vertex/contracts';
 import type { Id, Instant, Refusal, Result, Unit } from '@vertex/kernel';
-import { contractKey, type CommandContext } from '@vertex/platform';
+import { contractKey, type CommandContext, type UnitOfWork } from '@vertex/platform';
 
 export type CategoryId = Id<'category'>;
 export type ItemId = Id<'item'>;
 export type ItemUnitId = Id<'item-unit'>;
+export type CostMovementId = Id<'cost-movement'>;
 /**
  * The factor is the exact number of base units contained in one of this unit.
  * All edges lead directly to the immutable base; callers cannot introduce a
@@ -147,7 +148,79 @@ export type CatRefusal = Refusal<
   | 'cat.code-taken'
   | 'cat.search-invalid'
   | 'cat.search-limit-invalid'
+  | 'cat.cost-quantity-invalid'
+  | 'cat.cost-value-invalid'
+  | 'cat.cost-insufficient-stock'
+  | 'cat.cost-movement-taken'
 >;
+
+/** Cost stays at the store node, separate from the item records sent to a register. */
+export interface ItemCost {
+  readonly item: ItemId;
+  readonly baseUnit: ItemUnit;
+  readonly quantity: string;
+  /** The authoritative inventory value in USD, settled to cents. */
+  readonly valueUSD: string;
+  /** An exact ratio: divide the inventory value by base-unit quantity only when displaying it. */
+  readonly average: { readonly valueUSD: string; readonly quantity: string } | null;
+  readonly revision: number;
+}
+
+/** The inventory account role is declared by STK, which owns stock movements. */
+export const INVENTORY_ROLE = 'stk.inventory';
+export type CostDirection = 'receipt' | 'issue';
+export interface CostQuote {
+  readonly movement: CostMovementId;
+  readonly item: ItemId;
+  readonly direction: CostDirection;
+  readonly quantity: string;
+  /** Receipts supply this value; issues derive it from the current moving average. */
+  readonly valueUSD: string;
+  readonly before: ItemCost;
+  readonly after: ItemCost;
+}
+
+/** Only the facts CAT must verify from FIN's posted entry; CAT cannot depend on FIN. */
+export interface InventoryPosting {
+  readonly entry: {
+    readonly tenant: TenantId;
+    readonly source: { readonly document: string };
+  };
+  readonly lines: readonly {
+    readonly role: string | null;
+    readonly side: 'debit' | 'credit';
+    readonly amount: { readonly amount: string; readonly currency: string };
+    readonly original?: { readonly amount: string; readonly currency: string } | null;
+  }[];
+}
+
+/** Internal stock-writer seam. A quote and FIN's entry are committed in the same unit of work. */
+export interface ItemCosting {
+  snapshot(by: CommandContext, item: ItemId): Promise<Result<ItemCost, CatRefusal>>;
+  quoteReceipt(
+    by: CommandContext,
+    movement: CostMovementId,
+    item: ItemId,
+    quantity: string,
+    unit: ItemUnitId,
+    valueUSD: string,
+  ): Promise<Result<CostQuote, CatRefusal>>;
+  quoteIssue(
+    by: CommandContext,
+    movement: CostMovementId,
+    item: ItemId,
+    quantity: string,
+    unit: ItemUnitId,
+  ): Promise<Result<CostQuote, CatRefusal>>;
+  /** Refuses stale/corrupt quotes by throwing, so FIN's posting rolls back as well. */
+  apply(
+    uow: UnitOfWork<RecordSession>,
+    quote: CostQuote,
+    /** Null is valid only when inventory value does not change (free stock). */
+    posted: InventoryPosting | null,
+  ): Result<ItemCost, CatRefusal>;
+}
+export const ItemCosting = contractKey<ItemCosting>('cat.item-costing');
 /**
  * The longest term a search accepts: a name and a code, not a paragraph. A
  * screen limits its field to this, so that typing never reaches the refusal.
