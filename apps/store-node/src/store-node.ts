@@ -34,6 +34,8 @@ import {
   DisplayPrices,
   PriceLists,
   PriceListAdministration,
+  RateReviewMonitor,
+  RateReviews,
   UsdPrices,
   PRC_PERMISSIONS,
 } from '@vertex/prc';
@@ -101,6 +103,12 @@ export interface StoreNodeListener {
 
 export interface StoreNode {
   provisionTenant(tenant: TenantId, handle: string, password: string): Promise<void>;
+  /**
+   * Runs the rate-review monitor to rest for every tenant served, waiting for
+   * a run already under way and then one more — what anything that must see
+   * the monitor's work, a test or an orderly shutdown, waits on.
+   */
+  settleReviews(): Promise<void>;
   listen(port: number, host?: string): Promise<StoreNodeListener>;
   close(): Promise<void>;
 }
@@ -170,6 +178,21 @@ export interface StoreNodeOptions extends PostgresStoreOptions {
   readonly enableSyn02Fixture?: boolean;
   /** Only the SYN-03 and SYN-05 acceptance fixtures enable these narrow stock operations. */
   readonly enableStockFixture?: boolean;
+  /**
+   * How often the rate-review monitor (`PRC-03`) reconciles on its own, in
+   * milliseconds; a minute by default. It is also run at startup and after
+   * every request that can move a rate or a review, so this is the net for
+   * what those miss — a branch's day turning over, a process that died
+   * between a commit and the step after it. Zero leaves only those.
+   */
+  readonly rateReviewInterval?: number;
+  /** Prices per review step; see `RateReviewOptions.chunk`. */
+  readonly rateReviewChunk?: number;
+  /**
+   * False only in the test that stands for a process dying between a commit
+   * and anything hearing of it: the monitor never runs here at all.
+   */
+  readonly rateReviewMonitor?: boolean;
 }
 
 function applySyn02Fixture(uow: UnitOfWork<MemorySession>, payload: unknown): Promise<void> {
@@ -194,6 +217,75 @@ function applySyn02Fixture(uow: UnitOfWork<MemorySession>, payload: unknown): Pr
   uow.session.put(documentKey, { document, amount });
   uow.session.put(balanceKey, new Dec(previous).plus(amount).toString());
   return Promise.resolve();
+}
+
+/**
+ * Keeps the rate-review monitor's steps out of the way of people's writes.
+ *
+ * Every commit on the store node advances one revision for the whole store,
+ * and a command that finds another committed since it began is refused
+ * (`SessionDriver`) — several of the modules' commands, a rate recorded among
+ * them, take one attempt and report that as a failure. Before the monitor
+ * there was nothing in the process committing behind a person's back; now
+ * there is, so the two take turns: writes run alongside each other as they
+ * always have, and a monitor step waits for a moment with none in flight and
+ * holds new ones only for that one bounded step — one page of prices.
+ */
+interface WriteGate {
+  write<T>(work: () => Promise<T>): Promise<T>;
+  step<T>(work: () => Promise<T>): Promise<T>;
+}
+
+function writeGate(): WriteGate {
+  let writing = 0;
+  /** Writes waiting for a step to end: the next step waits for them in turn. */
+  let waiting = 0;
+  let stepping: Promise<unknown> | null = null;
+  let idle: (() => void)[] = [];
+  const settled = (running: Promise<unknown>): Promise<void> =>
+    running.then(
+      () => undefined,
+      () => undefined,
+    );
+  return {
+    async write(work) {
+      waiting += 1;
+      try {
+        while (stepping !== null) await settled(stepping);
+      } finally {
+        waiting -= 1;
+      }
+      writing += 1;
+      try {
+        return await work();
+      } finally {
+        writing -= 1;
+        if (writing === 0) {
+          const waiting = idle;
+          idle = [];
+          for (const resume of waiting) resume();
+        }
+      }
+    },
+    async step(work) {
+      while (stepping !== null || writing > 0 || waiting > 0) {
+        if (stepping !== null) await settled(stepping);
+        else
+          await new Promise<void>((resume) => {
+            idle.push(resume);
+          });
+      }
+      // Claimed before the first await inside `work`, so no write can begin
+      // between the check above and the step starting.
+      const running = work();
+      stepping = running;
+      try {
+        return await running;
+      } finally {
+        stepping = null;
+      }
+    },
+  };
 }
 
 function deviceCredentialKey(tenant: TenantId, device: string): string {
@@ -255,7 +347,9 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     fxModule<MemorySession>(),
     finModule<MemorySession>({ attachments }),
     catModule<MemorySession>(),
-    prcModule<MemorySession>(),
+    prcModule<MemorySession>(
+      options.rateReviewChunk === undefined ? {} : { chunk: options.rateReviewChunk },
+    ),
   ];
   const plan = orThrow(
     composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN', 'CAT', 'PRC'] }),
@@ -323,7 +417,73 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     const priceAdmin = registry.require(PriceListAdministration);
     const usdPrices = registry.require(UsdPrices);
     const displayPrices = registry.require(DisplayPrices);
+    const rateReviews = registry.require(RateReviews);
+    const reviewMonitor = registry.require(RateReviewMonitor);
     const sessions = new Map<string, Session>();
+
+    /**
+     * The rate-review monitor's driver (`PRC-03`): one run at a time, over
+     * every tenant this process serves, each driven until it has nothing left.
+     *
+     * The monitor is where durability lives — every step is committed and
+     * resumes from its checkpoint — so this only has to make sure it runs:
+     * when a tenant is provisioned (which is every startup), after requests
+     * that can move a rate or a review, and on a timer. A nudge during a run
+     * asks for one more run rather than a second one alongside it. A step
+     * that fails is logged and left for the next run to take again.
+     */
+    const gate = writeGate();
+    /** Enough for a scan and a batch of a hundred thousand prices at a thousand a step, twice. */
+    const REVIEW_STEPS_PER_RUN = 1000;
+    const reviewedTenants = new Set<TenantId>();
+    let reviewRun: Promise<void> | null = null;
+    let reviewAgain = false;
+    /** Read through a call: a nudge sets it while a run is awaiting, which no narrowing sees. */
+    const askedAgain = (): boolean => reviewAgain;
+    let closing = false;
+    const driveReviews = (): Promise<void> => {
+      if (options.rateReviewMonitor === false) return Promise.resolve();
+      if (reviewRun !== null) {
+        reviewAgain = true;
+        return reviewRun;
+      }
+      reviewRun = (async () => {
+        do {
+          reviewAgain = false;
+          for (const tenant of reviewedTenants) {
+            const by = systemContext(tenant);
+            // Each tenant on its own: one whose step fails, or which always
+            // has more, is left for the next run and never holds up the
+            // tenants after it. A run takes at most this many steps of one.
+            try {
+              for (let steps = 0; steps < REVIEW_STEPS_PER_RUN && !closing; steps += 1)
+                if (!(await gate.step(() => reviewMonitor.drive(by))).more) break;
+            } catch (cause) {
+              console.error('Rate-review monitor step failed; the next run resumes it:', cause);
+            }
+          }
+        } while (askedAgain() && !closing);
+      })().finally(() => {
+        reviewRun = null;
+      });
+      return reviewRun;
+    };
+    const interval = options.rateReviewInterval ?? 60_000;
+    const reviewTimer =
+      interval > 0
+        ? setInterval(() => {
+            void driveReviews();
+          }, interval)
+        : null;
+    reviewTimer?.unref();
+    /** Requests after which the monitor may have something to do. */
+    const NUDGES = new Set([
+      'rates.record',
+      'rates.adopt',
+      'rateReviews.setPolicy',
+      'rateReviews.refresh',
+      'rateReviews.approve',
+    ]);
     const servers = new Set<Server>();
 
     const routes = new Map<string, Route>();
@@ -551,6 +711,30 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         ? displayPrices.approve(by, args[0] as Parameters<typeof displayPrices.approve>[1])
         : { forbidden: true },
     );
+
+    // Review tasks are one branch's each, and asked at that branch here and
+    // again inside PRC (`SEC-04`); the threshold is one for the whole tenant.
+    shared('rateReviews.policy', PRC_PERMISSIONS.review.view, (by) => rateReviews.policy(by));
+    securedWrite('rateReviews.setPolicy', PRC_PERMISSIONS.review.policy, (by, args) =>
+      rateReviews.setPolicy(by, args[0] as Parameters<typeof rateReviews.setPolicy>[1]),
+    );
+    for (const method of ['tasks', 'task', 'entries'] as const)
+      read(
+        `rateReviews.${method}`,
+        PRC_PERMISSIONS.review.view,
+        (by, args) => rateReviews[method](by, args[0] as never),
+        (args) => branchOf(args[0]),
+      );
+    for (const method of ['exclude', 'reject', 'refresh', 'approve'] as const)
+      write(`rateReviews.${method}`, async (by, args) =>
+        (await authority.may(
+          by,
+          PRC_PERMISSIONS.review.approve,
+          branchOf(args[0]) as Parameters<typeof authority.may>[2],
+        ))
+          ? rateReviews[method](by, args[0] as never)
+          : { forbidden: true },
+      );
 
     read('companies.list', SYS_PERMISSIONS.company.view, (by, args) =>
       organisation.companies(by, args[0] as Parameters<typeof organisation.companies>[1]),
@@ -1149,6 +1333,7 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
           send(response, 403, { error: 'forbidden' });
           return;
         }
+        if (NUDGES.has(parts[4] ?? '')) void driveReviews();
         send(response, 200, { value });
       } catch (cause) {
         if (cause instanceof IdentityConflictError) {
@@ -1211,10 +1396,21 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
           await priceAdmin.seed(by),
           (refusal) => new Error(`Price-list seed refused: ${refusal.code}`),
         );
+        // Whatever a process before this one committed and never got to —
+        // a rate recorded just before it died — is found now, not on the
+        // next event, which will never come.
+        reviewedTenants.add(tenant);
+        void driveReviews();
+      },
+      async settleReviews() {
+        await reviewRun;
+        await driveReviews();
       },
       async listen(port, host = '127.0.0.1') {
         const server = createServer((request, response) => {
-          void handle(request, response);
+          void (request.method === 'GET'
+            ? handle(request, response)
+            : gate.write(() => handle(request, response)));
         });
         try {
           await new Promise<void>((resolve, reject) => {
@@ -1241,6 +1437,9 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         };
       },
       async close() {
+        closing = true;
+        if (reviewTimer !== null) clearInterval(reviewTimer);
+        await reviewRun;
         sessions.clear();
         await Promise.all(
           [...servers].map(

@@ -5,6 +5,7 @@ import type { PriceList, PriceListId, PrcRefusal } from './contract.js';
 export interface RecordSession {
   get(key: string): unknown;
   put(key: string, value: unknown): void;
+  remove(key: string): void;
   keys(): readonly string[];
 }
 

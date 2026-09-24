@@ -1170,7 +1170,33 @@ export interface PriceConversion {
     amount: Money,
     into: CurrencyCode,
   ): Rated<ConvertedPrice>;
+
+  /**
+   * Many prices at once, at the one revision of today's rate read once, and
+   * each settled exactly as `convert` settles it (`PRC-03`'s review batches).
+   *
+   * One transaction for the lot, rather than one per price: a batch of thirty
+   * thousand prices converted one at a time is thirty thousand transactions,
+   * and could straddle a correction of the day's rate halfway through.
+   * Bounded by `CONVERT_ALL_LIMIT`; a caller with more converts in pages.
+   */
+  convertAll(
+    by: CommandContext,
+    branch: BranchId,
+    amounts: readonly Money[],
+    into: CurrencyCode,
+  ): Rated<readonly ConvertedPrice[]>;
+
+  /**
+   * The rate `convert` would apply now, with nothing converted — refused
+   * exactly as `convert` would be. What a caller watching for the day's rate
+   * to move compares against, so that watching and pricing read one rate.
+   */
+  rate(by: CommandContext, branch: BranchId, into: CurrencyCode): Rated<PriceRate>;
 }
+
+/** The most prices one `convertAll` restates. */
+export const CONVERT_ALL_LIMIT = 5_000;
 
 export const PriceConversion = contractKey<PriceConversion>('fx.price-conversion');
 

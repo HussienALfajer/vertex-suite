@@ -43,6 +43,7 @@ const ROUTES = [
   'statements',
   'catalogue',
   'price-lists',
+  'rate-reviews',
 ] as const;
 
 export type RouteName = (typeof ROUTES)[number];

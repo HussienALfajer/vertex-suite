@@ -8,6 +8,7 @@ import { hrefOf, useRoute, type RouteName } from './routing.js';
 import { BusinessProfile } from './screens/BusinessProfile.js';
 import { CatalogueScreen } from './screens/Catalogue.js';
 import { PriceListsScreen } from './screens/PriceLists.js';
+import { RateReviewsScreen } from './screens/RateReviews.js';
 import type { SystemOfRecord } from './system.js';
 import { Chart } from './screens/Chart.js';
 import { FiscalCalendar } from './screens/FiscalCalendar.js';
@@ -67,6 +68,12 @@ export function Shell({
       label: translator.format('nav.priceLists'),
       href: hrefOf('price-lists'),
       icon: <CurrencyIcon />,
+    },
+    {
+      id: 'rate-reviews',
+      label: translator.format('nav.rateReviews'),
+      href: hrefOf('rate-reviews'),
+      icon: <RateIcon />,
     },
     {
       id: 'companies',
@@ -245,6 +252,8 @@ function Screen({
       return <CatalogueScreen system={system} />;
     case 'price-lists':
       return <PriceListsScreen system={system} />;
+    case 'rate-reviews':
+      return <RateReviewsScreen system={system} />;
     case 'companies':
       return <Companies />;
     case 'business-profile':

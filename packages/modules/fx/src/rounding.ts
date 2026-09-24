@@ -22,12 +22,14 @@ import {
   type Presented,
   type PresentedAll,
   type PresentationRate,
+  type PriceRate,
   type RateInForce,
   type RateRefusal,
   type RateStamp,
   type RecordSession,
   type RoundingPoint,
   type RoundingResidual,
+  type SettlementRule,
   type Settled,
   type StampedDocument,
   type TenantCurrency,
@@ -398,44 +400,39 @@ export function presentAllAtMid(
 }
 
 /**
- * A functional-currency price restated as what a customer hands over in
- * another currency, at this branch's buy rate for today (`PriceConversion`).
+ * The rate a functional-currency price is restated at, at this branch for
+ * today (`PriceConversion`): the buy side, and the rule it settles by.
  *
  * `here.device` is ignored on purpose: `rateInForce` is asked with no machine,
  * so a register's last-known confirmation can never stand in for today's rate
  * in a figure somebody is about to keep.
+ *
+ * The one place the pricing side is chosen. `convert`, `convertAll` and `rate`
+ * all come through it, so a batch of prices and a single one cannot be
+ * restated by two policies that drift apart.
  */
-export function convertAtReceipt(
+function pricingRate(
   session: RecordSession,
   tenant: TenantId,
   here: BranchDay,
-  amount: Money,
+  from: CurrencyCode,
   into: CurrencyCode,
-): Rounded<ConvertedPrice> {
-  const pair = pairFor(session, tenant, amount.currency, into);
+): Rounded<{ readonly rate: PriceRate; readonly target: TenantCurrency }> {
+  const pair = pairFor(session, tenant, from, into);
   if (!pair.ok) return pair;
   const { functional, into: target } = pair.value;
   if (into === functional.code) {
     return refuse('fx.currency-is-functional', { currency: into });
   }
-  if (amount.currency !== functional.code) {
-    return refuse('fx.cross-rate-unsupported', {
-      from: amount.currency,
-      into,
-      functional: functional.code,
-    });
+  if (from !== functional.code) {
+    return refuse('fx.cross-rate-unsupported', { from, into, functional: functional.code });
   }
 
   const inForce = rateInForce(session, tenant, here.branch, here.day, target.code, null);
   if (!inForce.ok) return inForce;
   const { revision } = inForce.value;
-
-  const exact = money(amount.amount.times(new Dec(revision.buy)), target.code);
-  const settled = round(exact, target);
   return ok({
-    amount: settled.value,
-    exact,
-    residual: residual(settled.residual, 'settlement'),
+    target,
     rate: Object.freeze({
       currency: target.code,
       functional: revision.functional,
@@ -446,11 +443,73 @@ export function convertAtReceipt(
       day: revision.day,
       recordedAt: revision.recordedAt,
     }),
-    rounding: Object.freeze({
-      increment: target.roundingIncrement,
-      mode: target.roundingMode,
-    }),
   });
+}
+
+/** Today's pricing rate at this branch, with nothing converted at it. */
+export function priceRateAt(
+  session: RecordSession,
+  tenant: TenantId,
+  here: BranchDay,
+  into: CurrencyCode,
+): Rounded<PriceRate> {
+  const functional = functionalIn(session, tenant);
+  if (functional === null) return refuse('fx.functional-currency-unset');
+  const found = pricingRate(session, tenant, here, functional.code, into);
+  return found.ok ? ok(found.value.rate) : found;
+}
+
+/**
+ * Functional-currency prices restated as what a customer hands over in
+ * another currency, at this branch's buy rate for today, all at the one
+ * revision read once — so a batch cannot straddle a correction of the day's
+ * rate. Each figure is settled on its own, exactly as `convert` settles one.
+ */
+export function convertAllAtReceipt(
+  session: RecordSession,
+  tenant: TenantId,
+  here: BranchDay,
+  amounts: readonly Money[],
+  into: CurrencyCode,
+): Rounded<readonly ConvertedPrice[]> {
+  const functional = functionalIn(session, tenant);
+  if (functional === null) return refuse('fx.functional-currency-unset');
+  const foreign = amounts.find((one) => one.currency !== functional.code);
+  const found = pricingRate(session, tenant, here, foreign?.currency ?? functional.code, into);
+  if (!found.ok) return found;
+  const { rate, target } = found.value;
+  const rounding: SettlementRule = Object.freeze({
+    increment: target.roundingIncrement,
+    mode: target.roundingMode,
+  });
+  return ok(
+    amounts.map((amount) => {
+      const exact = money(amount.amount.times(new Dec(rate.rate)), target.code);
+      const settled = round(exact, target);
+      return {
+        amount: settled.value,
+        exact,
+        residual: residual(settled.residual, 'settlement'),
+        rate,
+        rounding,
+      };
+    }),
+  );
+}
+
+/** One price restated: `convertAllAtReceipt` of one. */
+export function convertAtReceipt(
+  session: RecordSession,
+  tenant: TenantId,
+  here: BranchDay,
+  amount: Money,
+  into: CurrencyCode,
+): Rounded<ConvertedPrice> {
+  const converted = convertAllAtReceipt(session, tenant, here, [amount], into);
+  if (!converted.ok) return converted;
+  const [one] = converted.value;
+  if (one === undefined) throw new Error('One amount converted to none.');
+  return ok(one);
 }
 
 /** A document's figure shown at the document's own rate, whatever today's is. */

@@ -101,6 +101,10 @@ export function remoteSystem(options: RemoteSystemOptions): SystemOfRecord {
 }
 
 const READS = new Set([
+  'rateReviews.policy',
+  'rateReviews.tasks',
+  'rateReviews.task',
+  'rateReviews.entries',
   'displayPrices.get',
   'displayPrices.forItem',
   'displayPrices.preview',

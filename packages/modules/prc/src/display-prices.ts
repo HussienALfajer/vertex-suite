@@ -22,8 +22,10 @@ import {
   type DisplayPriceTarget,
   type PriceList,
   type PrcRefusal,
+  type RateReviewBatchId,
   type UsdPrice,
 } from './contract.js';
+import { padded, range } from './keys.js';
 import { listIn, type RecordSession } from './price-lists.js';
 import { currentPrice, validSubject } from './usd-prices.js';
 
@@ -35,10 +37,50 @@ type Outcome<T> = Result<T, PrcRefusal>;
  */
 const root = (tenant: TenantId): string => `prc/display/${encodeURIComponent(tenant)}/`;
 const priceRoot = (tenant: TenantId): string => `${root(tenant)}price/`;
-const historyRoot = (tenant: TenantId): string => `${root(tenant)}history/`;
+export const historyRoot = (tenant: TenantId): string => `${root(tenant)}history/`;
 const operationRoot = (tenant: TenantId): string => `${root(tenant)}operation/`;
+export const displaySequenceKey = (tenant: TenantId): string => `${root(tenant)}sequence`;
+/** Every frozen price at one branch, in item, list, unit order. */
+export const branchPriceRoot = (tenant: TenantId, branch: BranchId): string =>
+  `${priceRoot(tenant)}${branch}/`;
 const priceKey = (tenant: TenantId, { branch, subject }: DisplayPriceTarget): string =>
-  `${priceRoot(tenant)}${branch}/${subject.item}/${subject.list}/${subject.unit}`;
+  `${branchPriceRoot(tenant, branch)}${subject.item}/${subject.list}/${subject.unit}`;
+
+/**
+ * A reviewed batch's prices, staged where no read looks (`PRC-03`) until the
+ * batch is published — and then read through, until each is folded into its
+ * own price record.
+ */
+export const stagedRoot = (tenant: TenantId, batch: RateReviewBatchId): string =>
+  `${root(tenant)}staged/${batch}/`;
+export const stagedKey = (
+  tenant: TenantId,
+  batch: RateReviewBatchId,
+  subject: DisplayPriceTarget['subject'],
+): string => `${stagedRoot(tenant, batch)}${subject.item}/${subject.list}/${subject.unit}`;
+/**
+ * The published batches at a branch whose prices are not yet all folded into
+ * their own records. Written once, at publication: that write is the whole of
+ * the moment a batch becomes the price.
+ */
+export const overlayKey = (tenant: TenantId, branch: BranchId): string =>
+  `${root(tenant)}overlay/${branch}`;
+/** Where a batch's state is kept: history entries of it are hidden until it is published. */
+export const batchKey = (tenant: TenantId, batch: RateReviewBatchId): string =>
+  `prc/review/${encodeURIComponent(tenant)}/batch/${batch}`;
+
+/** A staged price, and the audit entry written beside it. */
+export interface StagedPrice {
+  readonly price: DisplayPrice;
+  readonly history: string;
+}
+
+/** An audit entry's key: its sequence first, so the audit reads in order by bisection. */
+export function historyKeyOf(tenant: TenantId, change: DisplayPriceChange): string {
+  const { branch, subject } = change;
+  const key = `${historyRoot(tenant)}${padded(change.sequence)}/${String(change.at).padStart(16, '0')}/${branch}/${subject.item}/${subject.list}/${subject.unit}`;
+  return change.batch === undefined ? key : `${key}/${change.batch}`;
+}
 
 /** The operation's record: what was asked, and what it was answered with. */
 interface Replay {
@@ -98,12 +140,46 @@ export function validateApproval(command: unknown): Outcome<DisplayPriceCommand>
   return ok(command as DisplayPriceCommand);
 }
 
+/**
+ * The frozen price in effect: its own record, or a published batch's staged
+ * figure not yet folded into it — whichever is the later revision.
+ *
+ * The later revision and not the batch, because a price approved by hand
+ * after a batch was published is newer than the batch's figure whether or not
+ * the batch has been folded yet; folding never writes over a later revision.
+ */
 export function storedDisplayPrice(
   session: RecordSession,
   tenant: TenantId,
   target: DisplayPriceTarget,
 ): DisplayPrice | null {
+  let price = (session.get(priceKey(tenant, target)) as DisplayPrice | undefined) ?? null;
+  const published =
+    (session.get(overlayKey(tenant, target.branch)) as readonly RateReviewBatchId[] | undefined) ??
+    [];
+  for (const batch of published) {
+    const staged = session.get(stagedKey(tenant, batch, target.subject)) as StagedPrice | undefined;
+    if (staged !== undefined && (price === null || staged.price.revision > price.revision))
+      price = staged.price;
+  }
+  return price;
+}
+
+/** The price record itself, without any batch read through: what folding compares against. */
+export function ownDisplayPrice(
+  session: RecordSession,
+  tenant: TenantId,
+  target: DisplayPriceTarget,
+): DisplayPrice | null {
   return (session.get(priceKey(tenant, target)) as DisplayPrice | undefined) ?? null;
+}
+
+export function putOwnDisplayPrice(
+  session: RecordSession,
+  tenant: TenantId,
+  price: DisplayPrice,
+): void {
+  session.put(priceKey(tenant, price), price);
 }
 
 /**
@@ -250,7 +326,7 @@ export function putDisplayPrice(
   if ((old?.revision ?? 0) !== command.expectedRevision)
     return refuse('prc.revision-stale', { currentRevision: old?.revision ?? 0 });
 
-  const sequenceKey = `${root(tenant)}sequence`;
+  const sequenceKey = displaySequenceKey(tenant);
   const sequence = ((session.get(sequenceKey) as number | undefined) ?? 0) + 1;
   const reason = command.reason.trim();
   const price: DisplayPrice = {
@@ -281,13 +357,9 @@ export function putDisplayPrice(
     revision: price.revision,
     sequence,
   };
-  const { branch, subject } = command;
   session.put(sequenceKey, sequence);
   session.put(priceKey(tenant, command), price);
-  session.put(
-    `${historyRoot(tenant)}${String(sequence).padStart(16, '0')}/${String(at).padStart(16, '0')}/${branch}/${subject.item}/${subject.list}/${subject.unit}`,
-    change,
-  );
+  session.put(historyKeyOf(tenant, change), change);
   session.put(`${operationRoot(tenant)}${command.operation}`, {
     fingerprint: fingerprintOf(actor, command),
     price,
@@ -307,6 +379,7 @@ export function validHistoryFilter(filter: unknown): filter is DisplayPriceHisto
   const limit = fields['limit'];
   return (
     validId(fields['branch']) &&
+    validId(fields['batch']) &&
     validId(fields['item']) &&
     validId(fields['list']) &&
     validId(fields['unit']) &&
@@ -319,35 +392,55 @@ export function validHistoryFilter(filter: unknown): filter is DisplayPriceHisto
   );
 }
 
-/** Newest first, a page at a time, filtered on what the key already says. */
+/**
+ * Newest first, a page at a time, filtered on what the key already says.
+ *
+ * A batch's entries are written while it is staged, and are not changes until
+ * it is published: until then they are passed over, so the audit never shows
+ * one price of a batch nobody can yet read as a price (`PRC-03`). A batch that
+ * is abandoned never shows at all, and its entries are removed.
+ */
 export function displayHistory(
   session: RecordSession,
   tenant: TenantId,
   filter: DisplayPriceHistoryFilter,
 ): DisplayPriceHistoryPage {
   const limit = filter.limit ?? 50;
-  const matching = session
-    .keys()
-    .filter((key) => key.startsWith(historyRoot(tenant)))
-    .flatMap((key) => {
-      const [sequence, at, branch, item, list, unit] = key
-        .slice(historyRoot(tenant).length)
-        .split('/');
-      if (!sequence || !at || !branch || !item || !list || !unit) return [];
-      const position = Number(sequence);
-      const time = Number(at);
-      return (!filter.branch || branch === filter.branch) &&
-        (!filter.item || item === filter.item) &&
-        (!filter.list || list === filter.list) &&
-        (!filter.unit || unit === filter.unit) &&
-        (filter.from === undefined || time >= filter.from) &&
-        (filter.to === undefined || time <= filter.to) &&
-        (filter.before === undefined || position < filter.before)
-        ? [{ key, position }]
-        : [];
-    })
-    .sort((a, b) => b.position - a.position)
-    .slice(0, limit + 1);
+  const published = new Map<string, boolean>();
+  const visible = (batch: string): boolean => {
+    let known = published.get(batch);
+    if (known === undefined) {
+      const record = session.get(batchKey(tenant, batch as RateReviewBatchId)) as
+        { readonly state: string } | undefined;
+      known = record?.state === 'published';
+      published.set(batch, known);
+    }
+    return known;
+  };
+  const { keys, start, end } = range(session, historyRoot(tenant));
+  const matching: { key: string; position: number }[] = [];
+  // Newest first, stopping at one past the page: the listing is in sequence order.
+  for (let at = end - 1; at >= start && matching.length <= limit; at -= 1) {
+    const key = keys[at] ?? '';
+    const [sequence, time, branch, item, list, unit, batch] = key
+      .slice(historyRoot(tenant).length)
+      .split('/');
+    if (!sequence || !time || !branch || !item || !list || !unit) continue;
+    const position = Number(sequence);
+    const moment = Number(time);
+    if (
+      (!filter.branch || branch === filter.branch) &&
+      (!filter.item || item === filter.item) &&
+      (!filter.list || list === filter.list) &&
+      (!filter.unit || unit === filter.unit) &&
+      (!filter.batch || batch === filter.batch) &&
+      (filter.from === undefined || moment >= filter.from) &&
+      (filter.to === undefined || moment <= filter.to) &&
+      (filter.before === undefined || position < filter.before) &&
+      (batch === undefined || visible(batch))
+    )
+      matching.push({ key, position });
+  }
   const entries = matching.slice(0, limit).map(({ key }) => session.get(key) as DisplayPriceChange);
   const last = entries.at(-1);
   return { entries, next: matching.length > limit && last ? last.sequence : null };

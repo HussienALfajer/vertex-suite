@@ -31,6 +31,7 @@ import {
   FX_PERMISSION_SEEDS,
   FX_PERMISSIONS,
   Presentation,
+  CONVERT_ALL_LIMIT,
   PriceConversion,
   RateAdministration,
   RateStamps,
@@ -72,7 +73,9 @@ import {
   type Recording,
 } from './rates.js';
 import {
+  convertAllAtReceipt,
   convertAtReceipt,
+  priceRateAt,
   presentAllAtMid,
   presentAtMid,
   presentAtStamp,
@@ -365,6 +368,31 @@ export function fxModule<Session extends RecordSession>(): ModuleDefinition<Sess
             const day: BranchDay = { branch: id, day: here.value.day, device: null };
             return context.transactor.run(by, (uow) =>
               Promise.resolve(convertAtReceipt(uow.session, by.tenant, day, amount, into)),
+            );
+          },
+          convertAll: async (
+            by: CommandContext,
+            id: BranchId,
+            amounts: readonly Money[],
+            into: CurrencyCode,
+          ) => {
+            // A defect in the caller, not a fact about the shop: it holds
+            // every amount it asked with, and pages are its to cut.
+            if (amounts.length > CONVERT_ALL_LIMIT)
+              throw new RangeError(`At most ${String(CONVERT_ALL_LIMIT)} prices per conversion.`);
+            const here = await today(by, id, 'trading');
+            if (!here.ok) return here;
+            const day: BranchDay = { branch: id, day: here.value.day, device: null };
+            return context.transactor.run(by, (uow) =>
+              Promise.resolve(convertAllAtReceipt(uow.session, by.tenant, day, amounts, into)),
+            );
+          },
+          rate: async (by: CommandContext, id: BranchId, into: CurrencyCode) => {
+            const here = await today(by, id, 'trading');
+            if (!here.ok) return here;
+            const day: BranchDay = { branch: id, day: here.value.day, device: null };
+            return context.transactor.run(by, (uow) =>
+              Promise.resolve(priceRateAt(uow.session, by.tenant, day, into)),
             );
           },
         } satisfies PriceConversion;

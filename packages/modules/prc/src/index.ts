@@ -17,6 +17,8 @@ import {
   PRC_PERMISSIONS,
   PriceLists,
   PriceListAdministration,
+  RateReviewPublished,
+  RateReviewRaised,
   UsdPrices,
   type DisplayPriceBasis,
   type DisplayPriceTarget,
@@ -55,6 +57,8 @@ import {
   validateCommand,
   validSubject,
 } from './usd-prices.js';
+
+import { rateReviewProvisions, type RateReviewOptions } from './rate-review-service.js';
 
 export * from './contract.js';
 
@@ -101,15 +105,50 @@ const permissions: readonly PermissionDeclaration[] = [
     labelKey: `permission.${PRC_PERMISSIONS.display.edit}`,
     seededFor: ['manager'],
   },
+  {
+    id: PRC_PERMISSIONS.review.view,
+    labelKey: `permission.${PRC_PERMISSIONS.review.view}`,
+    seededFor: ['manager', 'purchasing'],
+  },
+  {
+    // Deciding a review is approving display prices in bulk: the same hands
+    // as approving one (`display.edit`), and no others.
+    id: PRC_PERMISSIONS.review.approve,
+    labelKey: `permission.${PRC_PERMISSIONS.review.approve}`,
+    seededFor: ['manager'],
+  },
+  {
+    // The owner's alone, seeded: `PRC-03` names the threshold the owner's to
+    // configure, and it decides when every branch is asked to reprice.
+    id: PRC_PERMISSIONS.review.policy,
+    labelKey: `permission.${PRC_PERMISSIONS.review.policy}`,
+    seededFor: [],
+  },
 ];
 
-export function prcModule<Session extends RecordSession>(): ModuleDefinition<Session> {
+export type PrcOptions = RateReviewOptions;
+
+export function prcModule<Session extends RecordSession>(
+  options: PrcOptions = {},
+): ModuleDefinition<Session> {
   return defineModule<Session>({
     code: 'PRC',
     labelKey: 'module.prc',
     dependsOn: ['CAT', 'FX', 'SYS', 'SEC'],
     permissions,
+    settings: [
+      {
+        key: 'prc.rate-review-threshold',
+        labelKey: 'setting.prc.rate-review-threshold',
+        scope: 'tenant',
+      },
+    ],
+    publishes: [
+      { type: RateReviewRaised, labelKey: `event.${RateReviewRaised.name}` },
+      { type: RateReviewPublished, labelKey: `event.${RateReviewPublished.name}` },
+    ],
     provides: [
+      ...rateReviewProvisions<Session>(options),
       provideContract(UsdPrices, (context) => {
         const cat = context.require(Catalogue);
         const currencies = context.require(Currencies);
