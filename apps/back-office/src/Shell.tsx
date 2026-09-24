@@ -7,6 +7,7 @@ import { useOrganisation } from './organisation.js';
 import { hrefOf, useRoute, type RouteName } from './routing.js';
 import { BusinessProfile } from './screens/BusinessProfile.js';
 import { CatalogueScreen } from './screens/Catalogue.js';
+import { PriceListsScreen } from './screens/PriceLists.js';
 import type { SystemOfRecord } from './system.js';
 import { Chart } from './screens/Chart.js';
 import { FiscalCalendar } from './screens/FiscalCalendar.js';
@@ -60,6 +61,12 @@ export function Shell({
       label: translator.format('nav.catalogue'),
       href: hrefOf('catalogue'),
       icon: <ChartIcon />,
+    },
+    {
+      id: 'price-lists',
+      label: translator.format('nav.priceLists'),
+      href: hrefOf('price-lists'),
+      icon: <CurrencyIcon />,
     },
     {
       id: 'companies',
@@ -236,6 +243,8 @@ function Screen({
   switch (name) {
     case 'catalogue':
       return <CatalogueScreen system={system} />;
+    case 'price-lists':
+      return <PriceListsScreen system={system} />;
     case 'companies':
       return <Companies />;
     case 'business-profile':

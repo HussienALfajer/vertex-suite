@@ -29,6 +29,7 @@ import {
   fxModule,
 } from '@vertex/fx';
 import { Dec, isDecimalString, isId, isOk, orThrow, systemClock } from '@vertex/kernel';
+import { prcModule, PriceLists, PriceListAdministration, PRC_PERMISSIONS } from '@vertex/prc';
 import {
   commandContext,
   composeEdition,
@@ -245,9 +246,10 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     fxModule<MemorySession>(),
     finModule<MemorySession>({ attachments }),
     catModule<MemorySession>(),
+    prcModule<MemorySession>(),
   ];
   const plan = orThrow(
-    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN', 'CAT'] }),
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN', 'CAT', 'PRC'] }),
     (refusal) => new Error(`Store-node edition refused: ${refusal.code}`),
   );
   const store = await openPostgresStore(options);
@@ -308,6 +310,8 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     const statementsRead = registry.require(Statements);
     const catRead = registry.require(Catalogue);
     const catAdmin = registry.require(CatalogueAdministration);
+    const priceLists = registry.require(PriceLists);
+    const priceAdmin = registry.require(PriceListAdministration);
     const sessions = new Map<string, Session>();
     const servers = new Set<Server>();
 
@@ -446,6 +450,23 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
     );
     securedWrite('catalogue.reactivateBarcode', CAT_PERMISSIONS.item.edit, (by, args) =>
       catAdmin.reactivateBarcode(by, string(args[0]), string(args[1])),
+    );
+
+    read('priceLists.list', PRC_PERMISSIONS.list.view, (by) => priceLists.list(by));
+    read('priceLists.get', PRC_PERMISSIONS.list.view, (by, args) =>
+      priceLists.get(by, args[0] as Parameters<typeof priceLists.get>[1]),
+    );
+    read('priceLists.subject', PRC_PERMISSIONS.list.view, (by, args) =>
+      priceLists.subject(by, args[0] as Parameters<typeof priceLists.subject>[1]),
+    );
+    securedWrite('priceLists.create', PRC_PERMISSIONS.list.create, (by, args) =>
+      priceAdmin.create(by, args[0] as string),
+    );
+    securedWrite('priceLists.rename', PRC_PERMISSIONS.list.edit, (by, args) =>
+      priceAdmin.rename(by, args[0] as Parameters<typeof priceAdmin.rename>[1], args[1] as string),
+    );
+    securedWrite('priceLists.deactivate', PRC_PERMISSIONS.list.edit, (by, args) =>
+      priceAdmin.deactivate(by, args[0] as Parameters<typeof priceAdmin.deactivate>[1]),
     );
 
     read('companies.list', SYS_PERMISSIONS.company.view, (by, args) =>
@@ -846,6 +867,12 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
             send(response, 401, result);
             return;
           }
+          // A tenant created before PRC was enabled receives the same seed on
+          // first sign-in; the idempotent command also covers every restart.
+          orThrow(
+            await priceAdmin.seed(systemContext(tenant)),
+            (refusal) => new Error(`Price-list seed refused: ${refusal.code}`),
+          );
           const token = randomBytes(32).toString('base64url');
           sessions.set(token, { authenticated: result.value });
           send(response, 200, { token, authenticated: result.value });
@@ -1096,6 +1123,10 @@ export async function composeStoreNode(options: StoreNodeOptions): Promise<Store
         orThrow(
           await untilCommitted(() => calendarAdmin.seed(by)),
           (refusal) => new Error(`Calendar seed refused: ${refusal.code}`),
+        );
+        orThrow(
+          await priceAdmin.seed(by),
+          (refusal) => new Error(`Price-list seed refused: ${refusal.code}`),
         );
       },
       async listen(port, host = '127.0.0.1') {

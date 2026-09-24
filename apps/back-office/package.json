@@ -24,6 +24,7 @@
     "@vertex/i18n": "workspace:*",
     "@vertex/kernel": "workspace:*",
     "@vertex/platform": "workspace:*",
+    "@vertex/prc": "workspace:*",
     "@vertex/sec": "workspace:*",
     "@vertex/sys": "workspace:*",
     "@vertex/ui": "workspace:*",

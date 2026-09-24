@@ -176,3 +176,27 @@ test('SYN-01 signs in, opens a branch, restarts the store-node process and reads
   await page.getByRole('link', { name: 'الفروع' }).click();
   await expect(page.getByRole('rowheader', { name: 'حلب' })).toBeVisible();
 });
+
+test('PRC-01 creates a price list through the back-office port and reads it after PostgreSQL restart', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const name = test.info().project.name === 'real-dark' ? 'شركاء ليلي' : 'شركاء نهاري';
+  await page.goto('/');
+  await page.getByLabel('اسم المستخدم').fill('owner');
+  await page.getByLabel('كلمة المرور', { exact: true }).fill('till-morning-1');
+  await page.getByRole('button', { name: 'دخول' }).click();
+  await page.getByRole('link', { name: 'قوائم الأسعار' }).click();
+  await expect(page.getByRole('rowheader', { name: 'تجزئة' })).toBeVisible();
+  await page.getByLabel('اسم القائمة').fill(name);
+  await page.getByRole('button', { name: 'إنشاء قائمة' }).click();
+  await expect(page.getByRole('rowheader', { name })).toBeVisible();
+  await stop();
+  await start();
+  await page.reload();
+  await page.getByLabel('اسم المستخدم').fill('owner');
+  await page.getByLabel('كلمة المرور', { exact: true }).fill('till-morning-1');
+  await page.getByRole('button', { name: 'دخول' }).click();
+  await page.getByRole('link', { name: 'قوائم الأسعار' }).click();
+  await expect(page.getByRole('rowheader', { name })).toBeVisible();
+});
