@@ -445,6 +445,140 @@ async function fixture(enableSyn02Fixture = false) {
   };
 }
 
+describe.skipIf(!database)('PRC-01 price lists over authenticated PostgreSQL transport', () => {
+  it('keeps seeded identities and a fourth list across restart, with tenant and permission boundaries', async () => {
+    const shop = await fixture();
+    const owner = await shop.signIn();
+    const root = `/v1/tenants/${shop.tenant}/priceLists`;
+    const list = async (base: string, token: string, tenant = shop.tenant) => {
+      const response = await fetch(`${base}/v1/tenants/${tenant}/priceLists.list?args=%5B%5D`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(200);
+      return (
+        (await response.json()) as {
+          value: { id: string; code: string | null; name: string; active: boolean }[];
+        }
+      ).value;
+    };
+    const initial = await list(shop.base, owner);
+    expect(initial.map((one) => one.code)).toEqual(['retail', 'half-wholesale', 'wholesale']);
+    const create = (name: string) =>
+      shop.request(`${root}.create`, owner, { args: [name] }, 'POST');
+    const made = await create('شركاء');
+    expect(made.status).toBe(200);
+    const fourth = ((await made.json()) as { value: { value: { id: string } } }).value.value;
+    expect((await list(shop.base, owner)).map((one) => one.id)).toContain(fourth.id);
+    const categoryResponse = await shop.request(
+      `/v1/tenants/${shop.tenant}/catalogue.createCategory`,
+      owner,
+      {
+        args: [
+          {
+            name: 'Goods',
+            parent: null,
+            defaultBaseUnit: { code: 'pc', kind: 'count', decimals: 0 },
+          },
+        ],
+      },
+      'POST',
+    );
+    const category = ((await categoryResponse.json()) as { value: { value: { id: string } } }).value
+      .value;
+    const item = async (name: string) => {
+      const response = await shop.request(
+        `/v1/tenants/${shop.tenant}/catalogue.createItem`,
+        owner,
+        { args: [{ name, category: category.id }] },
+        'POST',
+      );
+      return (
+        (await response.json()) as { value: { value: { id: string; units: { id: string }[] } } }
+      ).value.value;
+    };
+    const firstItem = await item('Pencil');
+    const secondItem = await item('Notebook');
+    const subject = (unit: string) =>
+      shop.request(
+        `${root}.subject?args=${encodeURIComponent(JSON.stringify([{ list: fourth.id, item: firstItem.id, unit }]))}`,
+        owner,
+      );
+    expect(await (await subject(firstItem.units[0]!.id)).json()).toMatchObject({
+      value: { ok: true },
+    });
+    expect(await (await subject(secondItem.units[0]!.id)).json()).toMatchObject({
+      value: { ok: false, error: { code: 'prc.unit-not-on-item' } },
+    });
+    const duplicates = await Promise.all([create('موزعون'), create('موزعون')]);
+    const outcomes = await Promise.all(
+      duplicates.map(async (response) => (await response.json()) as { value: { ok: boolean } }),
+    );
+    expect(outcomes.filter((one) => one.value.ok)).toHaveLength(1);
+    expect(outcomes.filter((one) => !one.value.ok)).toHaveLength(1);
+    const renamed = await shop.request(
+      `${root}.rename`,
+      owner,
+      { args: [fourth.id, 'شركاء مميزون'] },
+      'POST',
+    );
+    expect(((await renamed.json()) as { value: { value: { id: string } } }).value.value.id).toBe(
+      fourth.id,
+    );
+    const inactive = await shop.request(`${root}.deactivate`, owner, { args: [fourth.id] }, 'POST');
+    expect(
+      ((await inactive.json()) as { value: { value: { active: boolean } } }).value.value.active,
+    ).toBe(false);
+    const foreign = await shop.signIn(shop.otherTenant, 'other-owner', 'till-morning-2');
+    expect((await shop.request(`${root}.list?args=%5B%5D`, foreign)).status).toBe(403);
+    const foreignRead = await shop.request(
+      `/v1/tenants/${shop.otherTenant}/priceLists.get?args=${encodeURIComponent(JSON.stringify([fourth.id]))}`,
+      foreign,
+    );
+    expect(await foreignRead.json()).toMatchObject({ value: null });
+    expect(
+      (await shop.request(`${root}.create`, undefined, { args: ['Unsigned'] }, 'POST')).status,
+    ).toBe(401);
+    const enrolled = await shop.request(
+      `/v1/tenants/${shop.tenant}/users.enrol`,
+      owner,
+      { args: [{ handle: 'cashier-prc', name: 'Cashier', password: 'till-morning-3' }] },
+      'POST',
+    );
+    const user = ((await enrolled.json()) as { value: { value: { id: string } } }).value.value;
+    const roles = await shop.request(`/v1/tenants/${shop.tenant}/users.roles.list`, owner);
+    const cashier = (
+      (await roles.json()) as { value: { id: string; seeded: string }[] }
+    ).value.find((one) => one.seeded === 'cashier')!;
+    await shop.request(
+      `/v1/tenants/${shop.tenant}/users.assignments.assign`,
+      owner,
+      { args: [{ user: user.id, role: cashier.id, confinement: { kind: 'tenant' } }] },
+      'POST',
+    );
+    const cashierToken = await shop.signIn(shop.tenant, 'cashier-prc', 'till-morning-3');
+    expect(
+      (await shop.request(`${root}.create`, cashierToken, { args: ['Denied'] }, 'POST')).status,
+    ).toBe(403);
+    await shop.close();
+    const restarted = await startProcess(shop.options, shop.tenant);
+    const login = await fetch(`${restarted.base}/v1/sign-in`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenant: shop.tenant, handle: 'owner', password: 'till-morning-1' }),
+    });
+    const token = ((await login.json()) as { token: string }).token;
+    const after = await list(restarted.base, token);
+    expect(after.slice(0, 3).map((one) => one.id)).toEqual(initial.map((one) => one.id));
+    expect(after.find((one) => one.id === fourth.id)).toMatchObject({
+      id: fourth.id,
+      name: 'شركاء مميزون',
+      active: false,
+    });
+    expect(after).toHaveLength(5);
+    await restarted.stop();
+  });
+});
+
 async function startProcess(
   options: { connectionString: string; schema: string; attachmentsDirectory: string },
   tenant: string,

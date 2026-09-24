@@ -101,6 +101,9 @@ export function remoteSystem(options: RemoteSystemOptions): SystemOfRecord {
 }
 
 const READS = new Set([
+  'priceLists.list',
+  'priceLists.get',
+  'priceLists.subject',
   'catalogue.categories',
   'catalogue.category',
   'catalogue.items',

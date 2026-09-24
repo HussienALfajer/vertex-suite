@@ -16,6 +16,7 @@
     "@vertex/fx": "workspace:*",
     "@vertex/kernel": "workspace:*",
     "@vertex/platform": "workspace:*",
+    "@vertex/prc": "workspace:*",
     "@vertex/sec": "workspace:*",
     "@vertex/storage": "workspace:*",
     "@vertex/store-link": "workspace:*",

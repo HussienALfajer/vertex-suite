@@ -17,6 +17,7 @@ import {
 } from '@vertex/platform';
 import { OWNER, SEEDED_ROLES, type PermissionId } from '@vertex/contracts';
 import { catModule, Catalogue, CatalogueAdministration } from '@vertex/cat';
+import { prcModule, PriceLists, PriceListAdministration } from '@vertex/prc';
 import {
   ChartAdministration,
   ChartOfAccounts,
@@ -266,9 +267,10 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
     fxModule<MemorySession>(),
     finModule<MemorySession>({ attachments }),
     catModule<MemorySession>(),
+    prcModule<MemorySession>(),
   ];
   const plan = orThrow(
-    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN', 'CAT'] }),
+    composeEdition(catalogue, { modules: ['SYS', 'SEC', 'FX', 'FIN', 'CAT', 'PRC'] }),
     (refusal) => new Error(`The edition would not compose: ${refusal.code}`),
   );
 
@@ -317,6 +319,21 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
   const statementsRead = registry.require(Statements);
   const catRead = registry.require(Catalogue);
   const catAdmin = registry.require(CatalogueAdministration);
+  const priceRead = registry.require(PriceLists);
+  const priceAdmin = registry.require(PriceListAdministration);
+
+  let priceSeed: Promise<void> | null = null;
+  function ensurePriceLists(): Promise<void> {
+    priceSeed ??= (async () => {
+      try {
+        orThrow(await priceAdmin.seed(systemContext(tenant)), (error) => new Error(error.code));
+      } catch (cause) {
+        priceSeed = null;
+        throw cause;
+      }
+    })();
+    return priceSeed;
+  }
 
   /**
    * Who is asking, which is the transport's business and not a screen's.
@@ -1254,6 +1271,32 @@ export function developmentSystem(options: StandInOptions): SystemOfRecord {
       addBarcode: (id, input) => catAdmin.addBarcode(by(), id, input),
       deactivateBarcode: (code, reason) => catAdmin.deactivateBarcode(by(), code, reason),
       reactivateBarcode: (code, reason) => catAdmin.reactivateBarcode(by(), code, reason),
+    },
+    priceLists: {
+      list: async () => {
+        await ensurePriceLists();
+        return priceRead.list(by());
+      },
+      get: async (id) => {
+        await ensurePriceLists();
+        return priceRead.get(by(), id);
+      },
+      subject: async (subject) => {
+        await ensurePriceLists();
+        return priceRead.subject(by(), subject);
+      },
+      create: async (name) => {
+        await ensurePriceLists();
+        return priceAdmin.create(by(), name);
+      },
+      rename: async (id, name) => {
+        await ensurePriceLists();
+        return priceAdmin.rename(by(), id, name);
+      },
+      deactivate: async (id) => {
+        await ensurePriceLists();
+        return priceAdmin.deactivate(by(), id);
+      },
     },
     users: usersPort,
     currencies,

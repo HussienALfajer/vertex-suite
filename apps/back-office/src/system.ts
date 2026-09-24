@@ -1,4 +1,5 @@
 import type { Result } from '@vertex/kernel';
+import type { PriceList, PriceListId, PriceSubject, PrcRefusal } from '@vertex/prc/contract';
 import type {
   BarcodeResolution,
   Category,
@@ -533,6 +534,14 @@ export interface StatementsOfRecord {
 }
 
 export interface SystemOfRecord {
+  readonly priceLists: {
+    list(): Promise<readonly PriceList[]>;
+    get(id: PriceListId): Promise<PriceList | null>;
+    subject(subject: PriceSubject): Promise<Result<PriceSubject, PrcRefusal>>;
+    create(name: string): Promise<Result<PriceList, PrcRefusal>>;
+    rename(id: PriceListId, name: string): Promise<Result<PriceList, PrcRefusal>>;
+    deactivate(id: PriceListId): Promise<Result<PriceList, PrcRefusal>>;
+  };
   readonly catalogue: {
     categories(): Promise<readonly Category[]>;
     category(id: CategoryId): Promise<Category | null>;

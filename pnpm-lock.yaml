@@ -217,6 +217,9 @@ importers:
       '@vertex/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      '@vertex/prc':
+        specifier: workspace:*
+        version: link:../../packages/modules/prc
       '@vertex/sec':
         specifier: workspace:*
         version: link:../../packages/modules/sec
@@ -348,6 +351,9 @@ importers:
       '@vertex/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      '@vertex/prc':
+        specifier: workspace:*
+        version: link:../../packages/modules/prc
       '@vertex/sec':
         specifier: workspace:*
         version: link:../../packages/modules/sec
@@ -518,6 +524,28 @@ importers:
       '@vertex/sys':
         specifier: workspace:*
         version: link:../sys
+    devDependencies:
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@24.13.4)(happy-dom@20.14.5)(vite@8.3.0(@types/node@24.13.4)(jiti@2.7.0))
+
+  packages/modules/prc:
+    dependencies:
+      '@vertex/cat':
+        specifier: workspace:*
+        version: link:../cat
+      '@vertex/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@vertex/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@vertex/platform':
+        specifier: workspace:*
+        version: link:../../platform
     devDependencies:
       typescript:
         specifier: 6.0.2

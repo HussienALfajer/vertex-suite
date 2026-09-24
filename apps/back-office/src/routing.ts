@@ -42,6 +42,7 @@ const ROUTES = [
   'posting-exceptions',
   'statements',
   'catalogue',
+  'price-lists',
 ] as const;
 
 export type RouteName = (typeof ROUTES)[number];
