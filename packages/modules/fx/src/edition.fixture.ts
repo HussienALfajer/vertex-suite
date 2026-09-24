@@ -27,6 +27,7 @@ import {
   CurrencyDefined,
   ExchangeRates,
   Presentation,
+  PriceConversion,
   RateAdministration,
   RateStamps,
   RoundingRules,
@@ -58,6 +59,7 @@ export interface Installed {
   readonly stamps: RateStamps;
   readonly rounding: RoundingRules;
   readonly presentation: Presentation;
+  readonly pricing: PriceConversion;
   /**
    * The shop's time, and the one thing about it a test may choose. It starts at
    * noon in Damascus on 17 September 2026, which is 09:00 UTC.
@@ -252,6 +254,7 @@ export function installFx(): Installed {
     stamps: registry.require(RateStamps),
     rounding: registry.require(RoundingRules),
     presentation: registry.require(Presentation),
+    pricing: registry.require(PriceConversion),
     clock,
     tenant,
     by: commandContext({ tenant, actor: newId<'user'>() }),

@@ -20,6 +20,7 @@ import {
 } from '@vertex/ui';
 import { messageForRefusal } from '../catalogue.js';
 import type { SystemOfRecord } from '../system.js';
+import { DisplayPricesPanel } from './DisplayPrices.js';
 
 interface PriceRow {
   readonly list: PriceList;
@@ -48,6 +49,8 @@ export function UsdPricesScreen({
   const [message, setMessage] = useState('');
   const [tone, setTone] = useState<BannerTone>('danger');
   const [busy, setBusy] = useState(false);
+  /** Bumped on every dollar price saved, so the display prices below reread their status. */
+  const [saved, setSaved] = useState(0);
 
   async function search(): Promise<void> {
     setBusy(true);
@@ -122,6 +125,7 @@ export function UsdPricesScreen({
       } else {
         const fresh = await system.usdPrices.forItem(selected.id);
         if (fresh.ok) setPrices(fresh.value);
+        setSaved((count) => count + 1);
         setEditing(null);
         setAmount('');
         setReason('');
@@ -285,6 +289,9 @@ export function UsdPricesScreen({
             </Button>
           </form>
         </Panel>
+      )}
+      {selected && (
+        <DisplayPricesPanel system={system} item={selected} lists={lists} version={saved} />
       )}
       {history && (
         <Panel title={t.format('usdPrices.history')} flush>

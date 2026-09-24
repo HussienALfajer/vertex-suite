@@ -570,6 +570,52 @@ const own = {
   'usdPrices.noHistory': 'لا توجد تغييرات لهذا السعر بعد.',
   'usdPrices.more': 'المزيد من السجل',
   'usdPrices.saved': 'تم حفظ السعر بالدولار.',
+  'permission.prc.display-price.view': 'الاطلاع على أسعار العرض بالليرة',
+  'permission.prc.display-price.edit': 'معاينة أسعار العرض بالليرة واعتمادها',
+  'refusal.prc.branch-not-found': 'هذا الفرع غير موجود في هذا المتجر.',
+  'refusal.prc.branch-inactive':
+    'هذا الفرع مسحوب من الخدمة، فلا يُعتمد له سعر عرض جديد. أسعاره السابقة تبقى مقروءة.',
+  'refusal.prc.usd-price-missing':
+    'لا يوجد سعر بالدولار لهذه الوحدة في هذه القائمة. سعّرها بالدولار أولًا؛ لا يُشتق سعر العرض من وحدة أو قائمة أخرى.',
+  'refusal.prc.rate-missing':
+    'لا يوجد سعر صرف {currency} لهذا الفرع ليوم {day}. سجّل سعر اليوم في «الأسعار اليومية» ثم أعد المعاينة. سعر العرض المعتمد سابقًا باقٍ كما هو.',
+  'refusal.prc.conversion-unavailable':
+    'تعذّر تحويل السعر إلى عملة العرض: العملة غير مفعّلة أو عملة الدفاتر غير محددة.',
+  'refusal.prc.display-basis-changed':
+    'تغيّر سعر الصرف أو السعر بالدولار منذ المعاينة. أعد المعاينة وراجع السعر الجديد قبل اعتماده.',
+  'displayPrices.title': 'سعر العرض بالليرة',
+  'displayPrices.description':
+    'سعر ثابت يُعتمد يدويًا لكل فرع، ولا يتغير مع سعر الصرف اليومي حتى يعاد حسابه ويُعتمد من جديد.',
+  'displayPrices.branch': 'الفرع',
+  'displayPrices.chooseBranch': 'اختر فرعًا لعرض أسعار العرض المعتمدة فيه.',
+  'displayPrices.noBranches': 'لا توجد فروع بعد. افتح فرعًا من شاشة «الفروع».',
+  'displayPrices.status.unpriced': 'لا سعر بالدولار',
+  'displayPrices.status.not-frozen': 'لم يُعتمد سعر عرض',
+  'displayPrices.status.usd-changed': 'يحتاج مراجعة: تغيّر السعر بالدولار',
+  'displayPrices.status.frozen': 'معتمد',
+  'displayPrices.none': 'لا يوجد',
+  'displayPrices.frozenFrom':
+    'اعتُمد من {usd} USD (مراجعة الدولار {usdRevision}) بسعر صرف يوم {day}، المراجعة {sequence}',
+  'displayPrices.review': 'مراجعة سعر العرض',
+  'displayPrices.preview': 'معاينة',
+  'displayPrices.previewNote':
+    'المعاينة لا تغيّر أي سعر. الاعتماد يحفظ سعر العرض لهذا الفرع فقط، ولا يطبع ملصقًا ولا يغيّر سعر الصندوق بعد.',
+  'displayPrices.current': 'سعر العرض المعتمد حاليًا',
+  'displayPrices.proposed': 'السعر المقترح',
+  'displayPrices.usdSource': 'السعر بالدولار (المراجعة {revision})',
+  'displayPrices.rate':
+    'سعر شراء {currency} لليوم {day} (المراجعة {sequence}): {rate} لكل 1 {functional}',
+  'displayPrices.rounding': 'قبل التقريب {exact}، ثم التقريب إلى أقرب {increment} ({mode})',
+  'displayPrices.reason': 'سبب الاعتماد',
+  'displayPrices.approve': 'اعتماد السعر',
+  'displayPrices.approved': 'اعتُمد سعر العرض بالليرة لهذا الفرع.',
+  'displayPrices.history': 'سجل سعر العرض',
+  'displayPrices.noHistory': 'لا توجد اعتمادات لسعر العرض بعد.',
+  'displayPrices.old': 'السعر السابق',
+  'displayPrices.new': 'السعر المعتمد',
+  'displayPrices.source': 'المصدر',
+  'displayPrices.sourceOf':
+    '{usd} USD (مراجعة {usdRevision}) × {rate} (يوم {day}، مراجعة {sequence})',
   'catalogue.title': 'الأصناف والفئات',
   'catalogue.description': 'أنشئ فئات متداخلة، ثم أضف الأصناف وتابع حالتها.',
   'catalogue.categories': 'شجرة الفئات',

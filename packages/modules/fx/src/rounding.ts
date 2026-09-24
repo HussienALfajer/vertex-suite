@@ -16,6 +16,7 @@ import {
   RATE_DECIMALS,
   ROUNDING_ACCOUNT,
   type BranchDay,
+  type ConvertedPrice,
   type CurrencyRefusal,
   type DocumentValue,
   type Presented,
@@ -393,6 +394,62 @@ export function presentAllAtMid(
   return ok({
     amounts: Object.freeze(amounts.map((amount) => translated(amount, translation.value))),
     rate: translation.value.rate,
+  });
+}
+
+/**
+ * A functional-currency price restated as what a customer hands over in
+ * another currency, at this branch's buy rate for today (`PriceConversion`).
+ *
+ * `here.device` is ignored on purpose: `rateInForce` is asked with no machine,
+ * so a register's last-known confirmation can never stand in for today's rate
+ * in a figure somebody is about to keep.
+ */
+export function convertAtReceipt(
+  session: RecordSession,
+  tenant: TenantId,
+  here: BranchDay,
+  amount: Money,
+  into: CurrencyCode,
+): Rounded<ConvertedPrice> {
+  const pair = pairFor(session, tenant, amount.currency, into);
+  if (!pair.ok) return pair;
+  const { functional, into: target } = pair.value;
+  if (into === functional.code) {
+    return refuse('fx.currency-is-functional', { currency: into });
+  }
+  if (amount.currency !== functional.code) {
+    return refuse('fx.cross-rate-unsupported', {
+      from: amount.currency,
+      into,
+      functional: functional.code,
+    });
+  }
+
+  const inForce = rateInForce(session, tenant, here.branch, here.day, target.code, null);
+  if (!inForce.ok) return inForce;
+  const { revision } = inForce.value;
+
+  const exact = money(amount.amount.times(new Dec(revision.buy)), target.code);
+  const settled = round(exact, target);
+  return ok({
+    amount: settled.value,
+    exact,
+    residual: residual(settled.residual, 'settlement'),
+    rate: Object.freeze({
+      currency: target.code,
+      functional: revision.functional,
+      side: 'buy' as const,
+      rate: revision.buy,
+      revision: revision.id,
+      sequence: revision.sequence,
+      day: revision.day,
+      recordedAt: revision.recordedAt,
+    }),
+    rounding: Object.freeze({
+      increment: target.roundingIncrement,
+      mode: target.roundingMode,
+    }),
   });
 }
 
