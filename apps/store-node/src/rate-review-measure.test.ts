@@ -212,10 +212,7 @@ describe.runIf(measure && database)(
           { headers },
         );
         expect(response.status, method).toBe(200);
-        return {
-          answer: (await response.json()) as Answer,
-          bytes: Number(response.headers.get('content-length') ?? 0),
-        };
+        return { answer: (await response.json()) as Answer };
       };
 
       const company = await post('companies.register', [{ name: 'Shop' }]);
@@ -414,7 +411,6 @@ describe.runIf(measure && database)(
       const summary = [
         `U09.4 rate review, ${String(ITEMS)} items, ${String(frozen)} frozen prices, chunk ${String(chunk)}:`,
         ...figures,
-        `first page ${String(firstPage.bytes)} bytes`,
         `${String(writes)} rate writes during publication, none refused, longest ${longest.toFixed(0)} ms`,
         ...memory,
         `${platform()} ${cpus()[0]?.model ?? ''} ×${String(availableParallelism())}, node ${process.version}`,
